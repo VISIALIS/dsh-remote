@@ -31,6 +31,13 @@ public final class ModeleApp {
   public var filtresActifs = true
 
   private var client: RemoteClient?
+  private var flux: FluxSession?
+  private var tacheFlux: Task<Void, Never>?
+
+  /// Vrai quand le suivi temps réel est actif sur la session ouverte.
+  public private(set) var enDirect = false
+  /// Dernier `seq` reçu par le flux, à repasser en `depuisSeq` si l'on rouvre.
+  public private(set) var dernierSeqVu: Int?
 
   public init() {
     chargerConfiguration()
@@ -144,9 +151,75 @@ public final class ModeleApp {
       self.sessionOuverte = journal.session
       self.journal = journal.enregistrements.map(DecodeurEvenement.afficher)
     }
+    await demarrerFlux(session.id)
+  }
+
+  /// Suit la session en direct, en reprenant au dernier `seq` déjà chargé.
+  ///
+  /// La reprise n'est pas un confort : sans `depuisSeq`, le serveur renverrait
+  /// tout ce que la page vient de charger, et le journal afficherait des doublons.
+  public func demarrerFlux(_ identifiant: String) async {
+    if let precedent = flux { await precedent.fermer() }
+    flux = nil
+    enDirect = true
+    guard let client else { return }
+    let jeton = jetonSaisi
+    let adresse = self.adresse
+    guard
+      let session = FluxSession(
+        adresse: adresse, jeton: jeton, identifiant: identifiant,
+        depuisSeq: journal.last?.enregistrement.seq)
+    else { return }
+    flux = session
+    let tache = Task { [weak self] in
+      for await message in await session.messages() {
+        guard let self else { return }
+        await self.appliquer(message)
+      }
+    }
+    tacheFlux = tache
+  }
+
+  /// Arrête le suivi. Le journal déjà chargé reste affiché.
+  public func arreterFlux() {
+    tacheFlux?.cancel()
+    tacheFlux = nil
+    Task { await flux?.fermer() }
+    flux = nil
+    enDirect = false
+  }
+
+  /// Applique un message du flux au journal affiché.
+  ///
+  /// Un `seq` déjà présent est ignoré : une reprise peut recouvrir la page
+  /// chargée, et un doublon à l'écran serait un défaut visible.
+  private func appliquer(_ message: MessageFlux) async {
+    switch message {
+    case let .base(_, enregistrements, _):
+      for enregistrement in enregistrements {
+        ajouterSiNouveau(enregistrement)
+      }
+    case let .evenement(enregistrement):
+      ajouterSiNouveau(enregistrement)
+    case let .delta(dernierSeq):
+      if let dernierSeq { dernierSeqVu = dernierSeq }
+    case let .tronque(detail):
+      erreur = "Flux incomplet : \(detail)"
+    case let .erreur(detail):
+      erreur = detail
+      enDirect = false
+    }
+  }
+
+  private func ajouterSiNouveau(_ enregistrement: EnregistrementJournal) {
+    if let seq = enregistrement.seq, journal.contains(where: { $0.enregistrement.seq == seq }) {
+      return
+    }
+    journal.append(DecodeurEvenement.afficher(enregistrement))
   }
 
   public func fermerJournal() {
+    arreterFlux()
     journal = []
     sessionOuverte = nil
   }

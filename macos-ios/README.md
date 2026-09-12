@@ -183,6 +183,12 @@ harness serait une surface d'attaque gratuite.
 Vérifié contre le serveur : 5 évènements et 3 deltas reçus en direct pendant que la
 session écrivait, **0 doublon**, curseur de reprise conservé.
 
+Dans l'application, `demarrerFlux` reprend au dernier `seq` déjà chargé — sans quoi la
+base du flux recouvrirait la page affichée et le journal montrerait des doublons. Un
+`seq` déjà présent est ignoré à l'application, et l'état du suivi est visible dans la
+barre d'outils : un flux qui s'arrête en silence laisserait croire que la session est
+inactive.
+
 ---
 
 ## Choix de conception

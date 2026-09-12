@@ -44,6 +44,24 @@ struct VueJournal: View {
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
     #endif
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        // Le suivi en direct se voit et se commande : un flux silencieux qui
+        // s'arrête sans le dire laisserait croire que la session est inactive.
+        Button {
+          if modele.enDirect {
+            modele.arreterFlux()
+          } else {
+            Task { await modele.demarrerFlux(session.id) }
+          }
+        } label: {
+          Label(
+            modele.enDirect ? "En direct" : "Suivi arrêté",
+            systemImage: modele.enDirect ? "dot.radiowaves.left.and.right" : "pause.circle")
+            .foregroundStyle(modele.enDirect ? Color.green : Color.secondary)
+        }
+      }
+    }
     .overlay {
       if modele.enChargement, modele.journal.isEmpty {
         ProgressView("Lecture du journal…")

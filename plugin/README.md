@@ -325,7 +325,7 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 | Jalon | Contenu | État |
 |---|---|---|
 | 1 | Plugin, protocole, jeton, lecture des journaux, tool Swift de validation | **livré et prouvé** |
-| 2 | Application SwiftUI lecture seule, macOS puis iOS | à faire |
-| 3 | Flux temps réel des événements (`/v1/flux`) | à faire |
+| 2 | Application SwiftUI lecture seule, macOS puis iOS | **livré** — observée sur simulateur iOS, démarrage vérifié sur macOS |
+| 3 | Flux temps réel des événements (`/v1/flux`) | **livré et prouvé** (plugin, client Swift et application) |
 | 4 | Écriture : prompt, approbations, questions | à faire |
 | 5 | Installation et signature iOS (compte développeur, 7 jours sans) | à faire |
