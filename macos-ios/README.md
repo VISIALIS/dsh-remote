@@ -230,6 +230,23 @@ d'hôte Tailscale, qui remplace les espaces par des tirets
 afficherait l'icône générique pour un portable. Une machine renommée « bureau »
 retombe sur l'icône générique, ce qui reste correct.
 
+### Le suivi de l'activité
+
+La liste se rafraîchit **toutes les 3 secondes** tant qu'un serveur est joignable,
+et l'interrupteur « Suivre l'activité » permet de l'arrêter.
+
+Sans ce suivi, les pastilles ne changeaient qu'au lancement ou par glissement :
+le propriétaire a vu « des points bleus partout » alors que le serveur signalait
+déjà deux sessions en cours. **Un indicateur d'activité qui ne s'actualise pas
+est pire qu'aucun indicateur** : il donne une image fausse avec l'autorité d'une
+mesure.
+
+Le rafraîchissement est fréquent parce qu'il est bon marché : la liste ne relit
+pas les journaux, elle relit un résumé mis en cache côté serveur et interroge
+l'état des agents. Il ne touche pas non plus au journal ouvert, pour ne pas
+déplacer la lecture sous les yeux de l'utilisateur, et un échec passager ne
+signale rien — l'utilisateur n'a rien demandé, il ne doit pas être interrompu.
+
 ### Trois états, dont un qui ne conclut pas
 
 | Affichage | Sens |

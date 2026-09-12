@@ -46,6 +46,56 @@ public final class ModeleApp {
   public private(set) var serveurChoisi: ServeurMac?
   private var flux: FluxSession?
   private var tacheFlux: Task<Void, Never>?
+  private var tacheSuivi: Task<Void, Never>?
+
+  /// Suivi automatique de la liste : rafraîchit les statuts en continu.
+  ///
+  /// POURQUOI. Sans lui, les pastilles ne changent qu'au lancement ou par
+  /// glissement : le propriétaire a vu « des points bleus partout » alors que le
+  /// serveur signalait deux sessions en cours. Un indicateur d'activité qui ne
+  /// s'actualise pas est pire qu'aucun indicateur — il donne une image fausse
+  /// avec l'autorité d'une mesure.
+  ///
+  /// Le rafraîchissement est fréquent (3 s) parce qu'il est BON MARCHÉ : la
+  /// liste ne relit pas les journaux, elle relit un résumé mis en cache côté
+  /// serveur et interroge l'état des agents. On peut le couper.
+  public var suiviAutomatique = true {
+    didSet {
+      if suiviAutomatique { demarrerSuivi() } else { arreterSuivi() }
+    }
+  }
+
+  /// Démarre la boucle de rafraîchissement, si un serveur est joignable.
+  public func demarrerSuivi() {
+    arreterSuivi()
+    guard suiviAutomatique, client != nil else { return }
+    tacheSuivi = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        guard !Task.isCancelled else { return }
+        guard let self else { return }
+        // On ne touche PAS au journal ouvert : seul l'état des sessions est
+        // relu, pour ne pas déplacer la lecture sous les yeux de l'utilisateur.
+        await self.rafraichirSilencieusement()
+      }
+    }
+  }
+
+  /// Arrête la boucle de rafraîchissement.
+  public func arreterSuivi() {
+    tacheSuivi?.cancel()
+    tacheSuivi = nil
+  }
+
+  /// Relit la liste sans afficher d'indicateur de chargement ni d'erreur.
+  ///
+  /// Un échec passager du suivi ne doit pas effacer l'écran ni signaler une
+  /// panne : l'utilisateur n'a rien demandé, il ne doit pas être interrompu.
+  private func rafraichirSilencieusement() async {
+    guard let client else { return }
+    guard let liste = try? await client.listerSessions(limite: 200) else { return }
+    sessions = liste.sessions
+  }
 
   /// Vrai quand le suivi temps réel est actif sur la session ouverte.
   public private(set) var enDirect = false
@@ -420,6 +470,7 @@ public final class ModeleApp {
   /// Sans cela, une adresse mémorisée par erreur ne pourrait être retirée qu'en
   /// désinstallant l'application.
   public func oublierServeur() {
+    arreterSuivi()
     adresse = ""
     nomServeur = nil
     serveurChoisi = nil
@@ -483,6 +534,7 @@ public final class ModeleApp {
       let liste = try await client.listerSessions(limite: 200)
       self.sessions = liste.sessions
     }
+    if erreur == nil { demarrerSuivi() }
   }
 
   public func rafraichir() async {
@@ -491,6 +543,7 @@ public final class ModeleApp {
       let liste = try await client.listerSessions(limite: 200)
       self.sessions = liste.sessions
     }
+    if erreur == nil { demarrerSuivi() }
   }
 
   public func ouvrir(_ session: SessionListee) async {

@@ -256,6 +256,11 @@ struct VueConnexion: View {
         // actives serait anormal, dix sessions chargées est normal après une
         // journée de travail.
         Toggle("Chargées en mémoire seulement", isOn: $modele.filtresActifs)
+
+        // Le suivi se voit et se commande : sans lui, les pastilles d'état
+        // resteraient figées au moment du chargement, et une session qui se met
+        // à travailler n'apparaîtrait jamais comme telle.
+        Toggle("Suivre l'activité", isOn: $modele.suiviAutomatique)
       }
 
       // ── Arbre des sessions, groupé par espace de travail ───────────────────
