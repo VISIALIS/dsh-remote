@@ -91,3 +91,24 @@ func sortieIllisible() {
   // Objet valide mais sans les champs attendus.
   #expect(DecouverteServeurs.analyser(Data("{\"Peer\":{}}".utf8)).isEmpty)
 }
+
+@MainActor
+@Test("L'adresse est mémorisée dès qu'elle change, pas seulement après succès")
+func memorisationAdresse() {
+  // Le défaut corrigé : l'adresse n'était enregistrée que par `connecter()`,
+  // donc une tentative ÉCHOUÉE ne laissait aucune trace — et c'est précisément
+  // quand la connexion échoue qu'on veut retrouver son adresse.
+  //
+  // On teste le contrat réel du modèle, sans réseau : `definirAdresse` doit
+  // écrire, et un modèle neuf doit relire ce qui a été écrit.
+  let adresseTemoin = "temoin-memorisation.exemple.ts.net"
+  let modele = ModeleApp()
+  modele.definirAdresse(adresseTemoin)
+
+  let relu = ModeleApp()
+  #expect(relu.adresse == adresseTemoin, "l'adresse écrite doit être relue au lancement suivant")
+
+  // Nettoyage : on ne laisse pas une adresse de test dans les préférences.
+  relu.oublierServeur()
+  #expect(ModeleApp().adresse.isEmpty || ModeleApp().adresse != adresseTemoin)
+}

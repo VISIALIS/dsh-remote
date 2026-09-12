@@ -83,6 +83,21 @@ public final class ModeleApp {
     if let nomServeur { defaults.set(nomServeur, forKey: Self.cleNomServeur) }
   }
 
+  /// Change l'adresse ET la mémorise immédiatement.
+  ///
+  /// POURQUOI PAS SEULEMENT APRÈS UNE CONNEXION RÉUSSIE. C'était le défaut :
+  /// l'adresse n'était enregistrée que par `connecter()`, donc une tentative
+  /// échouée — jeton absent, faute de frappe, serveur éteint — ne laissait
+  /// aucune trace, et l'ouverture suivante repartait du champ vide. Or c'est
+  /// précisément quand la connexion échoue qu'on veut retrouver son adresse.
+  ///
+  /// L'adresse n'est pas un secret : la mémoriser à la frappe ne coûte rien.
+  /// Le jeton, lui, ne suit PAS ce chemin et reste confié au seul trousseau.
+  public func definirAdresse(_ valeur: String) {
+    adresse = valeur
+    memoriserPreference()
+  }
+
   /// Nom lisible du serveur visé, mémorisé avec l'adresse.
   ///
   /// Sert à l'icône : sans nom, on ne peut que deviner le type de machine, et

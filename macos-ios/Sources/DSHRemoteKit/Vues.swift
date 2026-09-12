@@ -115,7 +115,14 @@ struct VueConnexion: View {
             Image(systemName: modele.symboleServeur)
               .font(.title3)
               .foregroundStyle(modele.adresse.isEmpty ? Color.secondary : Color.accentColor)
-            TextField(modele.adresseExemple, text: $modele.adresse)
+            // Liaison passant par le modèle : l'adresse est mémorisée dès la
+            // frappe, sans attendre une connexion réussie.
+            TextField(
+              modele.adresseExemple,
+              text: Binding(
+                get: { modele.adresse },
+                set: { modele.definirAdresse($0) }
+              ))
               .textFieldStyle(.roundedBorder)
               #if os(iOS)
                 .textInputAutocapitalization(.never)
