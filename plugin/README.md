@@ -366,7 +366,7 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 | Jalon | Contenu | État |
 |---|---|---|
 | 1 | Plugin, protocole, jeton, lecture des journaux, tool Swift de validation | **livré et prouvé** |
-| 2 | Application SwiftUI lecture seule, macOS puis iOS | **livré** — observée sur simulateur iOS, démarrage vérifié sur macOS |
+| 2 | Application SwiftUI lecture seule, macOS puis iOS | **livré et connecté** — 106 sessions affichées sur l'iPhone réel via Tailscale |
 | 3 | Flux temps réel des événements (`/v1/flux`) | **livré et prouvé** (plugin, client Swift et application) |
 | 4 | Écriture : prompt, approbations, questions | **bloqué** — `sessionController` introuvable depuis le contexte du plugin ; approbations impossibles sans retirer à l'interface web son rôle de répondeur |
-| 5 | Installation et signature iOS (compte développeur, 7 jours sans) | à faire |
+| 5 | Installation et signature iOS | **livré** — app signée et installée sur l'iPhone du propriétaire, connectée au harness via Tailscale (106 sessions) |
