@@ -51,7 +51,10 @@ public struct ResumeSession: Sendable, Decodable {
 }
 
 /// Une session telle qu'elle apparaît dans une liste.
-public struct SessionListee: Sendable, Decodable {
+///
+/// `Hashable` est requis par `List(selection:)` et `onChange(of:)` de SwiftUI : une
+/// session doit pouvoir être comparée et identifiée par sa valeur.
+public struct SessionListee: Sendable, Decodable, Hashable {
   public let projet: String?
   public let cwdIndicatif: String?
   public let dossier: String?
@@ -64,6 +67,18 @@ public struct SessionListee: Sendable, Decodable {
 
   public var id: String { resume.id ?? "(inconnu)" }
   public var titreAffiche: String { resume.titre ?? "(sans titre)" }
+
+  /// L'identité d'une session est son identifiant, PAS le contenu de son résumé :
+  /// un journal qui grandit change son résumé à chaque écriture, et une sélection
+  /// qui se perdrait à chaque rafraîchissement serait inutilisable.
+  public static func == (gauche: SessionListee, droite: SessionListee) -> Bool {
+    gauche.projet == droite.projet && gauche.id == droite.id
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(projet)
+    hasher.combine(id)
+  }
 
   enum CodingKeys: String, CodingKey {
     case projet, dossier, fichier, octets, vivante, illisible
@@ -96,12 +111,84 @@ public struct ListeSessions: Sendable, Decodable {
   public let erreur: String?
 }
 
-/// Un enregistrement brut du journal. On ne l'interprète pas : la forme des
-/// événements appartient au harness et change avec lui.
+/// Un enregistrement brut du journal.
+///
+/// On décode `type`, `seq` et `time` — les trois seuls champs dont le TRANSPORT a
+/// besoin — et on conserve la charge utile d'origine telle quelle. La forme des
+/// événements appartient au harness et change avec lui : la transporter sans
+/// l'interpréter est ce qui rend le client robuste à ces changements.
+///
+/// La charge utile est conservée en OCTETS (`corpsBrut`) et non en objet JSON :
+/// `Any` n'est pas `Sendable`, et un journal traverse des frontières d'acteur.
 public struct EnregistrementJournal: Sendable, Decodable {
   public let type: String?
   public let seq: Int?
   public let time: Int?
+  /// Charge utile `data`, ré-encodée en JSON, ou `nil` si l'enregistrement n'en porte pas.
+  public let corpsBrut: Data?
+
+  enum CodingKeys: String, CodingKey {
+    case type, seq, time, data
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let conteneur = try decoder.container(keyedBy: CodingKeys.self)
+    self.type = try conteneur.decodeIfPresent(String.self, forKey: .type)
+    self.seq = try conteneur.decodeIfPresent(Int.self, forKey: .seq)
+    self.time = try conteneur.decodeIfPresent(Int.self, forKey: .time)
+    if conteneur.contains(.data) {
+      let brut = try conteneur.decode(JSONBrut.self, forKey: .data)
+      // On repasse par un étage d'encodage : l'enregistrement redevient une
+      // charge utile neutre, sans objet Swift vivant à conserver.
+      let tampon = try JSONEncoder().encode(brut)
+      self.corpsBrut = tampon == Data("null".utf8) ? nil : tampon
+    } else {
+      self.corpsBrut = nil
+    }
+  }
+}
+
+/// Valeur JSON quelconque, gardée pour être RÉ-ENCODÉE plus tard, sans être
+/// interprétée ici.
+private struct JSONBrut: Codable {
+  let valeur: Any
+
+  init(from decoder: any Decoder) throws {
+    let conteneur = try decoder.singleValueContainer()
+    if conteneur.decodeNil() {
+      self.valeur = NSNull()
+    } else if let valeur = try? conteneur.decode(Bool.self) {
+      self.valeur = valeur
+    } else if let valeur = try? conteneur.decode(Int.self) {
+      self.valeur = valeur
+    } else if let valeur = try? conteneur.decode(Double.self) {
+      self.valeur = valeur
+    } else if let valeur = try? conteneur.decode(String.self) {
+      self.valeur = valeur
+    } else if let valeur = try? conteneur.decode([JSONBrut].self) {
+      self.valeur = valeur.map(\.valeur)
+    } else if let valeur = try? conteneur.decode([String: JSONBrut].self) {
+      self.valeur = valeur.mapValues(\.valeur)
+    } else {
+      self.valeur = NSNull()
+    }
+  }
+
+  func encode(to encoder: any Encoder) throws {
+    var conteneur = encoder.singleValueContainer()
+    switch valeur {
+    case let valeur as NSNull: try conteneur.encodeNil()
+    case let valeur as Bool: try conteneur.encode(valeur)
+    case let valeur as Int: try conteneur.encode(valeur)
+    case let valeur as Double: try conteneur.encode(valeur)
+    case let valeur as String: try conteneur.encode(valeur)
+    case let valeur as [Any]: try conteneur.encode(valeur.map { JSONBrut(valeur: $0) })
+    case let valeur as [String: Any]: try conteneur.encode(valeur.mapValues { JSONBrut(valeur: $0) })
+    default: try conteneur.encodeNil()
+    }
+  }
+
+  init(valeur: Any) { self.valeur = valeur }
 }
 
 /// Réponse de `POST /v1/session/<id>`.

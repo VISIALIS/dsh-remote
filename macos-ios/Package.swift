@@ -17,6 +17,7 @@ let package = Package(
   products: [
     .library(name: "DSHRemoteKit", targets: ["DSHRemoteKit"]),
     .executable(name: "dsh-remote-ctl", targets: ["DSHRemoteCtl"]),
+    .executable(name: "DSHRemote", targets: ["DSHRemoteApp"]),
   ],
   targets: [
     .target(
@@ -25,6 +26,11 @@ let package = Package(
     ),
     .executableTarget(
       name: "DSHRemoteCtl",
+      dependencies: ["DSHRemoteKit"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    .executableTarget(
+      name: "DSHRemoteApp",
       dependencies: ["DSHRemoteKit"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
