@@ -112,3 +112,91 @@ func memorisationAdresse() {
   relu.oublierServeur()
   #expect(ModeleApp().adresse.isEmpty || ModeleApp().adresse != adresseTemoin)
 }
+
+// ── Regroupement par espace de travail ────────────────────────────────────────
+//
+// Les charges utiles sont des copies de réponses réelles du plugin : c'est ce
+// qui permet d'attraper une dérive de la part du serveur, et non de vérifier
+// que le code s'accorde avec lui-même.
+
+private func sessionDeTest(
+  id: String, cwd: String?, titre: String, quand: Int, profondeur: Int = 0, vivante: Bool = true
+) -> SessionListee {
+  let cwdJSON = cwd.map { "\"cwd\":\"\($0)\"," } ?? ""
+  let json = """
+    {"protocole":1,"total":1,"sessions":[
+      {"projet":"--x--","dossier":"/d","fichier":"/f","octets":100,"modifieLe":1,"vivante":\(vivante),
+       "id":"\(id)",\(cwdJSON)"creeLe":1,"preset":"standard","profondeurDelegation":\(profondeur),
+       "seme":false,"titre":"\(titre)","dernierEvenementLe":\(quand),"dernierSeq":1,
+       "nbEnregistrements":1,"tronque":false}]}
+    """.data(using: .utf8)!
+  return try! JSONDecoder().decode(ListeSessions.self, from: json).sessions[0]
+}
+
+@Test("Les sessions sont groupées par espace de travail, le plus récent d'abord")
+func groupementParEspace() {
+  let sessions = [
+    sessionDeTest(id: "a", cwd: "/tmp/projet-un", titre: "A", quand: 1_000),
+    sessionDeTest(id: "b", cwd: "/tmp/projet-deux", titre: "B", quand: 9_000),
+    sessionDeTest(id: "c", cwd: "/tmp/projet-un", titre: "C", quand: 5_000),
+  ]
+  let espaces = Regroupement.espaces(sessions)
+
+  #expect(espaces.count == 2)
+  // « projet-deux » est le plus récemment actif : il passe en tête.
+  #expect(espaces[0].nom == "projet-deux")
+  #expect(espaces[1].nom == "projet-un")
+  #expect(espaces[1].nbSessions == 2)
+  // Dans un espace, la session la plus récente d'abord.
+  #expect(espaces[1].sessions.map(\.id) == ["c", "a"])
+}
+
+@Test("Le nom d'espace vient de cwd, pas du dossier de projet encodé")
+func nomDepuisCwd() {
+  // DSH encode les chemins en remplaçant « / » par « - » : le dossier ne permet
+  // donc pas de distinguer « dsh-plugins » de « dsh/plugins ». `cwd` fait foi.
+  let session = sessionDeTest(id: "a", cwd: "/tmp/atelier/dsh-plugins", titre: "A", quand: 1)
+  let (nom, chemin) = Regroupement.nomEspace(session)
+  #expect(nom == "dsh-plugins")
+  #expect(chemin == "/tmp/atelier/dsh-plugins")
+
+  // Repli quand cwd manque : on ne doit jamais rendre un libellé vide.
+  let sansCwd = sessionDeTest(id: "b", cwd: nil, titre: "B", quand: 1)
+  #expect(!Regroupement.nomEspace(sansCwd).nom.isEmpty)
+}
+
+@Test("Les sous-agents sont identifiés et ne comptent pas comme sessions racines")
+func sousAgents() {
+  let sessions = [
+    sessionDeTest(id: "racine", cwd: "/tmp/p", titre: "Racine", quand: 5_000, profondeur: 0),
+    sessionDeTest(id: "enfant", cwd: "/tmp/p", titre: "Enfant", quand: 6_000, profondeur: 1),
+  ]
+  let espace = Regroupement.espaces(sessions)[0]
+  #expect(espace.nbSessions == 2)
+  #expect(Regroupement.estSousAgent(espace.sessions.first { $0.id == "enfant" }!) == true)
+  #expect(Regroupement.estSousAgent(espace.sessions.first { $0.id == "racine" }!) == false)
+  // Un sous-agent n'a pas lui-même de sous-agents à afficher.
+  #expect(Regroupement.sousAgents(de: espace.sessions.first { $0.id == "enfant" }!, dans: espace).isEmpty)
+}
+
+@Test("L'âge s'écrit en unités courtes, comme dans l'interface web")
+func ageLisible() {
+  let maintenant = Date(timeIntervalSince1970: 10_000_000)
+  // Sans nombres magiques : on exprime l'écart en secondes, et la conversion en
+  // millisecondes est faite par le test lui-même. Deux erreurs d'arithmétique
+  // m'ont déjà fait écrire ici des valeurs fausses — l'intention doit être
+  // lisible à la place.
+  func age(_ ecartEnSecondes: Double) -> String {
+    let horodatage = Int((maintenant.timeIntervalSince1970 - ecartEnSecondes) * 1000)
+    return AgeLisible.texte(horodatage, maintenant: maintenant)
+  }
+  #expect(age(0) == "à l'instant")
+  #expect(age(30) == "30s")
+  #expect(age(5 * 60) == "5min")
+  #expect(age(60 * 60) == "1h")
+  #expect(age(24 * 60 * 60) == "1j")
+  #expect(age(3 * 24 * 60 * 60) == "3j")
+  // Une date absente ne doit pas produire de texte trompeur.
+  #expect(AgeLisible.texte(nil, maintenant: maintenant) == "")
+  #expect(AgeLisible.texte(0, maintenant: maintenant) == "")
+}

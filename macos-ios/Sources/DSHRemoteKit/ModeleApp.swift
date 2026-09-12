@@ -580,6 +580,11 @@ public final class ModeleApp {
     filtresActifs ? sessions.filter { $0.vivante == true } : sessions
   }
 
+  /// Sessions regroupées par espace de travail, comme dans l'interface web.
+  public var espaces: [EspaceDeTravail] {
+    Regroupement.espaces(sessionsAffichees)
+  }
+
   private func executer(_ travail: @escaping () async throws -> Void) async {
     enChargement = true
     erreur = nil

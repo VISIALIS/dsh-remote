@@ -230,6 +230,26 @@ d'hôte Tailscale, qui remplace les espaces par des tirets
 afficherait l'icône générique pour un portable. Une machine renommée « bureau »
 retombe sur l'icône générique, ce qui reste correct.
 
+### Arbre des sessions, groupé par espace de travail
+
+L'application reproduit l'arbre de l'interface web plutôt que d'inventer une
+présentation différente pour le même contenu : un dossier par espace de travail,
+ses sessions dessous, les sous-agents en retrait et marqués, et l'âge de chaque
+session (« 1min », « 6h », « 3j »).
+
+Une liste plate de plus de cent sessions mêlant dix projets est illisible : on ne
+cherche pas « une session », on cherche « la session de ce projet ».
+
+Deux choix de données méritent d'être notés :
+
+- **Le nom d'espace vient de `cwd`**, jamais du nom du dossier de projet. DSH
+  encode les chemins en remplaçant les `/` par des `-`, ce qui rend
+  `dsh-plugins` indiscernable de `dsh/plugins` ; un libellé déduit d'un encodage
+  perdant ne doit pas primer sur une valeur exacte.
+- **Le rattachement d'un sous-agent est INDICATIF.** L'en-tête d'un sous-agent ne
+  nomme pas sa session parente : on les place sous l'espace de leur parent, sans
+  prétendre à une exactitude que la donnée ne porte pas.
+
 ### Le piège du jeton : deux secrets de 43 caractères
 
 Le coffre contient **deux** secrets de 43 caractères en base64url :

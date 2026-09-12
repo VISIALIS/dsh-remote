@@ -239,9 +239,42 @@ struct VueConnexion: View {
         Toggle("Sessions vivantes seulement", isOn: $modele.filtresActifs)
       }
 
+      // ── Arbre des sessions, groupé par espace de travail ───────────────────
+      //
+      // Une liste plate de plus de cent sessions mêlant dix projets est
+      // illisible : on ne cherche pas « une session », on cherche « la session
+      // de ce projet ». On reproduit donc l'arbre de l'interface web plutôt que
+      // d'inventer une présentation différente pour le même contenu.
       Section("Sessions (\(modele.sessionsAffichees.count))") {
-        ForEach(modele.sessionsAffichees, id: \.id) { session in
-          LigneSession(session: session).tag(session)
+        ForEach(modele.espaces) { espace in
+          DisclosureGroup {
+            ForEach(espace.sessions, id: \.id) { session in
+              if Regroupement.estSousAgent(session) {
+                HStack(spacing: 6) {
+                  // Les sous-agents sont en retrait et marqués, comme dans
+                  // l'interface web : ce sont des sessions déléguées, pas des
+                  // conversations ouvertes par l'utilisateur.
+                  Image(systemName: "arrow.turn.down.right")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                  LigneSession(session: session).tag(session)
+                }
+                .padding(.leading, 14)
+              } else {
+                LigneSession(session: session).tag(session)
+              }
+            }
+          } label: {
+            HStack(spacing: 8) {
+              Image(systemName: "folder")
+                .foregroundStyle(Color.accentColor)
+              Text(espace.nom).font(.body)
+              Spacer()
+              if espace.nbVivantes > 0 {
+                Text("\(espace.nbVivantes)").font(.caption2).foregroundStyle(.secondary)
+              }
+            }
+          }
         }
       }
     }
@@ -272,16 +305,16 @@ struct LigneSession: View {
           .font(.body)
       }
       HStack(spacing: 8) {
-        if let cwd = session.resume.cwd {
-          Text((cwd as NSString).lastPathComponent)
-            .lineLimit(1)
-        }
         if let evenements = session.resume.nbEnregistrements {
           Text("\(evenements) évts")
         }
         if let octets = session.octets {
           Text(ByteCountFormatter.string(fromByteCount: Int64(octets), countStyle: .file))
         }
+        Spacer()
+        // L'âge, comme dans l'interface web : situe une session d'un coup d'œil.
+        Text(AgeLisible.texte(session.resume.dernierEvenementLe))
+          .foregroundStyle(.tertiary)
       }
       .font(.caption)
       .foregroundStyle(.secondary)
