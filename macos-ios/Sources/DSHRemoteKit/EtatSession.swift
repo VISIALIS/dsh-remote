@@ -17,6 +17,11 @@ public enum EtatSession: Sendable, Equatable {
   /// les deux fait paraître anormale une situation qui ne l'est pas.
   case inactive
   /// Session présente sur disque mais absente du processus : état INCONNU.
+  ///
+  /// CE CAS NE DOIT PAS RESSEMBLER À UN AUTRE. Il était affiché comme un point
+  /// vert, c'est-à-dire comme une session TERMINÉE : l'interface affirmait donc
+  /// quelque chose qu'elle ne savait pas. Un état inconnu se montre comme
+  /// inconnu — anneau vide — et jamais comme une conclusion.
   case inconnue
 
   public init(statut: String?, vivante: Bool?) {

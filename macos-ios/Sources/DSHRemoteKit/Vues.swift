@@ -367,7 +367,12 @@ struct PastilleEtat: View {
       case .inactive:
         Circle().fill(Color.blue).frame(width: 7, height: 7)
       case .inconnue:
-        Circle().fill(Color.green).frame(width: 7, height: 7)
+        // Anneau vide, et non point plein : l'état n'est pas connu, et cela doit
+        // se voir. Un point vert ici affirmerait « terminée », ce que le serveur
+        // n'a pas dit.
+        Circle()
+          .strokeBorder(Color.secondary.opacity(0.6), lineWidth: 1.5)
+          .frame(width: 7, height: 7)
       }
     }
     .frame(width: 10, height: 10)

@@ -230,6 +230,22 @@ d'hôte Tailscale, qui remplace les espaces par des tirets
 afficherait l'icône générique pour un portable. Une machine renommée « bureau »
 retombe sur l'icône générique, ce qui reste correct.
 
+### Trois états, dont un qui ne conclut pas
+
+| Affichage | Sens |
+|---|---|
+| carrés orange qui tournent | `en_cours` — un tour s'exécute |
+| anneau vide | état **inconnu** — la session n'est pas ouverte dans le processus |
+| point bleu | `inactif` — chargée dans le harness, au repos |
+| point vert | le harness n'a plus l'agent : session terminée |
+
+L'anneau vide mérite une explication : dans une première version, l'état inconnu
+s'affichait comme un point **vert**, donc comme une session terminée. L'interface
+affirmait ainsi une conclusion que le serveur n'avait pas donnée — et sur une
+installation où le harness n'avait pas encore rechargé le plugin, TOUTES les
+sessions apparaissaient vertes, ce qui a été signalé comme un défaut. Un état
+inconnu se montre comme inconnu.
+
 ### « Chargée » n'est pas « active »
 
 Le filtre de la liste s'appelle **« Chargées en mémoire seulement »**, et non
