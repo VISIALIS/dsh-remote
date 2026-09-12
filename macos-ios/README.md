@@ -205,6 +205,31 @@ Marche à suivre, une seule fois :
 4. Sur l'iPhone, si iOS le demande : **Réglages ▸ Général ▸ VPN et gestion de
    l'appareil**, faire confiance au profil de développeur.
 
+### Serveur mémorisé, et icône selon le type de machine
+
+**L'adresse est mémorisée** entre deux lancements (`UserDefaults`), avec le nom
+lisible du serveur. Ressaisir 40 caractères à chaque ouverture est la friction
+qui fait abandonner une application. Un bouton **✕** permet d'oublier le serveur
+— sans quoi une adresse enregistrée par erreur ne se retirerait qu'en
+désinstallant.
+
+**Le jeton, lui, n'est PAS mémorisé là** : il vit au trousseau, qui est fait pour
+cela. `UserDefaults` est un fichier de préférences lisible par une sauvegarde, ce
+qui n'est pas un endroit pour un secret.
+
+**L'icône suit le type de machine** : `macbook.air`, `macbook.pro`, `macmini`,
+`macstudio`, `desktopcomputer` en repli. Elle apparaît à côté de l'adresse et
+dans l'en-tête du journal.
+
+**LIMITE ASSUMÉE.** Tailscale ne rapporte pas le modèle matériel :
+`tailscale status --json` donne le système d'exploitation, pas le châssis.
+L'icône se déduit donc du NOM, que macOS construit à partir du modèle — et la
+détection gère les deux formes, le nom (« MacBook Air de … ») comme le nom
+d'hôte Tailscale, qui remplace les espaces par des tirets
+(`macbook-air-de-…`, `macmini`). Sans ce repli, une adresse saisie à la main
+afficherait l'icône générique pour un portable. Une machine renommée « bureau »
+retombe sur l'icône générique, ce qui reste correct.
+
 ### Le piège du jeton : deux secrets de 43 caractères
 
 Le coffre contient **deux** secrets de 43 caractères en base64url :

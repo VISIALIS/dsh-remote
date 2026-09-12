@@ -110,13 +110,33 @@ struct VueConnexion: View {
 
       Section(modele.serveurs.isEmpty ? "Serveur" : "Adresse") {
         LabeledContent("Adresse") {
-          TextField(modele.adresseExemple, text: $modele.adresse)
-            .textFieldStyle(.roundedBorder)
-            #if os(iOS)
-              .textInputAutocapitalization(.never)
-              .autocorrectionDisabled()
-              .keyboardType(.URL)
-            #endif
+          HStack(spacing: 8) {
+            // L'icône dit à quelle machine on parle, d'un coup d'œil.
+            Image(systemName: modele.symboleServeur)
+              .font(.title3)
+              .foregroundStyle(modele.adresse.isEmpty ? Color.secondary : Color.accentColor)
+            TextField(modele.adresseExemple, text: $modele.adresse)
+              .textFieldStyle(.roundedBorder)
+              #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+              #endif
+            if !modele.adresse.isEmpty {
+              Button {
+                modele.oublierServeur()
+              } label: {
+                Image(systemName: "xmark.circle")
+              }
+              .buttonStyle(.borderless)
+              .help("Oublier ce serveur")
+            }
+          }
+        }
+        if let nom = modele.nomServeur, !nom.isEmpty {
+          Label(nom, systemImage: modele.symboleServeur)
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
         // Le champ du jeton est TOUJOURS visible.
         //

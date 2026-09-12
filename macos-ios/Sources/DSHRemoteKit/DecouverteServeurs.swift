@@ -33,13 +33,20 @@ public struct ServeurMac: Sendable, Identifiable, Hashable {
   /// « MacMini ». C'est une heuristique d'affichage, assumée : une machine
   /// renommée « bureau » retombera sur l'icône générique, ce qui reste correct.
   public var symbole: String {
-    let minuscule = nom.lowercased()
+    // Deux formes à reconnaître : le NOM de la machine (« MacBook Air de … »)
+    // et le NOM D'HÔTE Tailscale, qui remplace les espaces par des tirets
+    // (`macbook-air-de-…`, `macmini`). Sans ce repli, une adresse saisie à la
+    // main afficherait l'icône générique pour un portable.
+    let minuscule = nom.lowercased().replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "_", with: " ")
     if minuscule.contains("macbook air") { return "macbook.air" }
     if minuscule.contains("macbook pro") { return "macbook.pro" }
     if minuscule.contains("macbook") { return "macbook" }
-    if minuscule.contains("macmini") || minuscule.contains("mac mini") { return "macmini" }
-    if minuscule.contains("imac") { return "desktopcomputer" }
-    if minuscule.contains("studio") { return "macstudio" }
+    // « macmini » et « mac mini » se ramènent tous deux à « macmini » après
+    // retrait des séparateurs.
+    let compact = minuscule.replacingOccurrences(of: " ", with: "")
+    if compact.contains("macmini") { return "macmini" }
+    if compact.contains("macstudio") { return "macstudio" }
+    if compact.contains("imac") { return "desktopcomputer" }
     return "desktopcomputer"
   }
 

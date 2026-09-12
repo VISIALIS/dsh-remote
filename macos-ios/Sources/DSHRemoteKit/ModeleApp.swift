@@ -54,6 +54,54 @@ public final class ModeleApp {
 
   public init() {
     chargerConfiguration()
+    chargerPreference()
+  }
+
+  /// Mémorise l'adresse et le nom du serveur choisis, entre deux lancements.
+  ///
+  /// POURQUOI. Ressaisir une adresse de 40 caractères à chaque ouverture est le
+  /// genre de friction qui fait abandonner une application. On retient donc le
+  /// dernier serveur utilisé.
+  ///
+  /// CE QUI N'EST PAS MÉMORISÉ ICI : le jeton. Il vit au trousseau sur iOS, qui
+  /// est fait pour cela ; `UserDefaults` est un fichier de préférences lisible
+  /// par une sauvegarde, ce qui n'est pas un endroit pour un secret.
+  private static let cleAdresse = "dsh-remote.derniere-adresse"
+  private static let cleNomServeur = "dsh-remote.dernier-nom-serveur"
+
+  private func chargerPreference() {
+    let defaults = UserDefaults.standard
+    if let memorisee = defaults.string(forKey: Self.cleAdresse), !memorisee.isEmpty {
+      adresse = memorisee
+    }
+    nomServeur = defaults.string(forKey: Self.cleNomServeur)
+  }
+
+  private func memoriserPreference() {
+    let defaults = UserDefaults.standard
+    defaults.set(adresse, forKey: Self.cleAdresse)
+    if let nomServeur { defaults.set(nomServeur, forKey: Self.cleNomServeur) }
+  }
+
+  /// Nom lisible du serveur visé, mémorisé avec l'adresse.
+  ///
+  /// Sert à l'icône : sans nom, on ne peut que deviner le type de machine, et
+  /// un Mac mini afficherait l'icône d'un portable.
+  public private(set) var nomServeur: String?
+
+  /// Symbole du serveur visé, déduit de son nom.
+  ///
+  /// Tailscale ne rapporte PAS le modèle matériel — `tailscale status --json`
+  /// donne le système, pas le châssis. L'icône se déduit donc du NOM, que macOS
+  /// construit à partir du modèle (« MacBook Air de … », « MacMini »). C'est une
+  /// heuristique d'affichage, assumée : une machine renommée « bureau » retombe
+  /// sur l'icône générique, ce qui reste correct.
+  public var symboleServeur: String {
+    if let nomServeur, !nomServeur.isEmpty {
+      return ServeurMac(nom: nomServeur, nomDNS: "", enLigne: true).symbole
+    }
+    // Repli : le nom d'hôte lui-même, quand il est parlant.
+    return ServeurMac(nom: adresse, nomDNS: "", enLigne: true).symbole
   }
 
   /// Lance la découverte hors du fil principal.
@@ -77,7 +125,9 @@ public final class ModeleApp {
   /// Le champ reste modifiable pour les cas que la découverte ne couvre pas.
   public func choisir(_ serveur: ServeurMac) {
     serveurChoisi = serveur
+    nomServeur = serveur.nom
     adresse = serveur.adresse
+    memoriserPreference()
   }
 
   /// Un appui sur une machine AGIT : il choisit et se connecte, parce que c'est
@@ -348,6 +398,24 @@ public final class ModeleApp {
     guard nettoye.count >= 20 else { return false }
     jetonSaisi = nettoye
     return true
+  }
+
+  /// Oublie le serveur mémorisé, adresse comprise.
+  ///
+  /// Sans cela, une adresse mémorisée par erreur ne pourrait être retirée qu'en
+  /// désinstallant l'application.
+  public func oublierServeur() {
+    adresse = ""
+    nomServeur = nil
+    serveurChoisi = nil
+    sessions = []
+    journal = []
+    sessionOuverte = nil
+    etatAdresse = .inconnu
+    erreur = nil
+    let defaults = UserDefaults.standard
+    defaults.removeObject(forKey: Self.cleAdresse)
+    defaults.removeObject(forKey: Self.cleNomServeur)
   }
 
   /// Efface le jeton saisi, en mémoire et au trousseau.

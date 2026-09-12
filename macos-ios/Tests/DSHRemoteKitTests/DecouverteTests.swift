@@ -68,6 +68,22 @@ func icones() {
   #expect(ServeurMac(nom: "bureau", nomDNS: "e", enLigne: true).symbole == "desktopcomputer")
 }
 
+@Test("Le type de machine se déduit du nom, y compris depuis une adresse")
+func iconeDepuisAdresse() {
+  // Depuis une adresse saisie à la main, on n'a que le nom d'hôte. Les
+  // séparateurs doivent être neutralisés, sinon un Mac mini s'afficherait en
+  // machine générique.
+  #expect(ServeurMac(nom: "http://macmini.exemple.ts.net", nomDNS: "", enLigne: true).symbole == "macmini")
+  #expect(ServeurMac(nom: "http://mac-mini.exemple.ts.net", nomDNS: "", enLigne: true).symbole == "macmini")
+  #expect(ServeurMac(nom: "Mac mini de la maison", nomDNS: "", enLigne: true).symbole == "macmini")
+  // La famille « macbook » est reconnue sous sa forme à tirets, sans avoir à
+  // écrire le nom d'une machine réelle dans un test.
+  #expect(ServeurMac(nom: "http://macbook-x.exemple.ts.net", nomDNS: "", enLigne: true).symbole == "macbook")
+  #expect(ServeurMac(nom: "http://mac-studio.exemple.ts.net", nomDNS: "", enLigne: true).symbole == "macstudio")
+  // Repli sûr : jamais d'icône vide, même pour un nom sans rapport.
+  #expect(ServeurMac(nom: "http://bureau.exemple.ts.net", nomDNS: "", enLigne: true).symbole == "desktopcomputer")
+}
+
 @Test("Une sortie illisible ne fait pas échouer la découverte")
 func sortieIllisible() {
   #expect(DecouverteServeurs.analyser(Data("pas du json".utf8)).isEmpty)
