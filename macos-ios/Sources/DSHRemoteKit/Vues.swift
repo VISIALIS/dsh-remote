@@ -53,11 +53,23 @@ struct VueConnexion: View {
               .keyboardType(.URL)
             #endif
         }
-        if !modele.jetonDisponible {
-          LabeledContent("Jeton") {
-            SecureField("jeton d'appareil", text: $modele.jetonSaisi)
-              .textFieldStyle(.roundedBorder)
-          }
+        // Le champ du jeton est TOUJOURS visible.
+        //
+        // Il était auparavant conditionné par `!modele.jetonDisponible`, c'est-à-dire
+        // caché dès qu'un jeton était présent. Le défaut : `jetonDisponible` devient
+        // vrai dès le PREMIER caractère saisi, donc le champ disparaissait sous les
+        // doigts de l'utilisateur, qui ne pouvait jamais terminer sa saisie. Un
+        // formulaire dont un champ s'évapore à la frappe n'est pas un formulaire.
+        //
+        // Afficher aussi l'état permet de comprendre pourquoi « Se connecter »
+        // fonctionne sans rien saisir sur le Mac.
+        LabeledContent("Jeton") {
+          SecureField(modele.jetonDisponible ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil", text: $modele.jetonSaisi)
+            .textFieldStyle(.roundedBorder)
+            #if os(iOS)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+            #endif
         }
         HStack {
           Button("Se connecter") {

@@ -22,6 +22,19 @@
 # connexion en HTTP vers un nom de domaine est refusee par iOS. Un echec de
 # build serait plus genant que la cause qu'il signale.
 #
+# ATTENTION — PIEGE QUI A COUTE DEUX ALLERS-RETOURS.
+#
+# Un build INCREMENTAL ne relance pas toujours cette phase, et le plist reste
+# alors celui du build precedent : l'exception disparait SANS AUCUN SIGNAL, et
+# l'application installee echoue en `-1022` (App Transport Security) comme si
+# le mecanisme n'avait jamais fonctionne. C'est exactement ce qui s'est produit.
+#
+# Regle : apres toute modification de ce script ou de Config/DomaineTailnet,
+# construire avec `clean build`, et VERIFIER le plist du paquet produit avant
+# d'installer :
+#
+#   plutil -p <app>/Info.plist | grep -A4 NSAppTransportSecurity
+#
 # Pour retirer ce script du projet : supprimer la phase « Exception ATS » dans
 # Xcode. L'application redevient strictement ATS, ce qui suffit si l'on publie
 # en HTTPS (`tailscale serve --https 443`).
@@ -57,8 +70,20 @@ fi
 /usr/libexec/PlistBuddy -c "Delete :NSAppTransportSecurity" "${PLIST}" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" "${PLIST}"
 /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSExceptionDomains dict" "${PLIST}"
+
+# On declare le domaine ET son nom court. Tailscale repond aux deux — verifie :
+# `http://<nom-court>` et `http://<nom-court>.<tailnet>.ts.net` rendent tous
+# deux 200 — mais App Transport Security apparie les domaines LITTERALEMENT.
+# N'en declarer qu'un laisserait l'autre echouer selon ce que l'utilisateur
+# saisit, avec une erreur qui ne dit pas qu'il s'agit d'une exception ATS.
 /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSExceptionDomains:${DOMAINE} dict" "${PLIST}"
 /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSExceptionDomains:${DOMAINE}:NSExceptionAllowsInsecureHTTPLoads bool true" "${PLIST}"
+
+NOM_COURT="${DOMAINE%%.*}"
+if [ "${NOM_COURT}" != "${DOMAINE}" ]; then
+  /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSExceptionDomains:${NOM_COURT} dict" "${PLIST}" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSExceptionDomains:${NOM_COURT}:NSExceptionAllowsInsecureHTTPLoads bool true" "${PLIST}" 2>/dev/null || true
+fi
 
 # Le domaine n'est PAS affiche : il n'a pas a se retrouver dans un journal de
 # build, qui peut etre partage ou conserve.

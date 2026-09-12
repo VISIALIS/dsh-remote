@@ -108,10 +108,14 @@ public final class ModeleApp {
   }
 
   /// Enregistre le jeton saisi : au trousseau sur iOS, en mémoire sur macOS.
+  ///
+  /// N'est appelé qu'à la SOUMISSION du formulaire, jamais à la frappe : un
+  /// enregistrement par caractère persistait un jeton tronqué, et faisait
+  /// croire à un jeton disponible alors que la saisie n'était pas terminée.
   public func enregistrerJeton(_ valeur: String) {
     jetonSaisi = valeur.trimmingCharacters(in: .whitespacesAndNewlines)
     #if !os(macOS)
-      Trousseau.ecrire(jetonSaisi)
+      if !jetonSaisi.isEmpty { Trousseau.ecrire(jetonSaisi) }
     #endif
   }
 
@@ -123,7 +127,8 @@ public final class ModeleApp {
       erreur = "Aucun jeton d'appareil. Récupérez-le dans la sortie du harness sur le Mac, au premier chargement du plugin."
       return
     }
-    jetonSaisi = jeton
+    // Le jeton n'est confié au trousseau qu'ici, une fois la saisie terminée.
+    enregistrerJeton(jeton)
     await executer {
       let client = try RemoteClient(adresse: self.adresse, jeton: jeton)
       let sante = try await client.verifierSante()
@@ -235,9 +240,40 @@ public final class ModeleApp {
     do {
       try await travail()
     } catch {
-      self.erreur = String(describing: error)
+      let message = String(describing: error)
+      self.erreur = message
+      Self.journaliserDiagnostic(adresse: adresse, message: message)
     }
     enChargement = false
+  }
+
+  /// Écrit la dernière erreur de connexion dans le conteneur de l'application.
+  ///
+  /// POURQUOI. Un message d'erreur affiché à l'écran d'un téléphone est difficile
+  /// à rapporter fidèlement, et il ne contient pas toujours le code qui
+  /// distingue un refus App Transport Security (`-1022`) d'un DNS injoignable
+  /// (`-1003`) ou d'un délai dépassé (`-1001`) — trois causes aux corrections
+  /// opposées. Ce fichier permet de lire la cause EXACTE depuis le Mac :
+  ///
+  ///   xcrun devicectl device copy from --device <id> --domain-type appDataContainer \
+  ///     --domain-identifier org.example.DSHRemote \
+  ///     --source Documents/diagnostic.json --destination /tmp/diagnostic.json
+  ///
+  /// Il est écrasé à chaque échec : jamais de croissance, jamais d'historique.
+  /// Le jeton n'y figure jamais, ni le contenu d'une session.
+  private static func journaliserDiagnostic(adresse: String, message: String) {
+    guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+      return
+    }
+    let contenu: [String: String] = [
+      "adresse": adresse,
+      "message": message,
+      "date": ISO8601DateFormatter().string(from: Date()),
+    ]
+    guard let donnees = try? JSONSerialization.data(withJSONObject: contenu, options: [.prettyPrinted]) else {
+      return
+    }
+    try? donnees.write(to: documents.appendingPathComponent("diagnostic.json"), options: .atomic)
   }
 }
 

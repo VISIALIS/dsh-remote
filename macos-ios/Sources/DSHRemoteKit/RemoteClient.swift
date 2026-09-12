@@ -68,7 +68,26 @@ public actor RemoteClient {
     do {
       (donnees, reponse) = try await session.data(for: requete)
     } catch {
-      throw ErreurRemote.transport(error.localizedDescription)
+      // On remonte le CODE et le domaine de l'erreur, pas seulement son texte.
+      // Un « connexion au serveur impossible » générique ne permet pas de
+      // distinguer un refus App Transport Security d'un DNS injoignable ou
+      // d'un délai dépassé — et ces trois causes demandent des corrections
+      // opposées. C'est ce qui a rendu la première panne si longue à situer.
+      let ns = error as NSError
+      var detail = "\(ns.domain) \(ns.code)"
+      if let url = ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL {
+        detail += " vers \(url.host ?? "?")"
+      }
+      let sous = ns.userInfo[NSUnderlyingErrorKey] as? NSError
+      if let sous { detail += " | sous-jacent: \(sous.domain) \(sous.code) \(sous.localizedDescription)" }
+      else { detail += " | \(ns.localizedDescription)" }
+      if ns.code == NSURLErrorAppTransportSecurityRequiresSecureConnection {
+        detail += " | CAUSE: App Transport Security refuse le clair vers cet hote"
+      }
+      if ns.code == NSURLErrorCannotFindHost { detail += " | CAUSE: nom d'hote non resolu" }
+      if ns.code == NSURLErrorCannotConnectToHost { detail += " | CAUSE: rien n'ecoute sur cet hote et ce port" }
+      if ns.code == NSURLErrorTimedOut { detail += " | CAUSE: delai depasse, hote injoignable" }
+      throw ErreurRemote.transport(detail)
     }
     guard let http = reponse as? HTTPURLResponse else {
       throw ErreurRemote.transport("réponse sans statut HTTP")
