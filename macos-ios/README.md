@@ -149,30 +149,36 @@ clair y est bloqué — d'où une exception `NSExceptionDomains` **ciblée sur c
 domaine** dans `App/Info.plist`, et non `NSAllowsArbitraryLoads` quiouvrirait le clair
 vers n'importe quel hôte.
 
-**Le HTTP en clair exige une exception ATS — et elle n'est pas livrée ici.**
+**L'exception ATS est injectée dans le paquet construit, pas dans les sources.**
 
-ATS bloque le clair vers un nom de domaine qualifié. Or l'exception impose d'**écrire
-le nom du domaine en clair** dans `App/Info.plist`, et un nom de machine ou de tailnet
-n'a rien à faire dans l'histoire du dépôt (RÈGLE #0).
+Le HTTP en clair vers un nom de domaine exige une exception, et celle-ci impose d'écrire
+le nom du tailnet — ce que la RÈGLE #0 interdit dans le dépôt. J'ai d'abord tenté
+`$(DSH_ATS_DOMAINE)` depuis un xcconfig : **mesuré, cela ne marche pas**, Xcode n'étend
+pas les variables de build dans les **clés** d'un plist (clé littérale : intacte ; clé
+variable : reste littérale).
 
-J'ai tenté de l'injecter par `$(DSH_ATS_DOMAINE)` depuis un xcconfig local. **Mesuré :
-cela ne marche pas** — Xcode n'étend pas les variables de build dans les **clés** d'un
-plist. Une clé littérale traverse le prétraitement intacte, une clé variable reste
-littérale (`$(DSH_ATS_DOMAINE)`), donc l'exception serait inopérante. Le mécanisme a été
-retiré plutôt que livré mort.
-
-**La solution propre, sans aucune exception : publier en HTTPS.**
+La phase de build « Exception ATS » (`Scripts/injecter-exception-ats.sh`) résout le
+problème autrement : elle modifie le `.app` **construit**, jamais les sources. Le domaine
+vient de `Config/DomaineTailnet`, fichier local ignoré par git :
 
 ```bash
-tailscale serve --https 443 http://127.0.0.1:3080
+printf 'mon-mac.mon-tailnet.ts.net\n' > Config/DomaineTailnet
 ```
 
-Tailscale signe un vrai certificat pour le nom MagicDNS ; l'application vise alors
-`https://<nom-magicdns>/` et App Transport Security est satisfait.
+Le script valide la forme du domaine, et **ne fait pas échouer le build** si le fichier
+est absent : sans exception, l'application se construit et se lance, seule la connexion
+HTTP vers un nom de domaine est refusée.
 
-**À défaut**, ajouter localement le bloc `NSExceptionDomains` avec le domaine en clair :
-il ne sera pas committé, et l'application construite le contiendra — ce qui est
-inévitable, un binaire signé portant de toute façon ses réglages.
+Deux pièges rencontrés, notés pour la suite :
+
+- le bac à sable des scripts de build (`ENABLE_USER_SCRIPT_SANDBOXING`) empêchait le
+  script de s'exécuter — désactivé pour cette cible ;
+- **un build incrémental ne relance pas la phase** : le plist restait celui d'avant, ce
+  qui a masqué le résultat. Vérifier après un `clean build`.
+
+**Solution alternative, sans aucune exception** : publier en HTTPS, que Tailscale signe
+d'un vrai certificat — `tailscale serve --https 443 http://127.0.0.1:3080` — puis viser
+`https://<nom-magicdns>/`. Dans ce cas, retirer la phase « Exception ATS » du projet.
 
 ### Pour installer sur l'iPhone : une action manuelle, inévitable
 
