@@ -390,6 +390,10 @@ export function apply(ctx, config) {
 
   const sessions = ctx.get('sessions')
   const agents = ctx.get('agents')
+  // Seul service qui sache ADRESSER un prompt a une session par son identifiant.
+  // Lu par `ctx.get` puis teste : sans lui, la lecture continue de fonctionner et
+  // seule l'ecriture se declare indisponible.
+  const controller = ctx.get('sessionController')
 
   // Le harness ne publie pas de service de chemins : `dsh-home-paths` est une
   // bibliotheque de fonctions, pas un service Cordis. On refait donc la
@@ -717,7 +721,10 @@ export function apply(ctx, config) {
           sessions: true,
           journal: true,
           flux: true,
-          ecriture: false,
+          ecriture: controller !== null && typeof controller?.prompt === 'function',
+          // Les approbations ne sont PAS exposees : le seam d'approbation de DSH
+          // n'admet qu'un repondeur terminal par deploiement, et l'interface web
+          // l'occupe deja. Repondre depuis l'iPhone exigerait de le remplacer.
           approbations: false,
         },
       })
@@ -726,9 +733,17 @@ export function apply(ctx, config) {
   })
 
   const repondreListe = async (req, res, demande) => {
-    const resultat = await listerSessions(demande)
-    envoyer(res, 200, { protocole: VERSION_PROTOCOLE, ...resultat })
-    tracer(req, 200, resultat.total === undefined ? '' : resultat.total + ' sessions')
+    // Toute erreur est convertie en reponse JSON explicite. Une exception non
+    // rattrapee ici deviendrait un 400 vide, indiscernable d'une requete
+    // malformee — et donc indebogable depuis le client.
+    try {
+      const resultat = await listerSessions(demande)
+      envoyer(res, 200, { protocole: VERSION_PROTOCOLE, ...resultat })
+      tracer(req, 200, resultat.total === undefined ? '' : resultat.total + ' sessions')
+    } catch (erreur) {
+      envoyer(res, 500, { erreur: 'listage impossible', detail: String(erreur?.message ?? erreur) })
+      tracer(req, 500)
+    }
   }
 
   enregistrer({
@@ -765,6 +780,73 @@ export function apply(ctx, config) {
         envoyer(res, 400, { erreur: 'identifiant de session manquant' })
         return tracer(req, 400)
       }
+      const action = segments[1] === undefined ? 'journal' : segments[1]
+
+      // ── Envoyer un prompt : la SEULE route qui ecrit dans le harness ───────
+      if (action === 'prompt') {
+        if (req.method !== 'POST') {
+          envoyer(res, 405, { erreur: 'methode non autorisee' })
+          return tracer(req, 405)
+        }
+        // `controller?.` et non `controller.` : `ctx.get` rend `undefined` quand le
+        // service est absent, et lire une propriete de `undefined` LEVE. L'exception
+        // remontait au serveur web, qui la convertissait en `400` vide — ni corps,
+        // ni trace, ni cause. C'est ce qui a rendu cette panne si longue a voir.
+        if (typeof controller?.prompt !== 'function') {
+          envoyer(res, 503, {
+            erreur: 'ecriture indisponible',
+            detail: 'le service sessionController n est pas monte dans cette composition',
+          })
+          return tracer(req, 503)
+        }
+        if (!estVivante(identifiant)) {
+          // Un agent froid ne peut pas recevoir de prompt : le harness le dit
+          // lui-meme. On le dit AVANT d'ecrire, avec la marche a suivre.
+          envoyer(res, 409, {
+            erreur: 'session non vivante',
+            detail: "cette session n'est pas ouverte dans ce processus: ouvrez-la d'abord dans l'interface du Mac",
+          })
+          return tracer(req, 409)
+        }
+        lireCorps(req)
+          .then(async (corps) => {
+            if (corps === null) {
+              envoyer(res, 400, { erreur: 'corps JSON invalide' })
+              return
+            }
+            const texte = typeof corps.texte === 'string' ? corps.texte : ''
+            if (texte.trim().length === 0) {
+              envoyer(res, 400, { erreur: 'texte vide' })
+              return
+            }
+            const mode = corps.mode === 'steer' ? 'steer' : 'queue'
+            const valeur = await controller.prompt(
+              {
+                requestId: randomBytes(16).toString('hex'),
+                sessionId: identifiant,
+                mode,
+                content: [{ type: 'text', text: texte }],
+              },
+              new AbortController().signal,
+            )
+            envoyer(res, 202, { protocole: VERSION_PROTOCOLE, accepte: valeur?.accepted === true, mode })
+            // Jamais le TEXTE du prompt dans le journal : il peut contenir
+            // n'importe quoi, y compris ce que l'utilisateur ne veut pas voir
+            // recopie dans un terminal. Seule sa longueur est tracee.
+            tracer(req, 202, 'prompt ' + mode + ', ' + texte.length + ' caracteres')
+          })
+          .catch((erreur) => {
+            envoyer(res, 500, { erreur: 'envoi impossible', detail: String(erreur?.message ?? erreur) })
+            tracer(req, 500)
+          })
+        return
+      }
+
+      if (req.method !== 'POST' && req.method !== 'GET') {
+        envoyer(res, 405, { erreur: 'methode non autorisee' })
+        return tracer(req, 405)
+      }
+
       lireCorps(req)
         .then((corps) => {
           if (corps === null) return envoyer(res, 400, { erreur: 'corps JSON invalide' })

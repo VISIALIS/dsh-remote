@@ -104,6 +104,7 @@ d'URL — un paramètre finit dans un journal d'accès ou un historique.
 | `/dsh-remote/v1/sante` | `GET` | Poignée de main : version du protocole, capacités. Aucune donnée. |
 | `/dsh-remote/v1/sessions` | `GET`, `POST` | Liste des sessions, de la plus récente à la plus ancienne. |
 | `/dsh-remote/v1/session/<id>` | `POST` | Une page du journal d'une session. |
+| `/dsh-remote/v1/session/<id>/prompt` | `POST` | Envoyer un prompt. **Déclaré mais non opérationnel** — voir plus bas. |
 | `/dsh-remote/v1/flux` | `Upgrade` | WebSocket temps réel : une base, puis un message par écriture du journal. |
 
 ### `POST /v1/sessions`
@@ -117,6 +118,39 @@ d'URL — un paramètre finit dans un journal d'accès ou un historique.
 ```json
 { "depuis": 0, "limite": 200, "types": ["user/message", "assistant/message"] }
 ```
+
+### `POST /v1/session/<id>/prompt` — écrire (déclaré, NON opérationnel)
+
+```json
+{ "texte": "…", "mode": "queue" }
+```
+
+`mode` vaut `queue` (par défaut) ou `steer`.
+
+**Cette route ne fonctionne pas dans la composition `web` actuelle**, et le plugin le
+dit honnêtement plutôt que d'échouer en silence : elle répond `503` avec
+`« le service sessionController n est pas monté dans cette composition »`.
+
+Cause établie par la mesure : `ctx.get('sessionController')` rend `undefined` depuis le
+contexte de ce plugin, alors que le service est bien déclaré
+(`super(ctx, "sessionController", …)`) et que la ligne `session-controller` est bien
+présente dans le bundle `dsh-web-app`. Déclarer `inject: ['sessionController']` ne
+change rien — ce qui exclut une simple question d'ordre d'activation.
+
+Ce qui a été PROUVÉ sur ce chemin : la route s'exécute (journal de démarrage et marqueur
+temporaire), le service est absent, et la réponse est désormais explicite (`503` avec
+corps JSON) au lieu d'un `400` vide.
+
+### Une erreur avalée a coûté une heure de diagnostic
+
+`ctx.get(…)` rend **`undefined`**, pas `null`, quand un service est absent. Le test
+`controller === null` était donc faux, `undefined.prompt` levait, et le serveur web
+convertissait l'exception en **`400` sans corps ni trace**. Depuis un client, cela
+ressemble à une requête malformée — pas à un service manquant, qui était la vraie cause.
+
+Toutes les routes convertissent maintenant leurs erreurs en réponses JSON explicites.
+Règle retenue pour ce dépôt : **ne jamais tester `=== null` sur le résultat de
+`ctx.get`** ; employer `typeof service?.membre !== 'function'`.
 
 ### `Upgrade /v1/flux` — le flux temps réel
 
@@ -280,6 +314,8 @@ limite la surface de casse.
 | Le CODE exige un redémarrage | après modification du fichier et rechargement de la configuration, l'ancien code répondait encore |
 | Le flux pousse de vrais évènements | instance neuve : `base=1`, `evenement=5`, `delta=3`, 0 doublon, ordre croissant, pendant que la session écrivait |
 | La reprise ne renvoie rien de connu | reconnexion avec `depuisSeq` = dernier seq : 0 évènement déjà connu |
+| Le service d'écriture est absent de cette composition | marqueur temporaire : `action=prompt controller=undefined` dans un processus neuf |
+| Le refus d'écriture est explicite | `503` avec `{"erreur":"ecriture indisponible",…}` au lieu d'un `400` vide |
 | Le flux fonctionne depuis Swift | `dsh-remote-ctl <adresse> flux <id>` : 5 évènements et 3 deltas reçus en direct, 0 doublon, curseur conservé |
 | Sans jeton : refus | `401` sur `/v1/sante` et sur l'`Upgrade` WebSocket |
 | Avec `Origin` : refus | `403` |
@@ -300,9 +336,14 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 
 ## Limites connues
 
-- **Lecture seule.** `capacites.ecriture` et `capacites.approbations` valent
-  `false`. Envoyer un prompt, répondre à une approbation ou à une question n'est
-  pas implémenté (jalon 4).
+- **L'écriture n'est PAS opérationnelle.** `capacites.ecriture` vaut `false` : le
+  service `sessionController` est introuvable depuis le contexte du plugin. La route
+  existe, refuse proprement en `503`, et la cause est documentée ci-dessus.
+- **Les approbations ne sont pas exposées, par conception.** Le seam d'approbation de
+  DSH n'admet **qu'un répondeur terminal par déploiement**, et l'interface web occupe
+  déjà cette place : répondre depuis l'iPhone exigerait de la lui retirer. Toute
+  implémentation future devra donc choisir explicitement quel répondeur sert les
+  approbations, ou composer les deux — ce n'est pas un ajout anodin.
 - **Le flux interroge le disque, il n'écoute pas le bus d'évènements interne du
   harness.** La latence est donc celle de l'intervalle de scrutation (750 ms). En
   contrepartie, il suit aussi les sessions écrites par un AUTRE processus — ce que
@@ -327,5 +368,5 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 | 1 | Plugin, protocole, jeton, lecture des journaux, tool Swift de validation | **livré et prouvé** |
 | 2 | Application SwiftUI lecture seule, macOS puis iOS | **livré** — observée sur simulateur iOS, démarrage vérifié sur macOS |
 | 3 | Flux temps réel des événements (`/v1/flux`) | **livré et prouvé** (plugin, client Swift et application) |
-| 4 | Écriture : prompt, approbations, questions | à faire |
+| 4 | Écriture : prompt, approbations, questions | **bloqué** — `sessionController` introuvable depuis le contexte du plugin ; approbations impossibles sans retirer à l'interface web son rôle de répondeur |
 | 5 | Installation et signature iOS (compte développeur, 7 jours sans) | à faire |
