@@ -110,6 +110,56 @@ public final class ModeleApp {
     guard let client else { return }
     guard let liste = try? await client.listerSessions(limite: 200) else { return }
     sessions = liste.sessions
+    observerLesFinsDeTour()
+  }
+
+  // MARK: - Rappels de fin
+
+  /// Sessions dont un tour vient de finir sans que l'utilisateur l'ait vu.
+  ///
+  /// C'est ce qui allume la pastille verte de la liste. La règle complète — et
+  /// ses limites — sont dans `RappelsDeFin` : ici on ne fait que lui donner
+  /// l'observation et retenir le résultat.
+  public private(set) var terminees: Set<String> = []
+  private var rappelsDeFin = RappelsDeFin()
+
+  /// Vrai si une fin de tour non vue mérite la pastille verte.
+  public func aTermine(_ identifiant: String) -> Bool { terminees.contains(identifiant) }
+
+  /// Confronte la liste reçue à la précédente pour détecter les fins de tour.
+  ///
+  /// Appelé APRÈS chaque mise à jour de `sessions`, et jamais avant : la règle
+  /// compare deux observations successives, donc l'ordre compte.
+  private func observerLesFinsDeTour() {
+    let observations = sessions.map {
+      EtatObserve(identifiant: $0.id, enCours: $0.statut == "en_cours")
+    }
+    terminees = rappelsDeFin.observer(observations, regardee: sessionOuverte?.id)
+  }
+
+  /// Efface le rappel d'une session, parce que l'utilisateur l'a ouverte.
+  private func marquerCommeVue(_ identifiant: String) {
+    rappelsDeFin.oublier(identifiant)
+    terminees.remove(identifiant)
+  }
+
+  /// L'utilisateur quitte le journal : la session n'est plus REGARDÉE.
+  ///
+  /// POURQUOI CE N'EST PAS `fermerJournal`. Vider le journal et couper le flux au
+  /// retour ferait clignoter l'écran et perdrait le défilement. Seule change la
+  /// réponse à « es-tu en train de regarder cette session ? » — celle qui décide
+  /// si une fin de tour mérite une pastille verte. Sans cela, revenir à la liste
+  /// laisserait la session marquée « regardée » et son rappel ne s'armerait
+  /// jamais : c'est précisément le cas d'usage (lancer un travail, revenir à la
+  /// liste, attendre la fin).
+  ///
+  /// La garde sur l'identifiant évite le piège du changement de session :
+  /// SwiftUI peut faire disparaître l'ancienne vue APRÈS avoir ouvert la
+  /// nouvelle, et un effacement inconditionnel retirerait celle qu'on vient
+  /// d'ouvrir.
+  public func quitterJournal(_ identifiant: String) {
+    guard sessionOuverte?.id == identifiant else { return }
+    sessionOuverte = nil
   }
 
   /// Vrai quand le suivi temps réel est actif sur la session ouverte.
@@ -625,6 +675,10 @@ public final class ModeleApp {
       self.capacites = sante.capacites
       let liste = try await client.listerSessions(limite: 200)
       self.sessions = liste.sessions
+      // Première observation : elle ne fait que retenir qui travaille. Une
+      // session déjà au repos au chargement ne doit PAS produire de pastille
+      // verte — sinon l'application s'ouvrirait sur une liste de faux rappels.
+      self.observerLesFinsDeTour()
     }
     if erreur == nil {
       demarrerSuivi()
@@ -639,11 +693,14 @@ public final class ModeleApp {
     await executer {
       let liste = try await client.listerSessions(limite: 200)
       self.sessions = liste.sessions
+      self.observerLesFinsDeTour()
     }
     if erreur == nil { demarrerSuivi() }
   }
 
   public func ouvrir(_ session: SessionListee) async {
+    // Ouvrir, c'est voir : le rappel de fin de cette session n'a plus lieu d'être.
+    marquerCommeVue(session.id)
     guard let client else { return }
     await executer {
       let journal = try await client.lireSession(

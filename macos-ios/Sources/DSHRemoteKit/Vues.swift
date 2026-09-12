@@ -300,11 +300,17 @@ struct VueListeSessions: View {
                 Image(systemName: "arrow.turn.down.right")
                   .font(.caption2)
                   .foregroundStyle(.tertiary)
-                LigneSession(session: session).tag(session)
+                LigneSession(
+                  affiche: AfficheLigneSession(
+                    session: session, rappelDeFin: modele.aTermine(session.id))
+                ).tag(session)
               }
               .padding(.leading, 14)
             } else {
-              LigneSession(session: session).tag(session)
+              LigneSession(
+                affiche: AfficheLigneSession(
+                  session: session, rappelDeFin: modele.aTermine(session.id))
+              ).tag(session)
             }
           }
         } label: {
@@ -326,6 +332,7 @@ struct VueListeSessions: View {
         Text("Workspaces")
         Spacer()
         Text("\(modele.sessionsFiltrees.count) session\(modele.sessionsFiltrees.count > 1 ? "s" : "")")
+      }
     }
   }
   }
@@ -333,10 +340,10 @@ struct VueListeSessions: View {
 
 /// Pastille d'état d'une session.
 ///
-/// Trois formes distinctes, pour ne pas confondre trois situations différentes :
-/// des carrés qui tournent quand un tour s'exécute, un point bleu pour une
-/// session ouverte au repos, un point vert pour une session dont le harness
-/// n'a plus l'agent — donc terminée.
+/// Quatre formes distinctes, pour ne pas confondre quatre situations :
+/// des carrés qui tournent quand un tour s'exécute, un **point vert** quand un
+/// tour vient de finir sans être vu, un point bleu pour une session chargée au
+/// repos, un anneau vide quand l'état n'est pas connu.
 struct PastilleEtat: View {
   let etat: EtatSession
   @State private var phase = 0.0
@@ -365,6 +372,10 @@ struct PastilleEtat: View {
           }
         }
         .foregroundStyle(Color.orange)
+      case .terminee:
+        // Le rappel de fin : plein et vert, jamais confondu avec le bleu du
+        // repos. Il s'efface quand la session est ouverte.
+        Circle().fill(Color.green).frame(width: 7, height: 7)
       case .inactive:
         Circle().fill(Color.blue).frame(width: 7, height: 7)
       case .inconnue:
@@ -386,39 +397,74 @@ struct PastilleEtat: View {
   }
 }
 
+/// Ce qu'une ligne de session affiche, en valeurs SIMPLES.
+///
+/// POURQUOI CE TYPE EXISTE — c'est un défaut réel, pas une élégance.
+/// `SessionListee` a une égalité d'IDENTITÉ (projet + identifiant), et c'est
+/// nécessaire : la sélection d'une liste est conservée d'un rafraîchissement à
+/// l'autre, et une égalité par valeur ferait paraître la session sélectionnée
+/// « différente » à chaque fois que son journal grandit — la sélection se
+/// perdrait alors à chaque rafraîchissement de 3 secondes.
+///
+/// Mais SwiftUI se sert de `==` pour décider de REDESSINER une vue. Avec
+/// l'identité seule, une ligne dont le statut change était considérée comme
+/// inchangée : la liste interrogeait le serveur, recevait `inactif`, et
+/// continuait d'afficher les carrés orange et un compteur périmé. Mesuré :
+/// le serveur annonçait 30 enregistrements et la session au repos, l'écran
+/// affichait encore « 27 évts » et l'animation, une minute plus tard.
+///
+/// La ligne reçoit donc des valeurs dont l'égalité est SYNTHÉTISÉE : elles
+/// changent quand l'affichage doit changer. L'identité reste au modèle, la
+/// comparaison d'affichage reste à la vue — chacun son rôle.
+struct AfficheLigneSession: Equatable {
+  let titre: String
+  let etat: EtatSession
+  let evenements: Int?
+  let octets: Int?
+  let age: String
+  let illisible: String?
+
+  init(session: SessionListee, rappelDeFin: Bool) {
+    self.titre = session.titreAffiche
+    self.etat = EtatSession(
+      statut: session.statut, vivante: session.vivante, rappelDeFin: rappelDeFin)
+    self.evenements = session.resume.nbEnregistrements
+    self.octets = session.octets
+    self.age = AgeLisible.texte(session.resume.dernierEvenementLe)
+    self.illisible = session.illisible
+  }
+}
+
 /// Une ligne de la liste : point d'état, titre, projet, volume et date.
 struct LigneSession: View {
-  let session: SessionListee
-
-  private var etat: EtatSession { EtatSession(statut: session.statut, vivante: session.vivante) }
+  let affiche: AfficheLigneSession
 
   var body: some View {
     VStack(alignment: .leading, spacing: 3) {
       HStack(spacing: 6) {
-        PastilleEtat(etat: etat)
-        Text(session.titreAffiche)
+        PastilleEtat(etat: affiche.etat)
+        Text(affiche.titre)
           .lineLimit(1)
           .font(.body)
       }
       HStack(spacing: 8) {
-        if let evenements = session.resume.nbEnregistrements {
+        if let evenements = affiche.evenements {
           Text("\(evenements) évts")
         }
-        if let octets = session.octets {
+        if let octets = affiche.octets {
           Text(ByteCountFormatter.string(fromByteCount: Int64(octets), countStyle: .file))
         }
         Spacer()
         // L'âge, comme dans l'interface web : situe une session d'un coup d'œil.
-        Text(AgeLisible.texte(session.resume.dernierEvenementLe))
+        Text(affiche.age)
           .foregroundStyle(.tertiary)
       }
       .font(.caption)
       .foregroundStyle(.secondary)
-      if let illisible = session.illisible {
+      if let illisible = affiche.illisible {
         Text(illisible).font(.caption2).foregroundStyle(.orange)
       }
     }
     .padding(.vertical, 2)
-    }
   }
 }

@@ -99,23 +99,45 @@ n'épuise pas les moyens praticables.
 
 **Trois voies, par ordre de qualité :**
 
-1. **Le Mac découvre, l'iPhone consomme — VOIE RETENUE.** Une instance DSH sait
-   déjà voir le tailnet (elle a le binaire, ou peut lire son état). Le plugin
-   publie donc la liste des Macs qu'il voit, et l'application la consomme. Zéro
-   dépendance à une API Apple ou à une permission Tailscale : l'iPhone ne
-   découvre rien, il LIT une découverte faite ailleurs. C'est la seule voie qui
-   donne une liste exacte et à jour.
+1. **Le Mac découvre, l'iPhone consomme — VOIE RETENUE, ET LIVRÉE.** Une instance DSH
+   sait déjà voir le tailnet : elle a le binaire. Le plugin publie donc la liste des
+   Macs qu'il voit (`GET /dsh-remote/v1/serveurs`), et l'application la consomme. Zéro
+   dépendance à une API Apple ou à une permission Tailscale : l'iPhone ne découvre
+   rien, il LIT une découverte faite ailleurs. C'est la seule voie qui donne une liste
+   exacte et à jour.
 2. **Balayer des noms candidats.** Le domaine du tailnet se déduit de l'adresse
    que l'utilisateur a déjà saisie ; il ne reste qu'à tester des noms plausibles.
    Fonctionne, mais devine, et le nom d'une machine renommée est introuvable.
+   **Non implémentée** : la voie 1 rend la liste exacte, deviner n'ajoute rien.
 3. **Se souvenir de ce qui a marché.** Une liste de serveurs connus, réutilisable
    et testable d'un appui. C'est le complément naturel de la voie 1, et il
-   fonctionne même hors ligne.
+   fonctionne même hors ligne. **Partiellement en place** : l'adresse ET le nom du
+   dernier serveur sont mémorisés, mais il n'y a pas encore de liste de plusieurs
+   serveurs connus.
 
-**Ce qui est déjà en place** : la liste des machines sait s'afficher avec icône et
-état (`ServeurMac`, `DecouverteServeurs`), la persistance de l'adresse, et le
-message qui explique une liste vide. Seule la SOURCE de la liste manque — ce qui
-est précisément ce que la voie 1 apporte.
+### Ce qui est livré pour la découverte
+
+| Élément | Où |
+|---|---|
+| L'hôte découvre et publie la liste | `GET /dsh-remote/v1/serveurs` (plugin) |
+| Le client la lit | `RemoteClient.listerServeurs()` |
+| Le modèle la consomme | `ModeleApp` : après une connexion réussie, si `capacites.decouverte` |
+| L'ordre des sources | hôte joint d'abord, Tailscale local (`macOS`) seulement en son absence |
+| La liste s'affiche avec icône, état, et « hôte interrogé » | `VueListeSessions` |
+| Une liste vide dit POURQUOI | `ModeleApp.messageListeVide`, qui distingue « l'hôte ne voit personne » de « cette plateforme ne peut pas voir » |
+| Le tout est éprouvable sans interface | `dsh-remote-ctl <adresse> serveurs` |
+
+**Ce que la voie 1 a demandé, et qui ne se devinait pas.** Côté hôte, le CHEMIN du
+binaire Tailscale décide du succès : `/usr/local/bin/tailscale` est un lien symbolique
+vers le binaire de l'application, et par ce lien le CLI échoue (« The current
+bundleIdentifier is unknown to the registry ») alors que le chemin direct rend l'état
+complet du tailnet. La découverte essaie donc ses candidats jusqu'à un **succès**, et
+non jusqu'au premier fichier exécutable.
+
+**Résultat mesuré** : sur le simulateur iPhone 17 Pro, la liste des Macs du tailnet
+s'affiche — trois machines, avec icône, état en ligne/hors ligne, et la mention « hôte
+interrogé » sur celle qui répond. L'application n'exécute aucun processus : elle lit la
+réponse de l'hôte.
 
 ### Installer sur l'iPhone : ce qui bloque, mesuré
 
@@ -242,9 +264,24 @@ désinstallant.
 cela. `UserDefaults` est un fichier de préférences lisible par une sauvegarde, ce
 qui n'est pas un endroit pour un secret.
 
-**L'icône suit le type de machine** : `macbook.air`, `macbook.pro`, `macmini`,
-`macstudio`, `desktopcomputer` en repli. Elle apparaît à côté de l'adresse et
-dans l'en-tête du journal.
+**L'icône suit le type de machine** : `macbook`, `macmini`, `macstudio`,
+`desktopcomputer` en repli. Elle apparaît à côté de l'adresse et dans l'en-tête du
+journal, et à côté de chaque machine de la liste des serveurs.
+
+**DÉFAUT RÉEL, TROUVÉ PAR UNE CAPTURE D'ÉCRAN, PUIS CORRIGÉ.** Une première version
+employait `macbook.air` et `macbook.pro` — qui **ne sont pas des symboles SF** — et
+`imac`, qui n'en est pas un non plus. `Image(systemName:)` ne signale rien dans ce
+cas : il n'affiche **rien**. Résultat : les deux Macs les plus courants (Air et Pro)
+apparaissaient sans icône, et le repli générique n'était jamais atteint puisqu'un nom
+était bien rendu. Les lignes d'un MacBook Air et d'un MacBook Pro sont restées vides à
+l'écran jusqu'à ce que la capture du simulateur le montre. Trois conséquences :
+
+- seuls des symboles qui existent sont employés (`macbook` pour tout portable) ;
+- un test interroge le **catalogue de la plateforme** (`NSImage(systemSymbolName:)`)
+  pour chaque nom que la déduction peut produire — un test qui compare des chaînes ne
+  peut pas voir ce défaut, puisqu'il vérifiait la valeur attendue… qui n'existait pas ;
+- SF Symbols ne distingue pas un Air d'un Pro : l'icône dit « portable » ou « bureau »,
+  ce que la donnée porte réellement.
 
 **LIMITE ASSUMÉE.** Tailscale ne rapporte pas le modèle matériel :
 `tailscale status --json` donne le système d'exploitation, pas le châssis.
@@ -266,20 +303,42 @@ déjà deux sessions en cours. **Un indicateur d'activité qui ne s'actualise pa
 est pire qu'aucun indicateur** : il donne une image fausse avec l'autorité d'une
 mesure.
 
+### Interroger ne suffisait pas : la liste ne se redessinait pas
+
+Le suivi ci-dessus interrogeait bel et bien le serveur — et l'écran restait faux.
+Mesuré : le serveur annonçait la session **au repos** avec **30 enregistrements**,
+et l'écran affichait toujours les carrés orange et « 27 évts », **une minute plus
+tard**. Les 54 interrogations tracées côté hôte ne servaient donc à rien de
+visible.
+
+La cause est une propriété de `SessionListee` qui est nécessaire ailleurs :
+son égalité est une égalité d'**identité** (projet + identifiant). Sans elle, la
+sélection d'une session se perdrait à chaque rafraîchissement de 3 secondes —
+le journal grandit, donc la valeur change, donc la session sélectionnée
+paraîtrait « autre ». Mais SwiftUI se sert de `==` pour décider de **redessiner**
+une vue : une ligne dont seul le statut changeait était considérée comme
+inchangée et n'était jamais redessinée. Le défaut ne se voyait que lorsque la
+liste changeait d'ordre — c'est-à-dire presque jamais.
+
+La ligne reçoit désormais des valeurs simples (`AfficheLigneSession`), dont
+l'égalité est **synthétisée** : l'identité reste au modèle, la comparaison
+d'affichage reste à la vue. C'est la correction qui rend le suivi visible, et
+sans elle la pastille verte n'aurait jamais pu apparaître.
+
 Le rafraîchissement est fréquent parce qu'il est bon marché : la liste ne relit
 pas les journaux, elle relit un résumé mis en cache côté serveur et interroge
 l'état des agents. Il ne touche pas non plus au journal ouvert, pour ne pas
 déplacer la lecture sous les yeux de l'utilisateur, et un échec passager ne
 signale rien — l'utilisateur n'a rien demandé, il ne doit pas être interrompu.
 
-### Trois états, dont un qui ne conclut pas
+### Quatre états, dont un qui ne conclut pas
 
 | Affichage | Sens |
 |---|---|
 | carrés orange qui tournent | `en_cours` — un tour s'exécute |
+| **point vert** | un tour vient de **finir sans être vu** (voir ci-dessous) |
 | anneau vide | état **inconnu** — la session n'est pas ouverte dans le processus |
 | point bleu | `inactif` — chargée dans le harness, au repos |
-| point vert | le harness n'a plus l'agent : session terminée |
 
 L'anneau vide mérite une explication : dans une première version, l'état inconnu
 s'affichait comme un point **vert**, donc comme une session terminée. L'interface
@@ -287,6 +346,41 @@ affirmait ainsi une conclusion que le serveur n'avait pas donnée — et sur une
 installation où le harness n'avait pas encore rechargé le plugin, TOUTES les
 sessions apparaissaient vertes, ce qui a été signalé comme un défaut. Un état
 inconnu se montre comme inconnu.
+
+### La pastille verte : un rappel de fin, pas un état
+
+Le vert ne dit **pas** « terminée » — le bleu dit « au repos ». Il dit : *cette
+session a fini de travailler pendant que tu ne la regardais pas*. C'est le rappel
+de fin de l'interface web, et sa règle a été recopiée de son implémentation
+(`syncCompletedNotifications` du contrôleur de sessions) plutôt que devinée :
+
+1. à la **première** observation d'une session, on retient seulement si elle
+   travaille — une session déjà au repos à l'ouverture de l'application ne
+   produit aucun rappel, sinon la liste s'ouvrirait couverte de points verts ;
+2. la transition **travail → repos** arme le rappel, sauf pour la session que
+   l'utilisateur regarde ;
+3. repasser en travail **désarme** le rappel ;
+4. une session qui quitte la liste (filtre, suppression) perd son rappel ;
+5. **ouvrir** la session efface son rappel : c'est la définition de « vu ».
+
+La règle vit dans `RappelsDeFin`, isolée du modèle et testée sur ses transitions
+— première observation, session regardée, retour en travail, disparition. Ce sont
+les cas qu'une vérification à l'œil ne couvre pas.
+
+**LIMITE ASSUMÉE, la même que celle du web** : ce rappel est en mémoire. Il
+n'observe que ce que l'application voit — une fin de tour survenue pendant que
+l'application était fermée ne produit pas de pastille verte. L'interface web a
+exactement la même limite, son état de rappel étant lui aussi en mémoire.
+
+**Deux différences assumées avec le web**, à savoir :
+
+- le web **masque** la pastille d'une session au repos jamais interrompue ; ici
+  elle reste un point bleu, qui porte une information utile (« le harness la
+  garde en mémoire ») sans jamais la confondre avec un rappel ;
+- le web affiche un état supplémentaire — « demande en attente » (question de
+  l'agent ou approbation) — que ce plugin n'expose pas : répondre à une demande
+  n'est pas possible depuis cette surface, et l'annoncer sans pouvoir y répondre
+  serait pire que de l'ignorer.
 
 ### « Chargée » n'est pas « active »
 
@@ -363,12 +457,17 @@ La connexion automatique au lancement est également désactivée quand l'adress
 est vide : afficher un échec de transport avant toute action de l'utilisateur
 accuse le réseau à tort.
 
-**2. Le bouton « Rafraîchir » ne pouvait rien faire.** La découverte est
-impossible sur iPhone, donc appuyer réassignait une liste vide : ni succès, ni
-erreur, ni changement. Il n'est plus proposé que là où le rafraîchissement change
-quelque chose, et l'action utile — **« Tester l'adresse »** — a été ajoutée : elle
-vérifie l'adresse ET le jeton, puis annonce le résultat (nombre de sessions, ou
-la raison exacte de l'échec). Un bouton sans effet est un mensonge d'interface.
+**2. Le bouton « Rafraîchir » ne pouvait rien faire — il peut de nouveau.** La
+découverte LOCALE est impossible sur iPhone, donc appuyer réassignait une liste vide :
+ni succès, ni erreur, ni changement. Il n'était alors proposé que là où il changeait
+quelque chose, et l'action utile — **« Tester l'adresse »** — avait été ajoutée : elle
+vérifie l'adresse ET le jeton, puis annonce le résultat (nombre de sessions, ou la
+raison exacte de l'échec). Un bouton sans effet est un mensonge d'interface.
+
+Depuis que l'hôte publie la liste, le bouton a de nouveau un effet **dès qu'un serveur
+est joint** : il redemande la liste à l'hôte. Le bouton est donc affiché sur iPhone
+quand une connexion existe, et masqué avant — la règle n'a pas changé, c'est la
+capacité qui a changé.
 
 Ajoute aussi : la découverte part d'une tâche détachée, car la lancer depuis
 l'initialisation du modèle exécutait un processus sur le fil principal et
@@ -515,7 +614,8 @@ Sources/
 │   ├── Evenements.swift   # présentation des événements du journal
 │   ├── Regroupement.swift # arbre des sessions par espace de travail
 │   ├── EtatSession.swift  # pastilles et libellés d'état
-│   ├── DecouverteServeurs.swift
+│   ├── RappelsDeFin.swift # détection des fins de tour non vues (pastille verte)
+│   ├── DecouverteServeurs.swift  # Macs du tailnet : découverte par l'hôte, ou locale sur macOS
 │   ├── FluxSession.swift  # WebSocket temps réel
 │   ├── RemoteClient.swift
 │   ├── ModeleApp.swift    # état de l'application — la vue ne parle jamais au réseau
@@ -525,7 +625,7 @@ Sources/
 └── DSHRemoteCtl/          # tool de validation (macOS)
     └── main.swift
 Tests/
-└── DSHRemoteKitTests/     # décodage des charges utiles réelles + écriture
+└── DSHRemoteKitTests/     # décodage des charges utiles réelles, écriture, rappels de fin
 ```
 
 L'interface vit dans la **bibliothèque**, pas dans une cible d'application : c'est
@@ -593,8 +693,15 @@ inactive.
 | **L'annulation fonctionne depuis le client** | `dsh-remote-ctl <adresse> annuler <id>` → `annulé: true` |
 | **Le refus est traduit, pas affiché en code** | test « Un refus d'écriture est traduit, jamais affiché en code » |
 | **Le journal s'ouvre vraiment dans l'application** | simulateur : « Journal (41 affichés) » là où l'écran restait vide ; côté hôte, `POST /v1/session/<id> -> 200` |
+| **La liste se redessine quand l'état change** | avant correction : serveur à `inactif` / 30 évts, écran figé sur l'animation et « 27 évts » une minute plus tard ; après : 38 évts et la pastille à jour |
+| **La pastille verte apparaît à la fin d'un tour non vu** | capture du simulateur : carrés orange pendant le tour, **point vert** après, sans avoir ouvert la session |
+| **Elle s'efface quand on ouvre la session** | ouvrir la session puis revenir à la liste : point bleu, plus de vert — et il ne revient pas |
 | **Le flux alimente l'écran ouvert** | la même capture passe de 41 à 48 enregistrements pendant qu'une autre session écrit |
 | **Le composeur est rendu** | capture du simulateur : champ « Écrire à cette session… », sélecteur de mode, bouton d'envoi |
+| **L'hôte publie la liste des Macs du tailnet** | `dsh-remote-ctl <adresse> serveurs` → 3 Macs ; le PC Windows et l'iPhone sont écartés |
+| **L'iPhone CONSOMME la découverte** | simulateur iPhone 17 Pro : les 3 Macs s'affichent avec icône et état, « hôte interrogé » sur la machine qui répond — aucun processus exécuté par l'application |
+| La liste vide dit pourquoi | `/v1/serveurs` rend `diagnostic` quand la liste est vide ; 5 tests couvrent les charges utiles de l'hôte |
+| Chaque icône rendue EXISTE | test « Chaque icône rendue est un symbole SF qui existe vraiment » — il a mis en évidence que `macbook.air`, `macbook.pro` et `imac` n'existent pas |
 | Les refus sont respectés | `401` sans jeton, `403` avec `Origin`, `404` sur identifiant inconnu |
 | L'application démarre sur macOS | processus vivant après 6 s, fenêtre 1100×720 présente |
 | L'application fonctionne sur iOS | simulateur iPhone 17 Pro : liste des sessions connectée à la vraie instance |

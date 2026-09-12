@@ -81,6 +81,11 @@ struct VueJournal: View {
     .task(id: session.id) {
       await modele.ouvrir(session)
     }
+    // Quitter le journal, c'est cesser de REGARDER la session : son rappel de fin
+    // pourra de nouveau s'armer. Le journal chargé et le flux restent en place.
+    .onDisappear {
+      modele.quitterJournal(session.id)
+    }
     // Le composeur n'apparaît que si l'HÔTE a annoncé savoir écrire : une barre
     // de saisie qui ne peut rien envoyer est pire que pas de barre du tout.
     .safeAreaInset(edge: .bottom) {
