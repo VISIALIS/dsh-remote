@@ -54,7 +54,21 @@ public final class ModeleApp {
 
   public init() {
     chargerConfiguration()
-    serveurs = DecouverteServeurs.macsDuTailnet()
+  }
+
+  /// Lance la découverte hors du fil principal.
+  ///
+  /// POURQUOI PAS DANS `init`. La découverte exécute un processus
+  /// (`tailscale status --json`) : la lancer pendant l'initialisation du modèle
+  /// bloquerait l'affichage de la fenêtre tant que le processus n'a pas rendu
+  /// la main. L'interface doit s'afficher immédiatement, la liste se remplir
+  /// ensuite — ou jamais, sans que cela se voie.
+  public func demarrerDecouverte() {
+    guard decouvertePossible else { return }
+    Task.detached { [weak self] in
+      let trouvees = DecouverteServeurs.macsDuTailnet()
+      await MainActor.run { self?.serveurs = trouvees }
+    }
   }
 
   /// Choisit un serveur et met l'adresse en conséquence.
@@ -74,9 +88,71 @@ public final class ModeleApp {
     await connecter()
   }
 
-  /// Relit la liste des Macs. Utile après avoir allumé une machine éteinte.
+  /// Relit la liste des Macs, hors du fil principal.
+  ///
+  /// Utile après avoir allumé une machine éteinte.
+  ///
+  /// Sur iPhone cette liste reste vide par construction (voir
+  /// `DecouverteServeurs`) : le bouton associé n'y est donc pas proposé, plutôt
+  /// que d'offrir une action sans effet.
   public func rafraichirServeurs() {
-    serveurs = DecouverteServeurs.macsDuTailnet()
+    demarrerDecouverte()
+  }
+
+  /// Vrai quand la découverte automatique peut réellement rendre des machines.
+  ///
+  /// Sert à n'afficher « Rafraîchir la liste » que là où le rafraîchissement
+  /// change quelque chose. Ailleurs, l'interface propose de TESTER l'adresse,
+  /// qui est l'action réellement utile.
+  public var decouvertePossible: Bool {
+    #if os(macOS)
+      return true
+    #else
+      return false
+    #endif
+  }
+
+  /// État du test d'adresse, pour l'afficher sans ambiguïté.
+  public enum EtatAdresse: Equatable {
+    case inconnu
+    case enCours
+    case joignable(reponses: Int)
+    case injoignable(String)
+  }
+
+  public private(set) var etatAdresse: EtatAdresse = .inconnu
+
+  /// Teste l'adresse saisie en annonçant le résultat.
+  ///
+  /// POURQUOI CETTE ACTION EXISTE. Le bouton « Rafraîchir la liste » ne pouvait
+  /// rien faire sur iPhone : la découverte y est impossible, donc appuyer ne
+  /// produisait aucun changement visible, ni succès ni erreur. Un bouton sans
+  /// effet est pire qu'un bouton absent. Celui-ci vérifie quelque chose de
+  /// réel — l'adresse répond-elle, et le jeton est-il accepté — et le dit.
+  public func testerAdresse() async {
+    etatAdresse = .enCours
+    defer { enChargement = false }
+    enChargement = true
+    let jeton = jetonSaisi.isEmpty ? (Self.jetonLocal() ?? "") : jetonSaisi
+    guard !jeton.isEmpty else {
+      etatAdresse = .injoignable("aucun jeton : collez-le d'abord")
+      return
+    }
+    do {
+      let client = try RemoteClient(adresse: adresse, jeton: jeton)
+      let sante = try await client.verifierSante()
+      self.client = client
+      capacites = sante.capacites
+      let liste = try await client.listerSessions(limite: 200)
+      sessions = liste.sessions
+      etatAdresse = .joignable(reponses: liste.total ?? liste.sessions.count)
+      erreur = nil
+    } catch {
+      let message = String(describing: error)
+      etatAdresse = .injoignable(message)
+      erreur = message
+      Self.journaliserDiagnostic(adresse: adresse, message: message)
+    }
   }
 
   /// Charge une configuration déposée dans le conteneur de l'application.

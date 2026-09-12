@@ -31,6 +31,7 @@ public struct VuePrincipale: View {
       if modele.jetonSaisi.isEmpty, let local = ModeleApp.jetonLocal() {
         modele.enregistrerJeton(local)
       }
+      modele.demarrerDecouverte()
       await modele.connecter()
     }
   }
@@ -59,8 +60,14 @@ struct VueConnexion: View {
               .font(.callout)
               .foregroundStyle(.orange)
             HStack(spacing: 12) {
-              Button("Rafraîchir") { modele.rafraichirServeurs() }
-                .font(.caption)
+              // « Rafraîchir » n'est proposé QUE là où la découverte peut
+              // réellement rendre des machines. Sur iPhone elle est impossible,
+              // donc le bouton n'y produisait ni succès ni erreur : un bouton
+              // sans effet est un mensonge d'interface.
+              if modele.decouvertePossible {
+                Button("Rafraîchir la liste") { modele.rafraichirServeurs() }
+                  .font(.caption)
+              }
               #if os(iOS)
                 Button("Installer Tailscale") {
                   if let url = URL(string: "https://apps.apple.com/app/tailscale/id1470499037") {
@@ -139,12 +146,35 @@ struct VueConnexion: View {
             .help("Coller le jeton depuis le presse-papier")
           }
         }
-        HStack {
+        HStack(spacing: 12) {
           Button("Se connecter") {
             Task { await modele.connecter() }
           }
           .disabled(modele.enChargement)
+          // Vérifie l'adresse ET le jeton, et le dit. C'est l'action qui a du
+          // sens quand on a saisi une adresse à la main.
+          Button("Tester l'adresse") {
+            Task { await modele.testerAdresse() }
+          }
+          .disabled(modele.enChargement || modele.adresse.isEmpty)
           if modele.enChargement { ProgressView().controlSize(.small) }
+        }
+
+        // Le résultat du test, nommé : « rien ne s'est passé » ne doit jamais
+        // être une réponse possible à un appui.
+        switch modele.etatAdresse {
+        case .inconnu:
+          EmptyView()
+        case .enCours:
+          Label("test de l'adresse…", systemImage: "hourglass").font(.caption)
+        case let .joignable(reponses):
+          Label("\(reponses) session(s) — adresse et jeton acceptés", systemImage: "checkmark.circle")
+            .font(.caption)
+            .foregroundStyle(.green)
+        case let .injoignable(detail):
+          Label(detail, systemImage: "xmark.circle")
+            .font(.caption)
+            .foregroundStyle(.red)
         }
       }
 
