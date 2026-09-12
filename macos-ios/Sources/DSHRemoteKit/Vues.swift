@@ -42,6 +42,17 @@ struct VueConnexion: View {
   @Bindable var modele: ModeleApp
   @State private var selection: SessionListee?
 
+  /// Espaces de travail dépliés, par identifiant.
+  ///
+  /// POURQUOI UN ÉTAT, ET NON UNE CONSTANTE. J'avais écrit
+  /// `isExpanded: .constant(...)` : une liaison constante ignore les clics, donc
+  /// AUCUN espace ne pouvait se déplier. Un `DisclosureGroup` piloté par une
+  /// constante n'est pas un groupe dépliable, c'est une ligne inerte.
+  ///
+  /// L'état est tenu par identifiant de chemin, pour que replier un espace ne
+  /// touche pas aux autres et survive à un rafraîchissement de la liste.
+  @State private var espacesDeplies: Set<String> = []
+
   var body: some View {
     List(selection: $selection) {
       // ── Choix du serveur ───────────────────────────────────────────────────
@@ -250,7 +261,14 @@ struct VueConnexion: View {
           // Pendant une recherche, les groupes sont dépliés d'office : laisser
           // l'utilisateur replier chaque dossier pour voir ce qu'il vient de
           // chercher annulerait l'intérêt de la recherche.
-          DisclosureGroup(isExpanded: .constant(!modele.recherche.isEmpty)) {
+          DisclosureGroup(
+            isExpanded: Binding(
+              get: { !modele.recherche.isEmpty || espacesDeplies.contains(espace.id) },
+              set: { ouvert in
+                if ouvert { espacesDeplies.insert(espace.id) } else { espacesDeplies.remove(espace.id) }
+              }
+            )
+          ) {
             ForEach(espace.sessions, id: \.id) { session in
               if Regroupement.estSousAgent(session) {
                 HStack(spacing: 6) {
