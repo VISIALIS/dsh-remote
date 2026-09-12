@@ -37,6 +37,13 @@ public final class ModeleApp {
   public var filtresActifs = true
 
   private var client: RemoteClient?
+
+  /// Macs proposés, découverts au lancement. Vide est un état normal : la
+  /// découverte automatique n'existe que sur macOS, et la saisie manuelle reste
+  /// toujours disponible.
+  public private(set) var serveurs: [ServeurMac] = []
+  /// Serveur choisi dans la liste, ou `nil` si l'adresse est saisie à la main.
+  public private(set) var serveurChoisi: ServeurMac?
   private var flux: FluxSession?
   private var tacheFlux: Task<Void, Never>?
 
@@ -47,6 +54,29 @@ public final class ModeleApp {
 
   public init() {
     chargerConfiguration()
+    serveurs = DecouverteServeurs.macsDuTailnet()
+  }
+
+  /// Choisit un serveur et met l'adresse en conséquence.
+  ///
+  /// L'adresse n'est plus un champ que l'on remplit : elle DÉCOULE du choix.
+  /// Le champ reste modifiable pour les cas que la découverte ne couvre pas.
+  public func choisir(_ serveur: ServeurMac) {
+    serveurChoisi = serveur
+    adresse = serveur.adresse
+  }
+
+  /// Un appui sur une machine AGIT : il choisit et se connecte, parce que c'est
+  /// ce que veut l'utilisateur. S'il manque le jeton, l'erreur le dira et le
+  /// champ de jeton est juste au-dessus.
+  public func choisirEtConnecter(_ serveur: ServeurMac) async {
+    choisir(serveur)
+    await connecter()
+  }
+
+  /// Relit la liste des Macs. Utile après avoir allumé une machine éteinte.
+  public func rafraichirServeurs() {
+    serveurs = DecouverteServeurs.macsDuTailnet()
   }
 
   /// Charge une configuration déposée dans le conteneur de l'application.

@@ -43,7 +43,65 @@ struct VueConnexion: View {
 
   var body: some View {
     List(selection: $selection) {
+      // ── Choix du serveur ───────────────────────────────────────────────────
+      //
+      // On choisit une MACHINE, pas une adresse. L'adresse en découle : personne
+      // ne devrait avoir à taper un nom MagicDNS de 40 caractères pour dire
+      // « le Mac mini ». Le champ d'adresse reste disponible plus bas pour les
+      // cas que la découverte ne couvre pas.
       Section("Serveur") {
+        if modele.serveurs.isEmpty {
+          // Une liste vide DOIT s'expliquer. Sans ce texte, l'utilisateur croit
+          // à une panne de l'application alors que la cause est presque
+          // toujours l'absence de Tailscale ou une adresse à saisir.
+          VStack(alignment: .leading, spacing: 8) {
+            Label(DecouverteServeurs.messageDAbsence(), systemImage: "exclamationmark.triangle")
+              .font(.callout)
+              .foregroundStyle(.orange)
+            HStack(spacing: 12) {
+              Button("Rafraîchir") { modele.rafraichirServeurs() }
+                .font(.caption)
+              #if os(iOS)
+                Button("Installer Tailscale") {
+                  if let url = URL(string: "https://apps.apple.com/app/tailscale/id1470499037") {
+                    UIApplication.shared.open(url)
+                  }
+                }
+                .font(.caption)
+              #endif
+            }
+          }
+          .padding(.vertical, 4)
+        } else {
+          ForEach(modele.serveurs) { serveur in
+            Button {
+              Task { await modele.choisirEtConnecter(serveur) }
+            } label: {
+              HStack(spacing: 10) {
+                Image(systemName: serveur.symbole)
+                  .font(.title3)
+                  .frame(width: 26)
+                  .foregroundStyle(serveur.enLigne ? Color.accentColor : Color.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(serveur.nom).font(.body)
+                  Text(serveur.enLigne ? "en ligne" : "hors ligne")
+                    .font(.caption2)
+                    .foregroundStyle(serveur.enLigne ? Color.green : Color.secondary)
+                }
+                Spacer()
+                if modele.serveurChoisi == serveur {
+                  Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
+                }
+              }
+            }
+            .buttonStyle(.plain)
+          }
+          Button("Rafraîchir la liste") { modele.rafraichirServeurs() }
+            .font(.caption)
+        }
+      }
+
+      Section(modele.serveurs.isEmpty ? "Serveur" : "Adresse") {
         LabeledContent("Adresse") {
           TextField("http://127.0.0.1:3080", text: $modele.adresse)
             .textFieldStyle(.roundedBorder)

@@ -58,6 +58,7 @@ func aider() {
       dsh-remote-ctl <adresse> sessions [limite]
       dsh-remote-ctl <adresse> journal <identifiant> [limite]
       dsh-remote-ctl <adresse> flux <identifiant> [secondes]
+      dsh-remote-ctl serveurs
 
     ARGUMENTS
       <adresse>   http://127.0.0.1:3080 ou le nom MagicDNS du tailnet
@@ -70,6 +71,23 @@ func aider() {
 
 let adresse = arguments.count > 1 ? arguments[1] : ""
 let commande = arguments.count > 2 ? arguments[2] : ""
+
+// `serveurs` ne demande ni adresse ni jeton : il interroge Tailscale.
+if adresse == "serveurs" {
+  let macs = DecouverteServeurs.macsDuTailnet()
+  if macs.isEmpty {
+    print("aucun Mac decouvert")
+    if let raison = DecouverteServeurs.diagnostic { print("raison : \(raison)") }
+    exit(0)
+  }
+  print("Macs sur le tailnet : \(macs.count)\n")
+  for mac in macs {
+    let etat = mac.enLigne ? "en ligne   " : "hors ligne "
+    print("  \(etat) \(mac.nom)")
+    print("             \(mac.adresse)")
+  }
+  exit(0)
+}
 
 if adresse.isEmpty || adresse == "--help" || adresse == "-h" {
   aider()
