@@ -76,6 +76,23 @@ func decodeJournal() throws {
   #expect(journal.session.creeLe == 1789059396815)
 }
 
+@Test("Une adresse sans protocole est complétée, pas refusée")
+func normalisationAdresse() {
+  // Le cas réel : un nom d'hôte recopié depuis `tailscale serve status`, sans
+  // « http:// ». Le refuser revenait à rejeter une saisie correcte.
+  #expect(RemoteClient.normaliser("macmini.exemple.ts.net") == "http://macmini.exemple.ts.net")
+  #expect(RemoteClient.normaliser("  macmini.exemple.ts.net  ") == "http://macmini.exemple.ts.net")
+  // Un schéma déjà présent n'est jamais réécrit.
+  #expect(RemoteClient.normaliser("https://macmini.exemple.ts.net") == "https://macmini.exemple.ts.net")
+  #expect(RemoteClient.normaliser("http://127.0.0.1:3080") == "http://127.0.0.1:3080")
+  #expect(RemoteClient.normaliser("") == "")
+
+  // Et le client doit accepter la forme courte.
+  #expect(throws: Never.self) {
+    _ = try RemoteClient(adresse: "macmini.exemple.ts.net", jeton: "jeton-de-test-suffisamment-long")
+  }
+}
+
 @Test("Une adresse invalide est refusée avant tout accès réseau")
 func adresseInvalide() {
   #expect(throws: ErreurRemote.self) {

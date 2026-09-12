@@ -19,7 +19,8 @@ public actor RemoteClient {
   ///     nom MagicDNS du tailnet. Le schéma et l'hôte sont validés.
   ///   - jeton: le jeton d'appareil, lu une fois dans le coffre du Mac.
   public init(adresse: String, jeton: String) throws {
-    guard let url = URL(string: adresse), let schema = url.scheme, let hote = url.host else {
+    let normalisee = RemoteClient.normaliser(adresse)
+    guard let url = URL(string: normalisee), let schema = url.scheme, let hote = url.host else {
       throw ErreurRemote.adresseInvalide(adresse)
     }
     guard schema == "http" || schema == "https" else {
@@ -39,6 +40,23 @@ public actor RemoteClient {
     configuration.timeoutIntervalForRequest = 30
     configuration.timeoutIntervalForResource = 120
     self.session = URLSession(configuration: configuration)
+  }
+
+  /// Complète une adresse saisie sans protocole.
+  ///
+  /// POURQUOI. Personne n'écrit `http://` en recopiant un nom d'hôte : le
+  /// propriétaire a saisi un nom d'hôte sans schéma, et le client l'a refusé
+  /// faute de protocole. Exiger une syntaxe que personne
+  /// n'emploie naturellement, c'est rejeter une saisie correcte. On suppose
+  /// donc `http`, qui est le seul schéma que `tailscale serve` publie.
+  ///
+  /// `https://` reste honoré tel quel, et un `://` déjà présent n'est jamais
+  /// réécrit.
+  public static func normaliser(_ adresse: String) -> String {
+    let propre = adresse.trimmingCharacters(in: .whitespacesAndNewlines)
+    if propre.isEmpty { return propre }
+    if propre.contains("://") { return propre }
+    return "http://" + propre
   }
 
   private func url(_ chemin: String) -> URL {
