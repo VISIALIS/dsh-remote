@@ -60,13 +60,39 @@ func icones() {
   // Les noms « MacBook Air » et « MacMini » sont ceux que macOS donne aux
   // machines : c'est bien eux que la détection doit reconnaître, même si les
   // fixtures d'analyse ci-dessus emploient des noms neutres.
-  #expect(ServeurMac(nom: "MacBook Air de Quelqu'un", nomDNS: "a", enLigne: true).symbole == "macbook.air")
+  #expect(ServeurMac(nom: "MacBook Air de Quelqu'un", nomDNS: "a", enLigne: true).symbole == "macbook")
   #expect(ServeurMac(nom: "MacMini", nomDNS: "b", enLigne: true).symbole == "macmini")
-  #expect(ServeurMac(nom: "MacBook Pro de Quelqu'un", nomDNS: "c", enLigne: false).symbole == "macbook.pro")
+  #expect(ServeurMac(nom: "MacBook Pro de Quelqu'un", nomDNS: "c", enLigne: false).symbole == "macbook")
   #expect(ServeurMac(nom: "iMac de la cuisine", nomDNS: "d", enLigne: true).symbole == "desktopcomputer")
   // Une machine renommée ne doit pas produire d'icône vide.
   #expect(ServeurMac(nom: "bureau", nomDNS: "e", enLigne: true).symbole == "desktopcomputer")
 }
+
+#if canImport(AppKit)
+  import AppKit
+
+  @Test("Chaque icône rendue est un symbole SF qui existe vraiment")
+  func iconesExistantes() {
+    // POURQUOI CE TEST EXISTE. Une capture d'écran de l'application sur iPhone a
+    // montré des lignes SANS icône, pour un MacBook Air et un MacBook Pro.
+    // Cause : `macbook.air` et `macbook.pro` ne sont pas des symboles SF, et
+    // `Image(systemName:)` ne signale rien — il n'affiche rien. Le repli
+    // générique n'était jamais atteint puisqu'un nom était bien rendu. Un test
+    // qui se contente de comparer des chaînes ne peut pas voir ça : celui-ci
+    // interroge le catalogue de la plateforme.
+    let noms = [
+      "MacBook Air de Quelqu'un", "MacBook Pro de Quelqu'un", "MacBook", "MacMini",
+      "Mac mini de la maison", "MacStudio", "iMac de la cuisine", "bureau",
+      "http://macbook-x.exemple.ts.net", "http://mac-mini.exemple.ts.net",
+    ]
+    for nom in noms {
+      let symbole = ServeurMac(nom: nom, nomDNS: "", enLigne: true).symbole
+      #expect(
+        NSImage(systemSymbolName: symbole, accessibilityDescription: nil) != nil,
+        "« \(nom) » rend « \(symbole) », qui n'existe pas dans SF Symbols : la ligne s'afficherait sans icône")
+    }
+  }
+#endif
 
 @Test("Le type de machine se déduit du nom, y compris depuis une adresse")
 func iconeDepuisAdresse() {

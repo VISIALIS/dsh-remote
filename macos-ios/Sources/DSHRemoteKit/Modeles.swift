@@ -132,6 +132,22 @@ public struct ListeSessions: Sendable, Decodable {
   public let erreur: String?
 }
 
+/// Réponse de `GET /v1/serveurs` — la découverte faite par l'HÔTE.
+///
+/// C'est la voie retenue pour l'iPhone : l'application ne découvre rien
+/// elle-même (iOS interdit d'exécuter un processus), elle lit la découverte
+/// faite par un Mac qui a Tailscale.
+public struct ListeServeurs: Sendable, Decodable {
+  public let protocole: Int
+  public let serveurs: [ServeurMac]
+  /// Pourquoi la liste est vide, quand elle l'est. `nil` sinon.
+  ///
+  /// Sans ce champ, une liste vide ne dit pas si le tailnet est vide, si
+  /// Tailscale est arrêté sur l'hôte ou si son binaire est introuvable — trois
+  /// causes qui ne se corrigent pas de la même façon.
+  public let diagnostic: String?
+}
+
 /// Un enregistrement brut du journal.
 ///
 /// On décode `type`, `seq` et `time` — les trois seuls champs dont le TRANSPORT a
@@ -247,6 +263,18 @@ public struct Sante: Sendable, Decodable {
     public let flux: Bool
     public let ecriture: Bool
     public let approbations: Bool
+    /// L'hôte sait-il publier la liste des Macs du tailnet (`/v1/serveurs`) ?
+    ///
+    /// Optionnel À DESSEIN : un hôte plus ancien ne renvoie pas ce champ, et le
+    /// client doit alors garder la saisie manuelle au lieu d'attendre une liste
+    /// qui ne viendra jamais. `nil` signifie « ne sait pas », pas « non ».
+    public let decouverte: Bool?
+    /// L'hôte sait-il INTERROMPRE le tour en cours (`/v1/session/<id>/annuler`) ?
+    ///
+    /// Optionnel pour la même raison que `decouverte` : un hôte plus ancien ne
+    /// le dit pas. Sans ce champ, l'application proposerait un bouton
+    /// « Arrêter » qui ne ferait rien — un mensonge d'interface.
+    public let annulation: Bool?
   }
 }
 
@@ -256,6 +284,14 @@ public enum ErreurRemote: Error, CustomStringConvertible {
   case origineRefusee
   case versionIncompatible(recue: Int, supportee: Int)
   case reponseInattendue(code: Int)
+  /// Refus EXPLICITE de l'hôte, avec le motif qu'il a donné.
+  ///
+  /// `reponseInattendue` ne suffisait pas pour l'écriture : l'hôte refuse une
+  /// demande pour des raisons qui se corrigent différemment (session disparue,
+  /// modèle non choisi, agent occupé). Rendre « HTTP 409 » sans le motif
+  /// obligerait l'interface à deviner, ou à afficher un code au lieu d'une
+  /// phrase.
+  case refusServeur(statut: Int, motif: String, code: String?)
   case adresseInvalide(String)
   case transport(String)
   case decodage(String)
@@ -270,6 +306,9 @@ public enum ErreurRemote: Error, CustomStringConvertible {
       return "protocole incompatible : le serveur annonce la version \(recue), ce client sait lire la \(supportee)"
     case let .reponseInattendue(code):
       return "réponse inattendue (HTTP \(code))"
+    case let .refusServeur(statut, motif, code):
+      let marque = code.map { " [\($0)]" } ?? ""
+      return "refus de l'hôte\(marque) : \(motif) (HTTP \(statut))"
     case let .adresseInvalide(detail):
       return "adresse invalide : \(detail)"
     case let .transport(detail):

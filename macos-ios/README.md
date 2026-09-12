@@ -4,12 +4,9 @@ Client **Swift natif** (macOS et iOS) du plugin [`dsh-remote`](../../plugins/dsh
 Une seule bibliothèque partagée porte le protocole, le transport et les modèles ; les
 deux applications la consomment telle quelle.
 
-Ce paquet ne contient **aucune** interface pour l'instant : il livre la bibliothèque et
-un tool de validation. L'application SwiftUI est le jalon 2 (voir la feuille de route du
-[README du plugin](../../plugins/dsh-remote/#feuille-de-route)).
-
-MISE À JOUR — jalons 2 et 3 livrés : voir [Application](#application) et
-[Flux temps réel](#flux-temps-reel).
+MISE À JOUR — jalons 2, 3 et l'écriture livrés : voir [Application](#application),
+[Flux temps réel](#flux-temps-reel) et
+[Écriture](#ecriture-repondre-a-l-agent-et-l-interrompre).
 
 ---
 
@@ -391,18 +388,68 @@ la synchronisation Wi-Fi), l'appairer et faire confiance à cet ordinateur, puis
 `xcrun devicectl list devices` répond `No devices found`, aucune installation n'est
 possible — c'est un préalable matériel, pas logiciel.
 
+### Écriture : répondre à l'agent, et l'interrompre
+
+L'application n'est plus seulement une surface d'observation : le journal ouvert
+porte un **composeur** en bas de l'écran (champ, choix du mode, envoi) et un
+bouton **Arrêter** quand un tour s'exécute.
+
+Trois décisions d'interface, chacune née d'un défaut réel :
+
+1. **Le texte n'est effacé qu'après l'acquittement de l'hôte.** Un échec de réseau
+   ne doit pas coûter à l'utilisateur ce qu'il vient d'écrire.
+2. **Rien ne s'affiche qui ne puisse agir.** Le composeur n'apparaît que si l'hôte
+   annonce `capacites.ecriture`, et le bouton **Arrêter** que si la session tourne
+   *et* que `capacites.annulation` est là. Un hôte plus ancien ne renvoie pas ce
+   champ : l'application s'abstient au lieu de proposer un bouton mort.
+3. **L'idempotence est portée par le client.** `EnvoiEnAttente` conserve
+   l'identifiant d'envoi tant que l'hôte n'a pas acquitté : un appui rejoué après
+   une coupure réseau **ne crée pas de second message**. Un texte différent, ou un
+   envoi déjà acquitté, tire un identifiant neuf.
+
+Le mode d'envoi est écrit en clair — **« À la suite »** ou **« Tout de suite
+(interrompt) »** — plutôt que caché derrière une icône : la différence entre tenir
+la file et s'insérer dans un tour en cours ne se devine pas.
+
+L'annulation **conserve la file d'attente** : ce qui n'a pas encore été traité
+reste en attente. Une session froide est refusée (`404`) — il n'y a rien à
+interrompre.
+
+### Un défaut trouvé en regardant, pas en compilant
+
+L'écran de journal s'ouvrait sur un en-tête correct et **« Journal (0 affichés) »**
+pour une session de 48 évènements. La cause n'était pas le protocole : `ouvrir()`
+existait dans le modèle mais **n'était appelé par aucune vue** — la sélection
+remplissait le détail sans jamais demander le journal. Compiler ne pouvait pas le
+voir ; le simulateur, si, en une capture.
+
+Le chargement tient désormais à un `.task(id: session.id)` dans la vue du journal,
+et non à un effet de bord de la sélection : changer de session relit le journal,
+et l'écran ne peut plus mentir sur son contenu.
+
 ### Ce qui reste non prouvé
 
+- **Le clic sur « Envoyer » dans le simulateur iOS.** Le composeur est **observé**
+  (capture), la frappe ne l'est pas : cet environnement n'injecte pas de texte dans
+  le simulateur (ni frappe clavier vers l'appareil, ni « Coller » par appui long —
+  les deux essayés et mesurés). Le chemin d'envoi est prouvé par ailleurs, à trois
+  niveaux : `dsh-remote-ctl prompt`, l'essai d'intégration `ecritureReelle` contre
+  un hôte réel, et les tests d'encodage/décodage des types d'écriture.
 - **Le rendu de l'interface macOS.** `screencapture` exige l'autorisation
   « Enregistrement de l'écran ». L'application **compile et démarre sans planter**
   (processus vivant après 6 s, fenêtre 1100×720 présente), mais son rendu n'a pas été
   observé — alors que celui de la version iOS l'a été, par `simctl io screenshot`.
-- **L'ouverture d'un journal depuis l'interface.** Les interactions système
-  (accessibilité) sont refusées à cet environnement : je n'ai pas pu cliquer une ligne
-  dans le simulateur. La lecture d'un journal est prouvée par `dsh-remote-ctl`, qui
-  emprunte exactement le même `RemoteClient`.
+  Précision ajoutée après mesure : **le projet Xcode ne produit pas d'application
+  macOS native** (`SDKROOT = iphoneos`, `SUPPORTED_PLATFORMS = "iphoneos
+  iphonesimulator"`). Le rendu macOS n'est donc plus seulement non observé, il n'est
+  plus produit par ce projet — la formulation précédente, « le projet couvre iOS et
+  macOS », était trop large. Une destination « My Mac (Designed for iPad) » existe,
+  mais la construction échoue faute de profil de provisionnement pour ce Mac.
 - **Tout essai sur iPhone réel** : voir le point 3 ci-dessus, qui est un préalable
   administratif et non technique.
+- **Les questions de l'agent et les approbations.** Le composeur envoie un message,
+  il ne répond pas à un `ask_user` ni à une demande de permission : ces surfaces ne
+  sont pas exposées par le plugin, pour la raison documentée dans son README.
 
 ---
 
@@ -428,10 +475,22 @@ swift test
 ./.build/debug/dsh-remote-ctl http://127.0.0.1:3080 sante
 ./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> sessions 20
 ./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> journal <identifiant> 50
+./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> prompt <identifiant> "ton message"
+./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> annuler <identifiant>
 ```
 
 Le nom MagicDNS du Mac est celui que `tailscale status` affiche ; c'est aussi l'adresse
 que `tailscale serve` publie.
+
+L'essai d'intégration de l'écriture est **désactivé par défaut** : il exige un hôte
+joignable et une session de travail, et il écrit pour de vrai (il consomme un tour de
+modèle). Le jeton reste lu dans le coffre, jamais passé en argument :
+
+```bash
+DSH_REMOTE_ESSAI_ADRESSE=http://127.0.0.1:3099 \
+DSH_REMOTE_ESSAI_SESSION=session-… \
+  swift test --filter ecritureReelle
+```
 
 ---
 
@@ -450,19 +509,29 @@ de préférences, jamais dans un journal.
 
 ```text
 Sources/
-├── DSHRemoteKit/        # bibliothèque partagée macOS + iOS
-│   ├── Modeles.swift    # types du protocole, transport des enregistrements
-│   ├── Evenements.swift # présentation des événements du journal
-│   └── RemoteClient.swift
-├── DSHRemoteCtl/        # tool de validation (macOS)
-└── DSHRemoteApp/        # application SwiftUI (macOS + iOS)
-    ├── AppDSHRemote.swift
-    ├── ModeleApp.swift
-    ├── Vues.swift
-    └── VueJournal.swift
+├── DSHRemoteKit/          # bibliothèque partagée macOS + iOS — TOUT le code réutilisable
+│   ├── Modeles.swift      # types du protocole, transport des enregistrements
+│   ├── Ecriture.swift     # types de l'écriture (prompt, annulation, envoi en attente)
+│   ├── Evenements.swift   # présentation des événements du journal
+│   ├── Regroupement.swift # arbre des sessions par espace de travail
+│   ├── EtatSession.swift  # pastilles et libellés d'état
+│   ├── DecouverteServeurs.swift
+│   ├── FluxSession.swift  # WebSocket temps réel
+│   ├── RemoteClient.swift
+│   ├── ModeleApp.swift    # état de l'application — la vue ne parle jamais au réseau
+│   ├── Vues.swift         # liste des sessions
+│   ├── VueJournal.swift   # journal d'une session
+│   └── VueEcriture.swift  # composeur (écrire, interrompre)
+└── DSHRemoteCtl/          # tool de validation (macOS)
+    └── main.swift
 Tests/
-└── DSHRemoteKitTests/   # décodage des charges utiles réelles
+└── DSHRemoteKitTests/     # décodage des charges utiles réelles + écriture
 ```
+
+L'interface vit dans la **bibliothèque**, pas dans une cible d'application : c'est
+la contrainte qui a déplacé le code (voir « Restructuration imposée par cette
+contrainte »). Le produit exécutable de ce paquet est le tool `dsh-remote-ctl` ;
+l'application vient du projet Xcode.
 
 ---
 
@@ -504,6 +573,10 @@ inactive.
   version inconnue provoque un refus explicite.
 - **Les types Swift sont en français**, les champs du fil en `camelCase` : les
   `CodingKeys` font la correspondance et sont la seule source de vérité des noms.
+- **Un refus de l'hôte n'est jamais réduit à un statut HTTP.** Le corps JSON
+  (`erreur`, `code`, `detail`) est décodé en `ErreurRemote.refusServeur`, puis traduit
+  par `RefusEcriture`. « Aucun modèle n'est choisi pour cette session » se corrige ;
+  « HTTP 409 » ne dit rien.
 
 ---
 
@@ -512,15 +585,23 @@ inactive.
 | Affirmation | Preuve |
 |---|---|
 | Le paquet compile pour macOS 14 et iOS 17 | `swift build` |
-| Le protocole réel se décode | 4 tests verts sur des charges utiles copiées du serveur |
+| Le protocole réel se décode | tests verts sur des charges utiles copiées du serveur |
 | Le bout en bout fonctionne | `dsh-remote-ctl <tailnet> sessions` liste 102 sessions avec titres, compteurs et dates |
 | Le journal se lit | `dsh-remote-ctl <tailnet> journal <id> 8` affiche les enregistrements typés |
+| **L'écriture fonctionne depuis le client** | `dsh-remote-ctl <adresse> prompt <id> "…"` → `accepté: true`, `reprise: true` sur une session froide |
+| **L'envoi est idempotent** | essai d'intégration `swift test --filter ecritureReelle` : deux envois du même `requestId`, deux `202`, **un seul** message dans le journal |
+| **L'annulation fonctionne depuis le client** | `dsh-remote-ctl <adresse> annuler <id>` → `annulé: true` |
+| **Le refus est traduit, pas affiché en code** | test « Un refus d'écriture est traduit, jamais affiché en code » |
+| **Le journal s'ouvre vraiment dans l'application** | simulateur : « Journal (41 affichés) » là où l'écran restait vide ; côté hôte, `POST /v1/session/<id> -> 200` |
+| **Le flux alimente l'écran ouvert** | la même capture passe de 41 à 48 enregistrements pendant qu'une autre session écrit |
+| **Le composeur est rendu** | capture du simulateur : champ « Écrire à cette session… », sélecteur de mode, bouton d'envoi |
 | Les refus sont respectés | `401` sans jeton, `403` avec `Origin`, `404` sur identifiant inconnu |
 | L'application démarre sur macOS | processus vivant après 6 s, fenêtre 1100×720 présente |
-| L'application fonctionne sur iOS | simulateur iPhone 17 Pro : 48 sessions vivantes affichées, connectées à la vraie instance |
+| L'application fonctionne sur iOS | simulateur iPhone 17 Pro : liste des sessions connectée à la vraie instance |
 | Le code compile pour un iPhone réel | `swift build --triple arm64-apple-ios18.0 --sdk <iphoneos>` |
 | Xcode compile et lie pour iOS | `xcodebuild -destination 'generic/platform=iOS' build` → `BUILD SUCCEEDED` |
 | Le projet Xcode produit une app installable | `DSHRemote.app` avec `Info.plist`, identifiant `org.example.DSHRemote`, installée et lancée dans le simulateur |
+| **Le projet Xcode ne produit PAS d'app macOS native** | `project.pbxproj` : `SDKROOT = iphoneos`, `SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"` |
 | Le simulateur ne lit pas le coffre du Mac | conteneur en bac à sable : l'app affiche « Aucun jeton d'appareil » |
 | L'installation sur l'iPhone exige une action manuelle | `xcodebuild` échoue : appareil non enregistré, aucun profil pour `org.example.DSHRemote` |
 | L'application est INSTALLÉE sur l'iPhone | `devicectl device info apps` liste `DSH Remote — org.example.DSHRemote — 0.1` |

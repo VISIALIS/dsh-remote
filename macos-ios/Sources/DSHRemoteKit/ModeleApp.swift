@@ -39,11 +39,26 @@ public final class ModeleApp {
   private var client: RemoteClient?
 
   /// Macs proposés, découverts au lancement. Vide est un état normal : la
-  /// découverte automatique n'existe que sur macOS, et la saisie manuelle reste
-  /// toujours disponible.
+  /// découverte peut échouer des deux côtés (Tailscale absent sur l'hôte, aucun
+  /// serveur encore connu), et la saisie manuelle reste toujours disponible.
   public private(set) var serveurs: [ServeurMac] = []
   /// Serveur choisi dans la liste, ou `nil` si l'adresse est saisie à la main.
   public private(set) var serveurChoisi: ServeurMac?
+
+  /// D'où vient la liste affichée.
+  ///
+  /// Sert à dire la VÉRITÉ sur une liste vide : « l'hôte interrogé ne voit
+  /// personne » et « cette plateforme ne peut pas découvrir » ne sont pas le
+  /// même constat, et n'appellent pas la même action.
+  public enum SourceServeurs: Equatable {
+    case aucune
+    case tailscaleLocal
+    case hote
+  }
+
+  public private(set) var sourceServeurs: SourceServeurs = .aucune
+  /// Raison d'une liste vide, telle que l'hôte l'a donnée.
+  public private(set) var diagnosticServeurs: String?
   private var flux: FluxSession?
   private var tacheFlux: Task<Void, Never>?
   private var tacheSuivi: Task<Void, Never>?
@@ -169,19 +184,43 @@ public final class ModeleApp {
     return ServeurMac(nom: adresse, nomDNS: "", enLigne: true).symbole
   }
 
-  /// Lance la découverte hors du fil principal.
+  /// Lance la découverte LOCALE hors du fil principal.
   ///
   /// POURQUOI PAS DANS `init`. La découverte exécute un processus
   /// (`tailscale status --json`) : la lancer pendant l'initialisation du modèle
   /// bloquerait l'affichage de la fenêtre tant que le processus n'a pas rendu
   /// la main. L'interface doit s'afficher immédiatement, la liste se remplir
   /// ensuite — ou jamais, sans que cela se voie.
+  ///
+  /// Sur iPhone, il n'y a rien à lancer : voir `chargerServeursDeLhote()`, qui
+  /// interroge le serveur déjà joint — la seule voie possible depuis iOS.
   public func demarrerDecouverte() {
-    guard decouvertePossible else { return }
+    guard decouverteLocalePossible else { return }
     Task.detached { [weak self] in
       let trouvees = DecouverteServeurs.macsDuTailnet()
-      await MainActor.run { self?.serveurs = trouvees }
+      let raison = DecouverteServeurs.diagnostic
+      await MainActor.run {
+        guard let self else { return }
+        // L'hôte a déjà répondu, et sa liste est plus fraîche que celle d'un
+        // processus lancé avant la connexion : on ne l'écrase pas.
+        guard self.sourceServeurs != .hote else { return }
+        self.serveurs = trouvees
+        self.diagnosticServeurs = raison
+        self.sourceServeurs = .tailscaleLocal
+      }
     }
+  }
+
+  /// Demande la liste à l'hôte déjà joint — la voie qui fonctionne sur iPhone.
+  ///
+  /// Sans bruit en cas d'échec : l'utilisateur n'a rien demandé, et une liste
+  /// qui ne vient pas ne doit pas effacer celle qu'il a sous les yeux.
+  private func chargerServeursDeLhote() async {
+    guard let client else { return }
+    guard let liste = try? await client.listerServeurs() else { return }
+    serveurs = liste.serveurs
+    diagnosticServeurs = liste.diagnostic
+    sourceServeurs = .hote
   }
 
   /// Choisit un serveur et met l'adresse en conséquence.
@@ -203,28 +242,71 @@ public final class ModeleApp {
     await connecter()
   }
 
-  /// Relit la liste des Macs, hors du fil principal.
+  /// Relit la liste des Macs.
   ///
-  /// Utile après avoir allumé une machine éteinte.
-  ///
-  /// Sur iPhone cette liste reste vide par construction (voir
-  /// `DecouverteServeurs`) : le bouton associé n'y est donc pas proposé, plutôt
-  /// que d'offrir une action sans effet.
+  /// DEUX SOURCES, ET L'ORDRE COMPTE. L'hôte déjà joint passe en premier : sa
+  /// liste est exacte et à jour, et c'est la SEULE source disponible sur iPhone.
+  /// La découverte locale ne sert qu'en l'absence de serveur joignable — au
+  /// premier lancement, sur le Mac.
   public func rafraichirServeurs() {
+    if client != nil {
+      Task { [weak self] in
+        guard let self else { return }
+        await self.chargerServeursDeLhote()
+        // L'hôte a répondu quelque chose — même une liste vide AVEC sa raison :
+        // c'est une réponse, on ne la remplace pas par une supposition locale.
+        if self.sourceServeurs == .hote { return }
+        self.demarrerDecouverte()
+      }
+      return
+    }
     demarrerDecouverte()
   }
 
-  /// Vrai quand la découverte automatique peut réellement rendre des machines.
+  /// Vrai quand la découverte LOCALE peut rendre des machines (macOS).
   ///
-  /// Sert à n'afficher « Rafraîchir la liste » que là où le rafraîchissement
-  /// change quelque chose. Ailleurs, l'interface propose de TESTER l'adresse,
-  /// qui est l'action réellement utile.
-  public var decouvertePossible: Bool {
+  /// Sur iPhone, elle est impossible : iOS interdit à une application
+  /// d'exécuter un processus. Cela ne condamne pas la liste — l'hôte joint la
+  /// publie — mais ce n'est pas cette fonction qui le dit.
+  public var decouverteLocalePossible: Bool {
     #if os(macOS)
       return true
     #else
       return false
     #endif
+  }
+
+  /// Vrai quand appuyer sur « Rafraîchir la liste » peut réellement changer
+  /// quelque chose.
+  ///
+  /// Sert à n'afficher le bouton que là où il agit. Un bouton sans effet est un
+  /// mensonge d'interface : c'est ce qui a été observé sur iPhone, où la
+  /// découverte locale est impossible et où le bouton ne produisait donc ni
+  /// succès, ni erreur, ni changement. Depuis qu'un hôte publie la liste, le
+  /// bouton a de nouveau un effet dès qu'un serveur est joint.
+  public var rafraichissementPossible: Bool {
+    client != nil || decouverteLocalePossible
+  }
+
+  /// Message affiché quand la liste des Macs est vide.
+  ///
+  /// Il dépend de la SOURCE, parce que « l'hôte ne voit aucun Mac » et « cette
+  /// plateforme ne peut pas en voir » demandent des actions différentes.
+  public var messageListeVide: String {
+    guard sourceServeurs == .hote else { return DecouverteServeurs.messageDAbsence() }
+    if let diagnosticServeurs, !diagnosticServeurs.isEmpty {
+      return "Le serveur joint ne voit aucun Mac sur le tailnet (\(diagnosticServeurs)). Saisissez l'adresse ci-dessous."
+    }
+    return "Le serveur joint ne voit aucun Mac sur le tailnet. Saisissez l'adresse ci-dessous."
+  }
+
+  /// Légende d'une machine : son état, et le fait qu'elle soit l'hôte interrogé.
+  ///
+  /// « Hôte interrogé » et non « cet appareil » : sur iPhone, la machine qui
+  /// répond n'est évidemment pas celle qu'on tient en main.
+  public func legendeServeur(_ serveur: ServeurMac) -> String {
+    let etat = serveur.enLigne ? "en ligne" : "hors ligne"
+    return serveur.estLocal ? "hôte interrogé · \(etat)" : etat
   }
 
   /// État du test d'adresse, pour l'afficher sans ambiguïté.
@@ -266,6 +348,9 @@ public final class ModeleApp {
       sessions = liste.sessions
       etatAdresse = .joignable(reponses: liste.total ?? liste.sessions.count)
       erreur = nil
+      // Le test d'adresse est aussi une connexion : si l'hôte sait publier la
+      // liste des Macs, c'est le moment de la demander.
+      if sante.capacites.decouverte == true { await chargerServeursDeLhote() }
     } catch {
       let message = String(describing: error)
       etatAdresse = .injoignable(message)
@@ -474,6 +559,13 @@ public final class ModeleApp {
     adresse = ""
     nomServeur = nil
     serveurChoisi = nil
+    // Une liste venue de l'hôte n'a plus de source : la garder afficherait les
+    // machines d'un serveur qu'on vient d'oublier.
+    if sourceServeurs == .hote {
+      serveurs = []
+      diagnosticServeurs = nil
+      sourceServeurs = .aucune
+    }
     sessions = []
     journal = []
     sessionOuverte = nil
@@ -534,7 +626,12 @@ public final class ModeleApp {
       let liste = try await client.listerSessions(limite: 200)
       self.sessions = liste.sessions
     }
-    if erreur == nil { demarrerSuivi() }
+    if erreur == nil {
+      demarrerSuivi()
+      // Une connexion réussie est le moment où la liste des Macs devient
+      // disponible sur iPhone : l'hôte joint, lui, sait voir le tailnet.
+      if capacites?.decouverte == true { await chargerServeursDeLhote() }
+    }
   }
 
   public func rafraichir() async {
@@ -620,6 +717,109 @@ public final class ModeleApp {
       return
     }
     journal.append(DecodeurEvenement.afficher(enregistrement))
+  }
+
+  // MARK: - Écriture
+
+  /// Texte en cours de rédaction dans le composeur.
+  public var brouillon: String = ""
+  /// Un envoi est en vol : le bouton se verrouille, la frappe continue.
+  public private(set) var envoiEnCours = false
+  /// Acquittement du dernier envoi réussi, affiché sous le champ.
+  public private(set) var accuseEnvoi: String?
+  /// Motif du dernier refus, en français.
+  public private(set) var erreurEcriture: String?
+
+  /// Envoi non encore acquitté : sa règle d'identité vit dans `EnvoiEnAttente`.
+  ///
+  /// POURQUOI IL EST CONSERVÉ. Un réseau mobile coupe, la réponse se perd, et
+  /// l'utilisateur appuie de nouveau. Si chaque tentative tirait un identifiant
+  /// neuf, l'hôte insérerait un SECOND message : la conversation afficherait
+  /// deux fois la même demande. Tant que l'hôte n'a pas acquitté, on rejoue donc
+  /// avec le MÊME identifiant — l'hôte rend alors l'acceptation d'origine.
+  private var envoiEnAttente = EnvoiEnAttente()
+
+  /// L'hôte a-t-il annoncé savoir écrire ? Sinon, aucun composeur n'est proposé :
+  /// un champ de saisie qui ne peut rien envoyer est un mensonge d'interface.
+  public var ecriturePossible: Bool { capacites?.ecriture == true }
+
+  /// L'hôte a-t-il annoncé savoir interrompre un tour ?
+  ///
+  /// `capacites.ecriture` sert de repli : les deux viennent du même service, et
+  /// un hôte qui écrit sans le dire sait annuler.
+  public var annulationPossible: Bool {
+    capacites?.annulation ?? capacites?.ecriture ?? false
+  }
+
+  /// Adresse un message à une session.
+  ///
+  /// Le texte n'est effacé QU'APRÈS l'acquittement : un échec ne doit jamais
+  /// coûter à l'utilisateur ce qu'il vient d'écrire. Le fuseau du client est
+  /// joint à la demande — l'hôte le refuse s'il est mal formé, et le journal
+  /// situe ainsi l'heure locale de l'auteur.
+  public func envoyer(_ session: SessionListee, mode: ModePrompt = .queue) async {
+    let texte = brouillon.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !texte.isEmpty, !envoiEnCours, let client else { return }
+    let identifiant = envoiEnAttente.identifiant(pour: texte)
+    envoiEnCours = true
+    defer { envoiEnCours = false }
+    do {
+      let reponse = try await client.envoyerPrompt(
+        session.id,
+        demande: DemandePrompt(
+          texte: texte, mode: mode, requestId: identifiant,
+          fuseau: TimeZone.current.identifier))
+      envoiEnAttente.acquitter()
+      brouillon = ""
+      erreurEcriture = nil
+      accuseEnvoi =
+        reponse.reprise == true
+        ? "accepté — la session était fermée, l'hôte l'a reprise"
+        : "accepté — la réponse arrivera dans le journal"
+    } catch {
+      // Le texte ET l'identifiant restent : rejouer ne créera pas de doublon.
+      erreurEcriture = Self.expliquerEcriture(error)
+      accuseEnvoi = nil
+    }
+  }
+
+  /// Interrompt le tour en cours. La file d'attente est conservée.
+  public func annulerTour(_ session: SessionListee) async {
+    guard let client else { return }
+    do {
+      let reponse = try await client.annuler(session.id)
+      accuseEnvoi = reponse.annule ? "tour interrompu" : nil
+      erreurEcriture = reponse.annule ? nil : "l'hôte n'a pas interrompu le tour"
+    } catch {
+      erreurEcriture = Self.expliquerEcriture(error)
+      accuseEnvoi = nil
+    }
+  }
+
+  /// Efface les messages d'état du composeur (acquittement ou refus).
+  public func oublierEtatEcriture() {
+    accuseEnvoi = nil
+    erreurEcriture = nil
+  }
+
+  /// Un tour s'exécute-t-il dans cette session, d'après la dernière liste reçue ?
+  ///
+  /// La question est posée au MODÈLE et non à la session affichée : l'égalité
+  /// d'une `SessionListee` ignore son statut (l'identité d'une session est son
+  /// identifiant, sinon la sélection se perdrait à chaque rafraîchissement), donc
+  /// une vue qui ne lirait que la valeur reçue ne se redessinerait pas quand
+  /// l'agent passe de `inactif` à `en_cours`. Lire `sessions` ici rétablit
+  /// l'observation.
+  public func estEnCours(_ identifiant: String) -> Bool {
+    sessions.first { $0.id == identifiant }?.statut == "en_cours"
+  }
+
+  /// Rend une erreur d'écriture lisible, en gardant le motif de l'hôte.
+  private static func expliquerEcriture(_ erreur: any Error) -> String {
+    if case let ErreurRemote.refusServeur(_, motif, code) = erreur {
+      return RefusEcriture.expliquer(code: code, detail: motif, erreur: motif)
+    }
+    return String(describing: erreur)
   }
 
   public func fermerJournal() {

@@ -67,6 +67,27 @@ struct VueJournal: View {
         ProgressView("Lecture du journal…")
       }
     }
+    // Charger le journal est ce qui DONNE son contenu à cette vue.
+    //
+    // POURQUOI CE `.task` EST INDISPENSABLE. La sélection d'une session fait bien
+    // apparaître cet écran — titre, chemin, preset — mais l'en-tête seul ne lit
+    // rien : sans cet appel, le journal affichait « 0 affichés » pour une session
+    // qui en comptait 48. Un écran qui a l'air fonctionnel et qui ne montre rien
+    // est plus trompeur qu'une erreur. Le défaut a été trouvé en REGARDANT le
+    // simulateur, pas en compilant.
+    //
+    // `.task(id:)` et non `.task` : changer de session doit relire le journal,
+    // sans quoi la seconde session ouvrirait le journal de la première.
+    .task(id: session.id) {
+      await modele.ouvrir(session)
+    }
+    // Le composeur n'apparaît que si l'HÔTE a annoncé savoir écrire : une barre
+    // de saisie qui ne peut rien envoyer est pire que pas de barre du tout.
+    .safeAreaInset(edge: .bottom) {
+      if modele.ecriturePossible {
+        ComposeurEcriture(modele: modele, session: session)
+      }
+    }
   }
 }
 

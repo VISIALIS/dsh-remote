@@ -69,19 +69,20 @@ struct VueListeSessions: View {
     // cas que la découverte ne couvre pas.
     Section("Serveur") {
       if modele.serveurs.isEmpty {
-        // Une liste vide DOIT s'expliquer. Sans ce texte, l'utilisateur croit
-        // à une panne de l'application alors que la cause est presque
-        // toujours l'absence de Tailscale ou une adresse à saisir.
+        // Une liste vide DOIT s'expliquer, et l'explication dépend de la SOURCE :
+        // « l'hôte joint ne voit aucun Mac » n'appelle pas la même action que
+        // « cette plateforme ne peut pas découvrir ».
         VStack(alignment: .leading, spacing: 8) {
-          Label(DecouverteServeurs.messageDAbsence(), systemImage: "exclamationmark.triangle")
+          Label(modele.messageListeVide, systemImage: "exclamationmark.triangle")
             .font(.callout)
             .foregroundStyle(.orange)
           HStack(spacing: 12) {
-            // « Rafraîchir » n'est proposé QUE là où la découverte peut
-            // réellement rendre des machines. Sur iPhone elle est impossible,
-            // donc le bouton n'y produisait ni succès ni erreur : un bouton
-            // sans effet est un mensonge d'interface.
-            if modele.decouvertePossible {
+            // « Rafraîchir » n'est proposé QUE là où le rafraîchissement peut
+            // réellement rendre des machines : sur le Mac par la découverte
+            // locale, sur iPhone par l'hôte une fois qu'un serveur est joint.
+            // Ailleurs, le bouton ne produirait ni succès ni erreur — et un
+            // bouton sans effet est un mensonge d'interface.
+            if modele.rafraichissementPossible {
               Button("Rafraîchir la liste") { modele.rafraichirServeurs() }
                 .font(.caption)
             }
@@ -108,7 +109,7 @@ struct VueListeSessions: View {
                 .foregroundStyle(serveur.enLigne ? Color.accentColor : Color.secondary)
               VStack(alignment: .leading, spacing: 2) {
                 Text(serveur.nom).font(.body)
-                Text(serveur.enLigne ? "en ligne" : "hors ligne")
+                Text(modele.legendeServeur(serveur))
                   .font(.caption2)
                   .foregroundStyle(serveur.enLigne ? Color.green : Color.secondary)
               }
@@ -120,8 +121,10 @@ struct VueListeSessions: View {
           }
           .buttonStyle(.plain)
         }
-        Button("Rafraîchir la liste") { modele.rafraichirServeurs() }
-          .font(.caption)
+        if modele.rafraichissementPossible {
+          Button("Rafraîchir la liste") { modele.rafraichirServeurs() }
+            .font(.caption)
+        }
       }
     }
 

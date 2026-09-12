@@ -103,8 +103,10 @@ d'URL — un paramètre finit dans un journal d'accès ou un historique.
 |---|---|---|
 | `/dsh-remote/v1/sante` | `GET` | Poignée de main : version du protocole, capacités. Aucune donnée. |
 | `/dsh-remote/v1/sessions` | `GET`, `POST` | Liste des sessions, de la plus récente à la plus ancienne. |
+| `/dsh-remote/v1/serveurs` | `GET` | Liste des Macs du tailnet, **découverte par l'hôte** — c'est ce qui donne une liste à l'iPhone. |
 | `/dsh-remote/v1/session/<id>` | `POST` | Une page du journal d'une session. |
-| `/dsh-remote/v1/session/<id>/prompt` | `POST` | Envoyer un prompt. **Déclaré mais non opérationnel** — voir plus bas. |
+| `/dsh-remote/v1/session/<id>/prompt` | `POST` | Envoyer un prompt. Reprend la session si elle est froide. |
+| `/dsh-remote/v1/session/<id>/annuler` | `POST` | Interrompre le tour en cours, **file d'attente conservée**. |
 | `/dsh-remote/v1/flux` | `Upgrade` | WebSocket temps réel : une base, puis un message par écriture du journal. |
 
 ### `POST /v1/sessions`
@@ -119,27 +121,88 @@ d'URL — un paramètre finit dans un journal d'accès ou un historique.
 { "depuis": 0, "limite": 200, "types": ["user/message", "assistant/message"] }
 ```
 
-### `POST /v1/session/<id>/prompt` — écrire (déclaré, NON opérationnel)
+### `POST /v1/session/<id>/prompt` — écrire
 
 ```json
-{ "texte": "…", "mode": "queue" }
+{ "texte": "…", "mode": "queue", "requestId": "…", "fuseau": "Europe/Paris" }
 ```
 
-`mode` vaut `queue` (par défaut) ou `steer`.
+`mode` vaut `queue` (par défaut, forme le prochain tour) ou `steer` (remis au pas
+suivant du tour en cours). `requestId` et `fuseau` sont facultatifs.
 
-**Cette route ne fonctionne pas dans la composition `web` actuelle**, et le plugin le
-dit honnêtement plutôt que d'échouer en silence : elle répond `503` avec
-`« le service sessionController n est pas monté dans cette composition »`.
+Réponse `202` :
 
-Cause établie par la mesure : `ctx.get('sessionController')` rend `undefined` depuis le
-contexte de ce plugin, alors que le service est bien déclaré
-(`super(ctx, "sessionController", …)`) et que la ligne `session-controller` est bien
-présente dans le bundle `dsh-web-app`. Déclarer `inject: ['sessionController']` ne
-change rien — ce qui exclut une simple question d'ordre d'activation.
+```json
+{ "protocole": 1, "accepte": true, "mode": "queue", "requestId": "…", "reprise": false }
+```
 
-Ce qui a été PROUVÉ sur ce chemin : la route s'exécute (journal de démarrage et marqueur
-temporaire), le service est absent, et la réponse est désormais explicite (`503` avec
-corps JSON) au lieu d'un `400` vide.
+**`accepte` veut dire « l'hôte a pris le message »**, pas « le modèle a répondu » : la
+réponse arrive par le journal ou par le flux, comme tout le reste.
+
+**Une session froide n'est pas un refus.** L'hôte la résout ou la reprend lui-même — même
+politique que l'interface web — et le dit dans `reprise`. Une session inconnue est `404`.
+
+**`requestId` rend l'envoi IDEMPOTENT.** Rejouer la même demande avec le même identifiant
+rend l'acceptation d'origine **sans insérer un second message**. C'est ce qui permet à un
+client mobile de réessayer après une coupure réseau sans polluer la conversation ; sans
+cela, une réponse perdue se paie par un doublon. L'identifiant est validé
+(`^[A-Za-z0-9_-]{8,64}$`) et tiré par l'hôte s'il manque ou ne convient pas.
+
+Le texte est borné à 200 000 caractères (`413` au-delà) et le corps de requête à 1 Mio.
+Les refus portent un **code stable** et un statut qui distingue « réessayez » de « ça ne
+marchera jamais » :
+
+| Code | Statut | Sens |
+|---|---|---|
+| `gateway/bad-request`, `session/invalid-time-zone` | `400` | demande malformée |
+| `session/not-found` | `404` | session inconnue |
+| `session/model-unavailable`, `session/agent-busy`, `session/steer-unavailable` | `409` | état de la session, pas la demande |
+| autre | `502` | échec côté harness |
+
+### `POST /v1/session/<id>/annuler` — interrompre
+
+```json
+{ "protocole": 1, "annule": true }
+```
+
+Écrire depuis un téléphone, c'est souvent écrire pour **arrêter** ce qu'on a lancé. Sans
+annulation, il faut revenir au Mac et la fonction perd son intérêt. L'annulation conserve
+la file d'attente (`keepInbox`) : ce qui n'a pas encore été traité reste en attente. Une
+session froide est refusée en `404` — il n'y a rien à interrompre.
+
+### « Le service est absent de la composition » : une conclusion fausse, et pourquoi
+
+Le jalon 4 est resté bloqué sur ce diagnostic : `ctx.get('sessionController')` rendait
+`undefined`, et le service semblait donc absent. **Il ne l'était pas. Il était fourni trop
+tard.**
+
+Une sonde a mesuré ce que le contexte du plugin voit réellement, à trois instants :
+
+| Instant | Services visibles | `sessionController` |
+|---|---|---|
+| À l'application du plugin | 6 (loader, chemins, arguments, arrêt) | absent |
+| + 5 s | 65 (dont `agents`, `sessions`, `webServer`) | absent |
+| + 15 s | 73 | **présent** |
+
+Le plugin lisait le service **une seule fois, au chargement** — donc dans la première
+ligne du tableau. Il figeait `undefined` pour toute la vie du processus. La composition
+`web` charge ses entrées plusieurs secondes après les premières, et `sessionController`
+arrive avec elles.
+
+Ce que la mesure a coûté, et ce qu'elle a rapporté : deux hypothèses plausibles ont été
+écartées (service non déclaré ; problème d'ordre d'activation résolu par `inject`), alors
+que la vraie cause était une **capture précoce**, corrigée par une lecture paresseuse :
+
+```js
+const controleurEcriture = () => {
+  const service = ctx.get('sessionController')   // relu À CHAQUE REQUÊTE
+  return typeof service?.prompt === 'function' ? service : null
+}
+```
+
+Règle retenue pour ce dépôt, en plus de « ne jamais tester `=== null` sur `ctx.get` » :
+**un service lu dans `apply()` peut ne pas exister encore.** Le lire à l'usage, jamais à
+l'installation.
 
 ### Une erreur avalée a coûté une heure de diagnostic
 
@@ -151,6 +214,12 @@ ressemble à une requête malformée — pas à un service manquant, qui était 
 Toutes les routes convertissent maintenant leurs erreurs en réponses JSON explicites.
 Règle retenue pour ce dépôt : **ne jamais tester `=== null` sur le résultat de
 `ctx.get`** ; employer `typeof service?.membre !== 'function'`.
+
+Le même piège s'est représenté sur l'annulation : `cancel()` **lève de façon synchrone**
+quand la session n'est pas vivante. L'appeler en argument d'un `Promise.resolve(...)`
+l'exécutait HORS de la chaîne, et l'exception ressortait de nouveau en `400` vide. Toute
+lecture ou tout appel susceptible de lever doit être **dans** la chaîne :
+`Promise.resolve().then(() => cancel(...))`.
 
 ### `Upgrade /v1/flux` — le flux temps réel
 
@@ -232,6 +301,87 @@ Trois avertissements sur ces champs :
 
 ---
 
+## Découverte des serveurs : le Mac découvre, l'iPhone consomme
+
+Personne ne devrait avoir à taper `http://<machine>.<tailnet>.ts.net` pour choisir un
+serveur. Encore faut-il pouvoir **découvrir** la liste des machines — et c'est
+précisément ce qu'un iPhone ne peut pas faire : iOS interdit à une application
+d'exécuter un processus, et le socket LocalAPI de l'application Tailscale n'est pas
+lisible depuis un autre bac à sable.
+
+L'instance DSH, elle, tourne sur un Mac qui a Tailscale. C'est donc **l'hôte qui
+découvre**, et l'application qui **lit** le résultat par une route authentifiée.
+
+### `GET /v1/serveurs`
+
+```json
+{
+  "protocole": 1,
+  "serveurs": [
+    { "nom": "MacMini", "nomDNS": "macmini.exemple.ts.net", "enLigne": true, "local": true },
+    { "nom": "Portable Deux", "nomDNS": "portable-deux.exemple.ts.net", "enLigne": false, "local": false }
+  ],
+  "diagnostic": null
+}
+```
+
+- `nomDNS` est le nom MagicDNS **sans point final** : l'adresse en découle
+  (`http://<nomDNS>`, port 80 — la convention que `tailscale serve` publie), et le
+  client n'a rien à recalculer.
+- `local` marque la machine qui a répondu. C'est une information que **seul l'hôte**
+  peut donner : sur iPhone, l'appareil qui interroge n'est évidemment pas celui qui
+  répond.
+- `diagnostic` n'est renseigné que lorsque la liste est vide, et il dit **pourquoi** :
+  binaire introuvable, Tailscale muet, délai dépassé, aucun Mac dans le tailnet. Quatre
+  causes qui ne se corrigent pas de la même façon. Une liste vide sans raison est
+  indébogable.
+- Seules les machines **macOS** sont retenues. Proposer un PC Windows ou un iPhone comme
+  serveur DSH serait une promesse que l'installation ne peut pas tenir.
+
+### Ce qui a été mesuré, et qui a coûté du temps
+
+`tailscale status --json` ne dépend pas seulement du binaire, mais du **chemin employé
+pour le lancer** :
+
+| Chemin | Résultat |
+|---|---|
+| `/usr/local/bin/tailscale` (lien symbolique vers le binaire de l'application) | **échec** — « The current bundleIdentifier is unknown to the registry » |
+| `/Applications/Tailscale.app/Contents/MacOS/Tailscale` (chemin direct) | `200` — l'état complet du tailnet |
+| `~/.local/bin/tailscale` (lanceur de l'application) | `200` |
+
+Un lien symbolique fait perdre au CLI l'identité de bundle dont il a besoin pour
+joindre l'application Tailscale. Le plugin essaie donc ses candidats **jusqu'à un
+succès**, et non jusqu'au premier fichier exécutable — c'est la différence entre une
+liste qui se remplit et une liste qui reste vide sans explication. Le candidat qui a
+répondu est mémorisé pour ne pas repayer les échecs suivants.
+
+### Ce que cette route ne fait pas
+
+- **Aucune entrée n'entre dans la ligne de commande** : l'argv est fixe
+  (`status --json`), et `execFile` ne passe **jamais** par un shell. Il n'y a donc pas
+  de surface d'injection, même si un jour un paramètre était ajouté.
+- **Rien n'est exécuté avant l'authentification** : `autoriser` est appelé en premier,
+  et une requête refusée ne lance aucun processus.
+- **Aucun scan réseau, aucune requête sortante** : on lit l'état LOCAL d'un Tailscale
+  déjà en place. Le plugin n'émet aucun paquet.
+- **Coût borné** : délai de 8 s, sortie plafonnée à 4 Mio, résultat mis en cache 15 s
+  (un tailnet ne change pas d'une seconde à l'autre), et un seul processus à la fois.
+- **Aucun chemin absolu publié** : le diagnostic ne contient qu'une ligne courte, jamais
+  le chemin d'un binaire.
+
+### Limites assumées
+
+- La liste vient de l'état Tailscale **de la machine qui exécute le harness**. Si
+  Tailscale n'y est pas installé ou n'est pas connecté, la route rend une liste vide
+  avec sa raison — le reste du plugin fonctionne normalement.
+- L'adresse déduite suppose la convention `tailscale serve` sur le **port 80** du nom
+  MagicDNS. Une publication sur un autre port demanderait un champ supplémentaire, qui
+  n'existe pas tant qu'aucun cas réel ne l'exige.
+- La découverte ne dit pas si un Mac donné **sert réellement** une instance DSH : elle
+  dit qu'il est sur le tailnet et en ligne. Le client le vérifie en s'y connectant.
+
+---
+
 ## Lecture des journaux : le point délicat
 
 Un journal de session (`session.v3.jsonl.zstd`) est une **concaténation de
@@ -272,6 +422,25 @@ une seule fois ; il n'est jamais journalisé par `tracer` (qui ne trace que
 méthode, route, code et compteur) ; il n'est jamais renvoyé par une route ; le
 coffre est en `0600`.
 
+### Le jeton autorise désormais l'ÉCRITURE (portée accrue)
+
+Tant que le jeton n'ouvrait que la lecture, le perdre exposait les journaux de
+session. Depuis que `/prompt` et `/annuler` fonctionnent, **le même jeton fait
+écrire dans les sessions** : envoyer un message au nom de l'utilisateur, ou
+interrompre un travail en cours. La portée du secret a changé, pas sa forme.
+
+Ce n'est pas une dérogation de plus, c'est la conséquence assumée de la fonction :
+une application qui ne peut pas répondre à l'agent n'a pas d'intérêt. Trois
+conséquences pratiques :
+
+- le jeton se traite comme une clé de contrôle du harness, pas comme une clé de
+  lecture. Il n'est **jamais** recopié hors du coffre et du trousseau du client ;
+- une révocation existe (`supprimer l'enregistrement du coffre`) mais elle est
+  **globale** — il n'y a pas de révocation par appareil ;
+- les approbations restent **inaccessibles** (voir les limites) : écrire un
+  prompt n'autorise pas à répondre à une demande de permission. La portée est
+  réelle, elle est bornée.
+
 ### Ce que le plugin ne fait PAS
 
 - **Aucune surface réseau nouvelle** : les routes vivent sur le serveur DSH
@@ -290,6 +459,11 @@ coffre est en `0600`.
   lignes) plutôt que d'ajouter un paquet dans un processus sans bac à sable.
 - **Aucune traversée de chemin** : l'identifiant de session est validé par
   `^[A-Za-z0-9_-]{1,128}$` avant toute construction de chemin.
+- **Aucun contenu de prompt journalisé** : `tracer` écrit la route, le mode retenu
+  et le NOMBRE de caractères. Jamais le texte — il peut contenir ce que
+  l'utilisateur ne veut pas voir recopié dans un terminal.
+- **Écriture bornée** : texte limité à 200 000 caractères, corps de requête à
+  1 Mio, identifiant d'envoi validé par une forme stricte.
 
 ---
 
@@ -303,7 +477,15 @@ testée, et le plugin se dégrade au lieu de lever une exception au chargement.
 | `webServer.register` / `.registerUpgrade` | enregistrer routes et flux | sans `webServer`, le plugin journalise l'échec et ne s'active pas |
 | `credentials.readRecord` / `.modifyRecord` | stocker le jeton | sans coffre, aucune authentification n'est possible : toutes les routes répondent `401` |
 | `sessions.get`, `agents.roots` | marquer une session `vivante` | `vivante` vaut `false` partout ; le reste fonctionne |
+| `sessionController.prompt` / `.cancel` | écrire et interrompre | `capacites.ecriture` vaut `false`, la lecture continue de fonctionner, les deux routes répondent `503` |
 | `ctx.effect` | retirer les routes au déchargement | les routes fuient jusqu'au redémarrage |
+
+**`sessionController` est relu à chaque requête, jamais au chargement** : la
+composition `web` le fournit une dizaine de secondes après le démarrage. Une
+lecture unique dans `apply()` le manquerait à jamais — c'est l'erreur qui a fait
+croire à son absence (voir plus haut). `capacites.ecriture` répond donc `true`
+seulement une fois le service réellement là, et un client qui lit `false` doit
+continuer à proposer la lecture seule plutôt que d'attendre.
 
 Formes d'enregistrement du journal (`session`, `session/title`, `user/message`,
 `assistant/message`, `tool/call`, `tool/result`, `step/start`, `step/end`,
@@ -325,8 +507,14 @@ limite la surface de casse.
 | Le CODE exige un redémarrage | après modification du fichier et rechargement de la configuration, l'ancien code répondait encore |
 | Le flux pousse de vrais évènements | instance neuve : `base=1`, `evenement=5`, `delta=3`, 0 doublon, ordre croissant, pendant que la session écrivait |
 | La reprise ne renvoie rien de connu | reconnexion avec `depuisSeq` = dernier seq : 0 évènement déjà connu |
-| Le service d'écriture est absent de cette composition | marqueur temporaire : `action=prompt controller=undefined` dans un processus neuf |
-| Le refus d'écriture est explicite | `503` avec `{"erreur":"ecriture indisponible",…}` au lieu d'un `400` vide |
+| Le service d'écriture est ABSENT au chargement du plugin | sonde : 6 services visibles à l'application du plugin, `sessionController` absent ; présent à `T+15 s` (73 services) |
+| Le service d'écriture est LÀ à l'usage | `capacites.ecriture: true`, et un prompt adressé à une session FROIDE est accepté (`202`) |
+| La session froide est REPRISE | réponse `{"accepte":true,"reprise":true}`, puis `turn/start` → `user/message` → `assistant/message` → `turn/end` dans le journal |
+| L'envoi est IDEMPOTENT | même `requestId` rejoué : `202` + `accepte:true`, et **une seule** occurrence du message dans le journal (24 enregistrements avant et après) |
+| Les refus sont typés et traduisibles | `texte vide` → `400`, session inconnue → `404` `session/not-found`, fuseau invalide → `400` `session/invalid-time-zone` |
+| L'annulation fonctionne | session froide → `404` ; tour vivant → `202 {"annule":true}` |
+| Le prompt respecte la barrière d'accès | `401` sans jeton, `403` avec `Origin`, sur la route d'écriture comme sur les autres |
+| L'écriture fonctionne depuis Swift | `dsh-remote-ctl <adresse> prompt <id> "…"` → `accepté: true` ; essai d'intégration `swift test --filter ecritureReelle` vert contre un hôte réel |
 | Le flux fonctionne depuis Swift | `dsh-remote-ctl <adresse> flux <id>` : 5 évènements et 3 deltas reçus en direct, 0 doublon, curseur conservé |
 | Sans jeton : refus | `401` sur `/v1/sante` et sur l'`Upgrade` WebSocket |
 | Avec `Origin` : refus | `403` |
@@ -347,14 +535,24 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 
 ## Limites connues
 
-- **L'écriture n'est PAS opérationnelle.** `capacites.ecriture` vaut `false` : le
-  service `sessionController` est introuvable depuis le contexte du plugin. La route
-  existe, refuse proprement en `503`, et la cause est documentée ci-dessus.
+- **L'écriture est opérationnelle, avec une portée à connaître** : envoyer un prompt
+  et interrompre un tour. Le jeton d'appareil autorise donc **l'écriture**, pas
+  seulement la lecture (voir « Sécurité »).
+- **Les questions de l'agent ne sont pas exposées.** Un prompt peut être envoyé
+  pendant qu'un tool `ask_user` attend une réponse — mais répondre à la question
+  n'est pas possible : elle n'est pas dans la surface du plugin. L'agent attend,
+  et la réponse se donne sur le Mac.
 - **Les approbations ne sont pas exposées, par conception.** Le seam d'approbation de
   DSH n'admet **qu'un répondeur terminal par déploiement**, et l'interface web occupe
   déjà cette place : répondre depuis l'iPhone exigerait de la lui retirer. Toute
   implémentation future devra donc choisir explicitement quel répondeur sert les
   approbations, ou composer les deux — ce n'est pas un ajout anodin.
+- **Aucun envoi de fichier ni d'image.** L'hôte sait recevoir des pièces jointes
+  (`sessionController.prompt` les accepte), mais les téléverser depuis le client
+  exigerait une route de dépôt et un quota : hors périmètre.
+- **La file d'attente n'est pas exposée** : un prompt `queue` s'ajoute, mais la
+  liste de ce qui attend, sa réorganisation et son retrait ne sont pas lisibles
+  depuis le plugin.
 - **Le flux interroge le disque, il n'écoute pas le bus d'évènements interne du
   harness.** La latence est donc celle de l'intervalle de scrutation (750 ms). En
   contrepartie, il suit aussi les sessions écrites par un AUTRE processus — ce que
@@ -379,5 +577,5 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 | 1 | Plugin, protocole, jeton, lecture des journaux, tool Swift de validation | **livré et prouvé** |
 | 2 | Application SwiftUI lecture seule, macOS puis iOS | **livré et connecté** — 106 sessions affichées sur l'iPhone réel via Tailscale |
 | 3 | Flux temps réel des événements (`/v1/flux`) | **livré et prouvé** (plugin, client Swift et application) |
-| 4 | Écriture : prompt, approbations, questions | **bloqué** — `sessionController` introuvable depuis le contexte du plugin ; approbations impossibles sans retirer à l'interface web son rôle de répondeur |
+| 4 | Écriture : prompt, approbations, questions | **prompt et annulation livrés et prouvés** ; le « blocage » était une capture précoce du service, corrigée. Approbations et questions restent hors d'atteinte : un seul répondeur terminal par déploiement, déjà occupé par l'interface web |
 | 5 | Installation et signature iOS | **livré** — app signée et installée sur l'iPhone du propriétaire, connectée au harness via Tailscale (106 sessions) |

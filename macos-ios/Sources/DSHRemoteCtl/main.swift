@@ -56,12 +56,25 @@ func aider() {
     USAGE
       dsh-remote-ctl <adresse> sante
       dsh-remote-ctl <adresse> sessions [limite]
+      dsh-remote-ctl <adresse> serveurs
       dsh-remote-ctl <adresse> journal <identifiant> [limite]
+      dsh-remote-ctl <adresse> prompt <identifiant> <texte> [queue|steer]
+      dsh-remote-ctl <adresse> annuler <identifiant>
       dsh-remote-ctl <adresse> flux <identifiant> [secondes]
       dsh-remote-ctl serveurs
 
     ARGUMENTS
       <adresse>   http://127.0.0.1:3080 ou le nom MagicDNS du tailnet
+
+    « serveurs » sans adresse interroge le Tailscale LOCAL (macOS) ;
+    « <adresse> serveurs » demande la liste à l'HÔTE, ce qui est la seule voie
+    possible depuis un iPhone.
+
+    ÉCRITURE
+      « prompt » adresse un message à une session — froide ou vivante, l'hôte
+      la reprend au besoin. L'identifiant d'envoi est tiré ici : rejouer la
+      commande crée un NOUVEAU message, comme le ferait l'interface.
+      « annuler » interrompt le tour en cours et CONSERVE la file d'attente.
 
     JETON
       Lu dans DSH_REMOTE_TOKEN, sinon dans ~/.dsh/.credentials.yaml.
@@ -130,7 +143,7 @@ do {
     print("accès        : \(sante.acces ?? "—")")
     print("version DSH  : \(sante.versionDsh ?? "—")")
     print(
-      "capacités    : sessions=\(sante.capacites.sessions) journal=\(sante.capacites.journal) flux=\(sante.capacites.flux) écriture=\(sante.capacites.ecriture)"
+      "capacités    : sessions=\(sante.capacites.sessions) journal=\(sante.capacites.journal) flux=\(sante.capacites.flux) écriture=\(sante.capacites.ecriture) annulation=\(sante.capacites.annulation.map(String.init) ?? "inconnu") découverte=\(sante.capacites.decouverte.map(String.init) ?? "inconnu")"
     )
 
   case "sessions":
@@ -142,6 +155,21 @@ do {
       let titre = String(session.titreAffiche.prefix(46))
       let evenements = session.resume.nbEnregistrements ?? 0
       print("\(vivante) \(session.id.prefix(30))  \(titre.padding(toLength: 46, withPad: " ", startingAt: 0))  \(evenements) évts  \(octetsLisibles(session.octets))  \(horodatage(session.resume.dernierEvenementLe))")
+    }
+
+  case "serveurs":
+    let liste = try await client.listerServeurs()
+    if liste.serveurs.isEmpty {
+      print("aucun Mac publié par cet hôte")
+      if let raison = liste.diagnostic { print("raison : \(raison)") }
+      exit(0)
+    }
+    print("Macs publiés par l'hôte : \(liste.serveurs.count)\n")
+    for mac in liste.serveurs {
+      let etat = mac.enLigne ? "en ligne   " : "hors ligne "
+      let marque = mac.estLocal ? "  (hôte interrogé)" : ""
+      print("  \(etat) \(mac.nom)\(marque)")
+      print("             \(mac.adresse)")
     }
 
   case "journal":
@@ -156,6 +184,23 @@ do {
     for enregistrement in journal.enregistrements {
       print("  seq \(enregistrement.seq.map(String.init) ?? "—")  \(enregistrement.type ?? "?")")
     }
+
+  case "prompt":
+    guard arguments.count > 4 else { echouer("identifiant de session ou texte manquant") }
+    let identifiant = arguments[3]
+    let texte = arguments[4]
+    let mode = arguments.count > 5 ? (ModePrompt(rawValue: arguments[5]) ?? .queue) : .queue
+    let demande = DemandePrompt(texte: texte, mode: mode, requestId: DemandePrompt.identifiantNeuf())
+    let reponse = try await client.envoyerPrompt(identifiant, demande: demande)
+    print("accepté   : \(reponse.accepte)")
+    print("mode      : \(reponse.mode ?? "—")")
+    print("envoi     : \(reponse.requestId ?? "—")")
+    print("reprise   : \(reponse.reprise.map { $0 ? "oui — la session était froide" : "non" } ?? "—")")
+
+  case "annuler":
+    guard arguments.count > 3 else { echouer("identifiant de session manquant") }
+    let reponse = try await client.annuler(arguments[3])
+    print("annulé    : \(reponse.annule)")
 
   case "flux":
     guard arguments.count > 3 else { echouer("identifiant de session manquant") }

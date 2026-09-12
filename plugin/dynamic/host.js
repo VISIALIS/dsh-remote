@@ -43,12 +43,23 @@
 // API INTERNES DE DSH UTILISÉES (aucune garantie de stabilité)
 //   `ctx.webServer.register` / `.registerUpgrade` — routes nommées
 //   `ctx.credentials.readRecord` / `.modifyRecord` — coffre du harness
-//   `ctx.get('sessionController')`, `ctx.get('agents')` — état vivant
+//   `ctx.get('sessionController')` — adresser un prompt, annuler un tour
+//   `ctx.get('agents')`, `ctx.get('sessions')` — état vivant
 // Chacune est lue par `ctx.get(...)` puis testée ; le plugin se dégrade au lieu
-// de lever une exception au chargement.
+// de lever une exception au chargement. `sessionController` est en outre relu à
+// CHAQUE requête : la composition web le fournit une dizaine de secondes après
+// le démarrage, donc une lecture unique au chargement le manquerait à jamais.
+//
+// HORS DSH : la découverte lance le binaire LOCAL de Tailscale
+// (`node:child_process`, argv fixe, sans shell) pour lire l'état du tailnet. Ce
+// n'est ni une API DSH ni une API distante : c'est un état déjà présent sur la
+// machine. Si le binaire manque ou refuse de répondre, la route rend une liste
+// vide AVEC sa raison, et le reste du plugin fonctionne.
 
+import { execFile } from 'node:child_process'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { open, readFile, readdir, stat } from 'node:fs/promises'
+import { constants as constantesFS } from 'node:fs'
+import { access, open, readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import zlib from 'node:zlib'
 
@@ -375,6 +386,164 @@ function lireTrames(restant) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Découverte des serveurs — « le Mac découvre, l'iPhone consomme »
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// POURQUOI ICI ET PAS DANS L'APPLICATION. Une application iOS ne peut pas
+// exécuter de processus, et le socket LocalAPI de l'application Tailscale n'est
+// pas lisible depuis un autre bac à sable : l'iPhone ne peut donc PAS découvrir
+// le tailnet par lui-même. L'instance DSH, elle, tourne sur un Mac qui a
+// Tailscale et son binaire. C'est donc le Mac qui découvre, et l'application qui
+// LIT le résultat par une route authentifiée.
+//
+// CE QUE CETTE DÉCOUVERTE N'EST PAS : un scan de réseau, une requête sortante,
+// ou une écoute. On interroge l'état LOCAL de Tailscale, déjà présent sur la
+// machine, en lançant son binaire avec un argv FIXE (aucune entrée utilisateur
+// n'entre dans la ligne de commande, et `execFile` ne passe jamais par un
+// shell). Aucun paquet n'est émis par le plugin : Tailscale fait son travail,
+// on lit son état.
+
+// Candidats, essayés DANS CET ORDRE JUSQU'À UN SUCCÈS — et non jusqu'au premier
+// fichier exécutable. La distinction est mesurée : sur cette machine,
+// `/usr/local/bin/tailscale` est un lien symbolique vers le binaire de
+// l'application, et le lancer par ce lien échoue (« The current bundleIdentifier
+// is unknown to the registry ») alors que le binaire direct réussit. Un lien
+// perd l'identité de bundle dont le CLI a besoin pour joindre l'application.
+const CHEMINS_TAILSCALE = [
+  '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
+  '/opt/homebrew/bin/tailscale',
+  '/usr/local/bin/tailscale',
+]
+
+const DELAI_TAILSCALE_MS = 8000
+const PLAFOND_SORTIE_TAILSCALE = 4 * 1024 * 1024
+const TTL_DECOUVERTE_MS = 15000
+
+/**
+ * Un Mac tel que la découverte le propose. `local` marque l'hôte qui répond —
+ * c'est-à-dire celui qui exécute cette instance, information que seul l'hôte
+ * connaît.
+ * @typedef {{nom: string, nomDNS: string, enLigne: boolean, local: boolean}} MacTrouve
+ */
+
+/**
+ * Analyse la sortie de `tailscale status --json`.
+ *
+ * Séparée de l'exécution pour être éprouvable sans lancer de processus, comme
+ * côté Swift. Ne retient que `Self` et `Peer`, et seulement les machines macOS :
+ * proposer un PC Windows ou un iPhone comme serveur DSH serait une promesse que
+ * l'installation ne peut pas tenir.
+ *
+ * @param {string} sortie
+ * @returns {MacTrouve[] | null} `null` si la sortie n'a pas la forme attendue.
+ */
+function analyserTailnet(sortie) {
+  const racine = JSON.parse(sortie)
+  if (racine === null || typeof racine !== 'object') return null
+
+  const trouves = []
+  const retenir = (objet, local) => {
+    if (objet === null || typeof objet !== 'object') return
+    if (objet.OS !== 'macOS') return
+    const dns = typeof objet.DNSName === 'string' ? objet.DNSName : ''
+    if (dns.length === 0) return
+    // Le point final est la forme absolue du DNS : on le retire pour que le nom
+    // soit directement utilisable comme adresse.
+    const nomDNS = dns.endsWith('.') ? dns.slice(0, -1) : dns
+    const nom = typeof objet.HostName === 'string' && objet.HostName.length > 0 ? objet.HostName : nomDNS
+    trouves.push({ nom, nomDNS, enLigne: local ? true : objet.Online === true, local })
+  }
+
+  retenir(racine.Self, true)
+  if (racine.Peer !== null && typeof racine.Peer === 'object') {
+    for (const valeur of Object.values(racine.Peer)) retenir(valeur, false)
+  }
+
+  // En ligne d'abord, puis par nom : l'ordre doit être stable d'un appel à
+  // l'autre, sinon la liste semble sauter sous les yeux de l'utilisateur.
+  return trouves.sort((gauche, droite) => {
+    if (gauche.enLigne !== droite.enLigne) return gauche.enLigne ? -1 : 1
+    return gauche.nom.localeCompare(droite.nom, 'fr')
+  })
+}
+
+/**
+ * Réduit un message d'erreur à une ligne courte, sans retour à la ligne.
+ *
+ * Le diagnostic est utile — il distingue « binaire absent » de « Tailscale
+ * refuse de répondre » — mais il part dans une réponse HTTP : il est tronqué et
+ * débarrassé de ses sauts de ligne pour rester un champ de texte, pas un journal.
+ */
+function raisonCourte(texte) {
+  const ligne = String(texte ?? '').split('\n').find((element) => element.trim().length > 0) ?? ''
+  const propre = ligne.replace(/\s+/g, ' ').trim()
+  return propre.length > 120 ? propre.slice(0, 120) : propre
+}
+
+/**
+ * Lance un candidat et rend `{macs, raison}` : `macs` vaut `null` en cas d'échec,
+ * et `raison` porte alors une explication courte.
+ * @param {string} binaire
+ */
+function lancerTailscale(binaire) {
+  return new Promise((resolve) => {
+    execFile(
+      binaire,
+      ['status', '--json'],
+      { timeout: DELAI_TAILSCALE_MS, maxBuffer: PLAFOND_SORTIE_TAILSCALE, windowsHide: true, encoding: 'utf8' },
+      (erreur, sortie, erreurs) => {
+        if (erreur !== null && erreur !== undefined) {
+          if (erreur.killed === true) return resolve({ macs: null, raison: 'delai depasse' })
+          if (erreur.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return resolve({ macs: null, raison: 'sortie trop volumineuse' })
+          return resolve({ macs: null, raison: raisonCourte(erreurs) || raisonCourte(erreur.message) })
+        }
+        let macs = null
+        try {
+          macs = analyserTailnet(sortie)
+        } catch {
+          return resolve({ macs: null, raison: 'sortie illisible' })
+        }
+        if (macs === null) return resolve({ macs: null, raison: 'sortie inattendue' })
+        resolve({ macs, raison: null })
+      },
+    )
+  })
+}
+
+/**
+ * Liste les Macs du tailnet, vus depuis CETTE machine.
+ *
+ * Ne lève jamais : une découverte impossible rend une liste vide AVEC sa raison,
+ * parce qu'une liste vide sans explication est indébogable — on ne sait pas si
+ * le binaire manque, si Tailscale est arrêté ou si la sortie est illisible, et
+ * ces trois causes ne se corrigent pas de la même façon.
+ *
+ * @returns {Promise<{macs: MacTrouve[], diagnostic: string | null}>}
+ */
+async function decouvrirMacs() {
+  const maison = typeof process.env.HOME === 'string' ? process.env.HOME : ''
+  const candidats = CHEMINS_TAILSCALE.slice()
+  if (maison.length > 0) candidats.splice(1, 0, join(maison, '.local', 'bin', 'tailscale'))
+
+  const raisons = []
+  for (const binaire of candidats) {
+    try {
+      await access(binaire, constantesFS.X_OK)
+    } catch {
+      continue
+    }
+    const { macs, raison } = await lancerTailscale(binaire)
+    if (macs !== null) {
+      return { macs, diagnostic: macs.length === 0 ? 'aucun Mac macOS dans le tailnet' : null }
+    }
+    raisons.push(raison)
+  }
+
+  if (raisons.length === 0) return { macs: [], diagnostic: 'binaire tailscale introuvable' }
+  return { macs: [], diagnostic: 'tailscale muet: ' + raisons[0] }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Plugin
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -390,10 +559,23 @@ export function apply(ctx, config) {
 
   const sessions = ctx.get('sessions')
   const agents = ctx.get('agents')
+
   // Seul service qui sache ADRESSER un prompt a une session par son identifiant.
-  // Lu par `ctx.get` puis teste : sans lui, la lecture continue de fonctionner et
-  // seule l'ecriture se declare indisponible.
-  const controller = ctx.get('sessionController')
+  //
+  // Il est lu A CHAQUE REQUETE, jamais au chargement. Mesure a l'appui : la
+  // composition web fournit `sessionController` une dizaine de secondes APRES
+  // le demarrage, alors que ce plugin s'applique dans les premieres. Une lecture
+  // unique au chargement figeait donc `undefined` pour toute la vie du
+  // processus — ce qui a fait conclure, a tort, que le service etait absent de
+  // la composition et que l'ecriture y etait impossible.
+  const controleurEcriture = () => {
+    try {
+      const service = ctx.get('sessionController')
+      return service !== undefined && service !== null && typeof service.prompt === 'function' ? service : null
+    } catch {
+      return null
+    }
+  }
 
   // Le harness ne publie pas de service de chemins : `dsh-home-paths` est une
   // bibliotheque de fonctions, pas un service Cordis. On refait donc la
@@ -753,7 +935,14 @@ export function apply(ctx, config) {
           sessions: true,
           journal: true,
           flux: true,
-          ecriture: controller !== null && typeof controller?.prompt === 'function',
+          // L'hote sait-il publier la liste des Macs du tailnet ? Un client plus
+          // ancien que cette route lira `false` et gardera la saisie manuelle
+          // plutot que d'attendre une liste qui ne viendra jamais.
+          decouverte: true,
+          ecriture: controleurEcriture() !== null,
+          // Annuler le tour en cours. Meme service que l'ecriture : un client qui
+          // lit `false` ne propose pas de bouton « Arreter » qui ne ferait rien.
+          annulation: controleurEcriture() !== null,
           // Les approbations ne sont PAS exposees : le seam d'approbation de DSH
           // n'admet qu'un repondeur terminal par deploiement, et l'interface web
           // l'occupe deja. Repondre depuis l'iPhone exigerait de le remplacer.
@@ -761,6 +950,48 @@ export function apply(ctx, config) {
         },
       })
       tracer(req, 200)
+    },
+  })
+
+  // ── GET /dsh-remote/v1/serveurs — decouverte du tailnet ───────────────────
+  //
+  // L'iPhone ne peut pas decouvrir le tailnet (iOS interdit d'executer un
+  // processus) : il demande donc la liste a un hote qui le peut. C'est la voie
+  // retenue — le Mac decouvre, l'application consomme.
+  //
+  // Le resultat est mis en cache quelques secondes : lancer un processus a
+  // chaque requete serait un cout sans contrepartie, un tailnet ne changeant pas
+  // d'une seconde a l'autre.
+  let cacheDecouverte = { vuLe: 0, valeur: null }
+
+  const repondreServeurs = async (req, res) => {
+    try {
+      const maintenant = Date.now()
+      if (cacheDecouverte.valeur === null || maintenant - cacheDecouverte.vuLe > TTL_DECOUVERTE_MS) {
+        const { macs, diagnostic } = await decouvrirMacs()
+        cacheDecouverte = { vuLe: maintenant, valeur: { macs, diagnostic } }
+      }
+      const { macs, diagnostic } = cacheDecouverte.valeur
+      envoyer(res, 200, { protocole: VERSION_PROTOCOLE, serveurs: macs, diagnostic })
+      tracer(req, 200, macs.length + ' macs')
+    } catch (erreur) {
+      envoyer(res, 500, { erreur: 'decouverte impossible', detail: String(erreur?.message ?? erreur) })
+      tracer(req, 500)
+    }
+  }
+
+  enregistrer({
+    kind: 'exact',
+    path: PREFIX + '/v1/serveurs',
+    handler: (req, res) => {
+      if (!autoriser(req, res)) return tracer(req, 401)
+      if (req.method !== 'GET') {
+        envoyer(res, 405, { erreur: 'methode non autorisee' })
+        return tracer(req, 405)
+      }
+      repondreServeurs(req, res).catch((erreur) => {
+        envoyer(res, 500, { erreur: 'decouverte impossible', detail: String(erreur?.message ?? erreur) })
+      })
     },
   })
 
@@ -820,26 +1051,25 @@ export function apply(ctx, config) {
           envoyer(res, 405, { erreur: 'methode non autorisee' })
           return tracer(req, 405)
         }
-        // `controller?.` et non `controller.` : `ctx.get` rend `undefined` quand le
-        // service est absent, et lire une propriete de `undefined` LEVE. L'exception
-        // remontait au serveur web, qui la convertissait en `400` vide — ni corps,
-        // ni trace, ni cause. C'est ce qui a rendu cette panne si longue a voir.
-        if (typeof controller?.prompt !== 'function') {
+        // Le service est resolu ICI, a la requete. Voir `controleurEcriture` :
+        // fourni tardivement, il serait `undefined` pour toujours si on le
+        // lisait au chargement du plugin.
+        const controleur = controleurEcriture()
+        if (controleur === null) {
+          // `controleur?.` et non `controleur.` : `ctx.get` rend `undefined` quand le
+          // service est absent, et lire une propriete de `undefined` LEVE. L'exception
+          // remontait au serveur web, qui la convertissait en `400` vide — ni corps,
+          // ni trace, ni cause. C'est ce qui a rendu cette panne si longue a voir.
           envoyer(res, 503, {
             erreur: 'ecriture indisponible',
-            detail: 'le service sessionController n est pas monte dans cette composition',
+            detail: "le service sessionController n'est pas monte dans cette composition",
           })
           return tracer(req, 503)
         }
-        if (!estVivante(identifiant)) {
-          // Un agent froid ne peut pas recevoir de prompt : le harness le dit
-          // lui-meme. On le dit AVANT d'ecrire, avec la marche a suivre.
-          envoyer(res, 409, {
-            erreur: 'session non vivante',
-            detail: "cette session n'est pas ouverte dans ce processus: ouvrez-la d'abord dans l'interface du Mac",
-          })
-          return tracer(req, 409)
-        }
+        // Une session froide n'est PAS un refus : le controleur la reprend
+        // (resolution ou reprise) avant d'adresser le prompt, exactement comme
+        // l'interface web. On le dit dans la reponse plutot que de l'interdire.
+        const reprise = !estVivante(identifiant)
         lireCorps(req)
           .then(async (corps) => {
             if (corps === null) {
@@ -851,25 +1081,110 @@ export function apply(ctx, config) {
               envoyer(res, 400, { erreur: 'texte vide' })
               return
             }
+            if (texte.length > 200000) {
+              envoyer(res, 413, { erreur: 'texte trop long', limite: 200000 })
+              return tracer(req, 413)
+            }
             const mode = corps.mode === 'steer' ? 'steer' : 'queue'
-            const valeur = await controller.prompt(
-              {
-                requestId: randomBytes(16).toString('hex'),
-                sessionId: identifiant,
+            // Idempotence : un client mobile qui rejoue apres une coupure reseau
+            // renvoie le MEME identifiant, et le harness rend alors l'acceptation
+            // d'origine sans inserer un second message. Sans cela, une reponse
+            // perdue se paie par un doublon dans la conversation.
+            const requestId =
+              typeof corps.requestId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(corps.requestId)
+                ? corps.requestId
+                : randomBytes(16).toString('hex')
+            const demande = {
+              requestId,
+              sessionId: identifiant,
+              mode,
+              content: [{ type: 'text', text: texte }],
+            }
+            if (typeof corps.fuseau === 'string' && corps.fuseau.length > 0) demande.clientTimeZone = corps.fuseau
+            try {
+              const valeur = await controleur.prompt(demande, new AbortController().signal)
+              envoyer(res, 202, {
+                protocole: VERSION_PROTOCOLE,
+                accepte: valeur?.accepted === true,
                 mode,
-                content: [{ type: 'text', text: texte }],
-              },
-              new AbortController().signal,
-            )
-            envoyer(res, 202, { protocole: VERSION_PROTOCOLE, accepte: valeur?.accepted === true, mode })
-            // Jamais le TEXTE du prompt dans le journal : il peut contenir
-            // n'importe quoi, y compris ce que l'utilisateur ne veut pas voir
-            // recopie dans un terminal. Seule sa longueur est tracee.
-            tracer(req, 202, 'prompt ' + mode + ', ' + texte.length + ' caracteres')
+                requestId,
+                reprise,
+              })
+              // Jamais le TEXTE du prompt dans le journal : il peut contenir
+              // n'importe quoi, y compris ce que l'utilisateur ne veut pas voir
+              // recopie dans un terminal. Seule sa longueur est tracee.
+              tracer(req, 202, 'prompt ' + mode + ', ' + texte.length + ' caracteres')
+            } catch (erreur) {
+              // Les codes viennent du controleur ; on les traduit en statuts
+              // plutot que de tout rendre en `500`, sinon le client ne peut pas
+              // distinguer « reessayez » de « ca ne marchera jamais ».
+              const code = typeof erreur?.code === 'string' ? erreur.code : ''
+              const statuts = {
+                'gateway/bad-request': 400,
+                'session/attachment-invalid': 400,
+                'session/invalid-time-zone': 400,
+                'session/not-found': 404,
+                'session/agent-busy': 409,
+                'session/model-unavailable': 409,
+                'session/steer-unavailable': 409,
+              }
+              const statut = statuts[code] ?? 502
+              envoyer(res, statut, {
+                erreur: 'envoi refuse',
+                code: code.length > 0 ? code : null,
+                detail: String(erreur?.message ?? erreur),
+              })
+              tracer(req, statut, 'prompt refuse ' + (code.length > 0 ? code : 'sans code'))
+            }
           })
           .catch((erreur) => {
             envoyer(res, 500, { erreur: 'envoi impossible', detail: String(erreur?.message ?? erreur) })
             tracer(req, 500)
+          })
+        return
+      }
+
+      // ── Annuler le tour en cours : la contrepartie de l'ecriture ───────────
+      //
+      // Depuis un telephone, on ecrit souvent pour ARRETER ce qu'on a lance. Un
+      // envoi sans annulation oblige a revenir au Mac, ce qui vide la fonction
+      // de son interet. L'annulation conserve la file : `cancel` est appele avec
+      // `keepInbox: true` par le controleur, donc ce qui attend son tour attend
+      // toujours.
+      if (action === 'annuler') {
+        if (req.method !== 'POST') {
+          envoyer(res, 405, { erreur: 'methode non autorisee' })
+          return tracer(req, 405)
+        }
+        const controleur = controleurEcriture()
+        if (controleur === null || typeof controleur.cancel !== 'function') {
+          envoyer(res, 503, {
+            erreur: 'annulation indisponible',
+            detail: "le service sessionController n'est pas monte dans cette composition",
+          })
+          return tracer(req, 503)
+        }
+        // `Promise.resolve().then(...)` et NON `Promise.resolve(cancel(...))` :
+        // `cancel` LEVE de facon synchrone quand la session n'est pas vivante.
+        // L'appeler en argument l'executait HORS de la chaine, l'exception
+        // remontait au serveur web et ressortait en `400` vide — sans corps, ni
+        // trace, ni cause. Meme piege que `undefined.prompt`, meme remede :
+        // toute lecture ou tout appel susceptible de lever va DANS la chaine.
+        Promise.resolve()
+          .then(() => controleur.cancel({ sessionId: identifiant }))
+          .then((valeur) => {
+            envoyer(res, 202, { protocole: VERSION_PROTOCOLE, annule: valeur?.accepted === true })
+            tracer(req, 202, 'annulation')
+          })
+          .catch((erreur) => {
+            const code = typeof erreur?.code === 'string' ? erreur.code : ''
+            const statut = code === 'session/not-found' ? 404 : code === 'gateway/bad-request' ? 400 : 502
+            envoyer(res, statut, {
+              erreur: 'annulation refusee',
+              code: code.length > 0 ? code : null,
+              detail: String(erreur?.message ?? erreur),
+            })
+            tracer(req, statut, 'annulation refusee ' + (code.length > 0 ? code : 'sans code'))
           })
         return
       }
@@ -1156,7 +1471,7 @@ export function apply(ctx, config) {
     .then((valeur) => {
       jeton = valeur
       if (valeur === null) console.log('[dsh-remote] aucune authentification possible: routes inutilisables (401)')
-      else console.log('[dsh-remote] pret: ' + PREFIX + '/v1/sante, /v1/sessions, /v1/session/<id>, ws /v1/flux')
+      else console.log('[dsh-remote] pret: ' + PREFIX + '/v1/sante, /v1/sessions, /v1/serveurs, /v1/session/<id>, /v1/session/<id>/prompt, /v1/session/<id>/annuler, ws /v1/flux')
     })
     .catch((erreur) => {
       console.log('[dsh-remote] ECHEC du chargement du jeton: ' + String(erreur?.message ?? erreur))

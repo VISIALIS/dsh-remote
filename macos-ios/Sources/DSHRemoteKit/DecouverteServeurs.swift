@@ -4,21 +4,48 @@ import Foundation
 ///
 /// L'idée directrice : personne ne devrait avoir à taper
 /// `http://<machine>.<tailnet>.ts.net` pour choisir un serveur.
-/// La découverte interroge Tailscale ; l'utilisateur choisit un nom, l'adresse
-/// en découle.
-public struct ServeurMac: Sendable, Identifiable, Hashable {
+/// La découverte interroge Tailscale — localement sur macOS, ou par l'hôte DSH
+/// déjà joint, ce qui est la seule voie possible depuis un iPhone ; l'utilisateur
+/// choisit un nom, l'adresse en découle.
+public struct ServeurMac: Sendable, Identifiable, Hashable, Decodable {
   /// Nom lisible, tel que Tailscale le connaît (« MacMini », « MacBook Air de … »).
   public let nom: String
   /// Nom DNS complet, sans point final — c'est l'adresse du serveur.
   public let nomDNS: String
   public let enLigne: Bool
+  /// Vrai pour la machine qui a RÉPONDU à la découverte — donc celle qui exécute
+  /// l'instance DSH interrogée. Ce n'est pas forcément celle qui exécute
+  /// l'application : c'est justement l'intérêt, un iPhone n'exécute aucun serveur.
+  /// Seul l'hôte peut renseigner ce champ ; la découverte locale le laisse faux.
+  public let estLocal: Bool
   /// Identifiant stable : le nom DNS.
   public var id: String { nomDNS }
 
-  public init(nom: String, nomDNS: String, enLigne: Bool) {
+  public init(nom: String, nomDNS: String, enLigne: Bool, estLocal: Bool = false) {
     self.nom = nom
     self.nomDNS = nomDNS
     self.enLigne = enLigne
+    self.estLocal = estLocal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case nom, nomDNS, enLigne
+    case estLocal = "local"
+  }
+
+  /// Décodage TOLÉRANT, à dessein.
+  ///
+  /// Seuls `nom` et `nomDNS` sont exigés — sans eux il n'y a ni libellé ni
+  /// adresse, donc rien à proposer. Les deux booléens sont facultatifs : un hôte
+  /// qui n'annonce pas `local` ne doit pas faire échouer TOUTE la liste pour un
+  /// champ d'affichage. Une liste vide à cause d'un détail serait un défaut bien
+  /// plus coûteux que l'absence d'un badge.
+  public init(from decoder: any Decoder) throws {
+    let conteneur = try decoder.container(keyedBy: CodingKeys.self)
+    self.nom = try conteneur.decode(String.self, forKey: .nom)
+    self.nomDNS = try conteneur.decode(String.self, forKey: .nomDNS)
+    self.enLigne = try conteneur.decodeIfPresent(Bool.self, forKey: .enLigne) ?? false
+    self.estLocal = try conteneur.decodeIfPresent(Bool.self, forKey: .estLocal) ?? false
   }
 
   /// Adresse à donner au `RemoteClient`. `tailscale serve` publie sur le
@@ -32,118 +59,138 @@ public struct ServeurMac: Sendable, Identifiable, Hashable {
   /// nom, que macOS construit à partir du modèle — « MacBook Air de … »,
   /// « MacMini ». C'est une heuristique d'affichage, assumée : une machine
   /// renommée « bureau » retombera sur l'icône générique, ce qui reste correct.
+  ///
+  /// MESURÉ, ET CORRIGÉ APRÈS UNE CAPTURE D'ÉCRAN : `macbook.air`,
+  /// `macbook.pro` et `imac` NE SONT PAS des symboles SF. `Image(systemName:)`
+  /// ne se plaint pas — il n'affiche RIEN — donc ces trois branches rendaient une
+  /// ligne sans icône, et le repli n'était jamais atteint puisqu'un nom était
+  /// bien rendu. Les seuls symboles employés ici sont désormais ceux qui
+  /// existent, et un test vérifie qu'ils se résolvent tous.
+  ///
+  /// SF Symbols ne distingue pas un Air d'un Pro : l'icône dit « portable » ou
+  /// « bureau », ce que la donnée porte réellement. Prétendre au modèle serait
+  /// une promesse que la source ne permet pas de tenir.
   public var symbole: String {
     // Deux formes à reconnaître : le NOM de la machine (« MacBook Air de … »)
     // et le NOM D'HÔTE Tailscale, qui remplace les espaces par des tirets
     // (`macbook-air-de-…`, `macmini`). Sans ce repli, une adresse saisie à la
     // main afficherait l'icône générique pour un portable.
     let minuscule = nom.lowercased().replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "_", with: " ")
-    if minuscule.contains("macbook air") { return "macbook.air" }
-    if minuscule.contains("macbook pro") { return "macbook.pro" }
     if minuscule.contains("macbook") { return "macbook" }
     // « macmini » et « mac mini » se ramènent tous deux à « macmini » après
     // retrait des séparateurs.
     let compact = minuscule.replacingOccurrences(of: " ", with: "")
     if compact.contains("macmini") { return "macmini" }
     if compact.contains("macstudio") { return "macstudio" }
-    if compact.contains("imac") { return "desktopcomputer" }
     return "desktopcomputer"
   }
 
-  /// Vrai si ce Mac est celui qui exécute l'application (donc joignable en local).
-  public var estLocal: Bool { false }
 }
 
 /// Découverte des Macs joignables.
 ///
-/// ÉTAT RÉEL, MESURÉ, ET SA LIMITE — à lire avant de s'étonner que la liste soit
-/// vide :
+/// DEUX SOURCES, DANS CET ORDRE DE QUALITÉ :
 ///
-///   1. Sur iPhone, la découverte automatique est IMPOSSIBLE : une application
-///      iOS ne peut pas exécuter de processus, et le socket LocalAPI de
-///      l'application Tailscale n'est pas accessible depuis un autre bac à
-///      sable. Rien à corriger : c'est la plateforme.
-///   2. Sur macOS, `tailscale status --json` échoue aujourd'hui avec
-///      « The current bundleIdentifier is unknown to the registry » : le CLI
-///      exige un contexte applicatif que ce binaire n'a pas. Fournir
-///      `__CFBundleIdentifier` n'y change rien (essayé, avec
-///      `io.tailscale.ipn.macos`).
+///   1. **L'hôte DSH déjà joint** (`GET /dsh-remote/v1/serveurs`, lu par
+///      `RemoteClient.listerServeurs`). C'est la voie retenue : l'hôte tourne sur
+///      un Mac qui a Tailscale, il publie la liste, et l'application la LIT. Elle
+///      marche donc sur iPhone, où rien d'autre ne marche.
+///   2. **Le Tailscale local** (`macsDuTailnet`, macOS seulement). Utile quand
+///      aucun serveur n'est encore connu — c'est-à-dire au tout premier
+///      lancement, et pour le tool `dsh-remote-ctl`.
 ///
-/// CONSÉQUENCE ASSUMÉE : la saisie manuelle de l'adresse reste le chemin
-/// principal, et la liste des machines est un CONFORT quand elle est
-/// disponible. L'interface ne doit donc jamais dépendre d'elle — et quand elle
-/// est vide, elle doit dire POURQUOI et quoi faire, pas rester muette.
+/// CE QUI EST MESURÉ, ET QUI A COÛTÉ DU TEMPS :
+///
+///   1. Sur iPhone, la découverte LOCALE est impossible : une application iOS ne
+///      peut pas exécuter de processus, et le socket LocalAPI de l'application
+///      Tailscale n'est pas accessible depuis un autre bac à sable. C'est
+///      pourquoi la source n° 1 existe.
+///   2. Sur macOS, `tailscale status --json` dépend du CHEMIN employé pour
+///      lancer le binaire : `/usr/local/bin/tailscale` est un lien symbolique
+///      vers le binaire de l'application, et par ce lien le CLI échoue avec
+///      « The current bundleIdentifier is unknown to the registry » — alors que
+///      le chemin direct réussit. On essaie donc les candidats jusqu'à un
+///      SUCCÈS, et non jusqu'au premier fichier exécutable.
+///
+/// CONSÉQUENCE ASSUMÉE : la saisie manuelle de l'adresse reste possible, mais
+/// elle n'est plus le chemin principal. Une liste vide doit dire POURQUOI et
+/// quoi faire, pas rester muette.
 public enum DecouverteServeurs {
   /// Chemins usuels du binaire, dans l'ordre d'essai.
-  /// Chemins essayés dans l'ordre.
   ///
-  /// Le binaire du paquet `.app` est en DERNIER : mesuré, il échoue avec
-  /// « The current bundleIdentifier is unknown to the registry », comme celui
-  /// du chemin utilisateur. Les binaires en ligne de commande sont donc tentés
-  /// d'abord, et l'échec est rapporté au lieu d'être masqué.
+  /// Le binaire de l'application vient en PREMIER : c'est le seul qui réponde
+  /// sur une installation où `/usr/local/bin/tailscale` n'est qu'un lien
+  /// symbolique vers lui. `~/.local/bin/tailscale` est ajouté par `binaire()`,
+  /// juste après, car c'est là que le lanceur de l'application s'installe sur
+  /// certaines machines.
   private static let cheminsBinaire = [
-    "/usr/local/bin/tailscale",
-    "/opt/homebrew/bin/tailscale",
     "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    "/opt/homebrew/bin/tailscale",
+    "/usr/local/bin/tailscale",
   ]
 
-  private static func binaire() -> String? {
+  /// Candidats existants, dans l'ordre d'essai.
+  private static func candidats() -> [String] {
     let maison = NSHomeDirectory()
-    let candidats = cheminsBinaire + ["\(maison)/.local/bin/tailscale"]
-    for chemin in candidats where FileManager.default.isExecutableFile(atPath: chemin) {
-      return chemin
-    }
-    return nil
+    var liste = cheminsBinaire
+    liste.insert("\(maison)/.local/bin/tailscale", at: 1)
+    return liste.filter { FileManager.default.isExecutableFile(atPath: $0) }
+  }
+
+  /// Dernier binaire qui a RÉPONDU — et non simplement existé.
+  ///
+  /// Le conserver évite de repayer, à chaque rafraîchissement, l'échec des
+  /// candidats qui ne répondent pas. `nonisolated(unsafe)` comme `diagnostic` :
+  /// la découverte locale est lancée depuis une tâche détachée unique, et une
+  /// course ne coûterait qu'un essai supplémentaire.
+  public private(set) nonisolated(unsafe) static var binaireRetenu: String?
+
+  /// Candidats à essayer, celui déjà éprouvé en tête.
+  private static func candidatsOrdonnes() -> [String] {
+    var liste = candidats()
+    guard let retenu = binaireRetenu, let index = liste.firstIndex(of: retenu) else { return liste }
+    liste.remove(at: index)
+    liste.insert(retenu, at: 0)
+    return liste
   }
 
   /// Macs du tailnet, ceux de cette machine inclus, triés : en ligne d'abord.
   ///
   /// Ne lève jamais. Une découverte impossible rend une liste vide, ce qui est
   /// un état normal et non une erreur : l'utilisateur garde la saisie manuelle.
-  /// Vrai si Tailscale semble installé sur CETTE machine.
-  ///
-  /// Sert à distinguer « pas de tailnet configuré » de « Tailscale absent » :
-  /// les deux donnent une liste vide, mais n'appellent pas le même message.
-  public static func tailscaleSembleInstalle() -> Bool {
-    #if os(macOS)
-      if binaire() != nil { return true }
-      return FileManager.default.fileExists(atPath: "/Applications/Tailscale.app")
-    #else
-      // Sur iPhone, la seule trace fiable est l'application elle-meme :
-      // le systeme ne publie pas la liste des applications installees.
-      return false
-    #endif
-  }
-
-  /// Message à afficher quand aucune machine n'a pu être trouvée.
-  ///
-  /// Il nomme la cause ET l'action. Une liste vide sans explication laisse
-  /// croire à une panne de l'application, alors que la cause est presque
-  /// toujours l'absence de Tailscale ou une adresse à saisir à la main.
-  public static func messageDAbsence() -> String {
-    if let diagnostic, !diagnostic.isEmpty {
-      #if os(macOS)
-        return "Découverte automatique indisponible (\(diagnostic)). Saisissez l'adresse du Mac ci-dessous."
-      #else
-        return "Saisissez l'adresse du Mac ci-dessous."
-      #endif
-    }
-    if tailscaleSembleInstalle() {
-      return "Aucun Mac trouvé sur le tailnet. Vérifiez que Tailscale est connecté, puis rafraîchissez."
-    }
-    #if os(macOS)
-      return "Tailscale ne semble pas installé : installez-le, connectez-vous, puis rafraîchissez."
-    #else
-      return "La liste des Macs ne peut pas être découverte depuis un iPhone : iOS interdit à une application d'interroger Tailscale. Saisissez l'adresse du Mac ci-dessous — et vérifiez que Tailscale est installé et connecté sur cet iPhone, sans quoi l'adresse ne répondra pas."
-    #endif
-  }
-
   public static func macsDuTailnet() -> [ServeurMac] {
     #if os(macOS)
-      guard let binaire = binaire() else {
-        diagnostic = "binaire tailscale introuvable"
-        return []
+      var raisons: [String] = []
+      // On essaie CHAQUE candidat jusqu'à une réponse exploitable : le premier
+      // fichier exécutable n'est pas forcément celui qui sait parler à
+      // l'application Tailscale (voir l'en-tête de ce fichier).
+      for binaire in candidatsOrdonnes() {
+        let resultat = interroger(binaire)
+        if let macs = resultat.macs {
+          binaireRetenu = binaire
+          diagnostic = macs.isEmpty ? "aucun Mac macOS dans le tailnet" : nil
+          return macs
+        }
+        raisons.append(resultat.raison)
       }
+      diagnostic = raisons.isEmpty ? "binaire tailscale introuvable" : "tailscale muet: \(raisons[0])"
+      return []
+    #else
+      diagnostic = "découverte locale impossible sur cette plateforme"
+      return []
+    #endif
+  }
+
+  /// Lance un candidat et rend soit les Macs trouvés, soit la raison de l'échec.
+  ///
+  /// Le message d'erreur de Tailscale est tronqué à sa première ligne : il part
+  /// dans un message affiché à l'utilisateur, pas dans un journal.
+  ///
+  /// `#if os(macOS)` N'EST PAS DÉCORATIF : `Process` n'existe pas sur iOS, et
+  /// sans cette borne la compilation de l'application iPhone échoue. C'est aussi
+  /// la formulation exacte du fait — cette voie n'existe que sur macOS.
+  #if os(macOS)
+    private static func interroger(_ binaire: String) -> (macs: [ServeurMac]?, raison: String) {
       let processus = Process()
       processus.executableURL = URL(fileURLWithPath: binaire)
       processus.arguments = ["status", "--json"]
@@ -155,22 +202,56 @@ public enum DecouverteServeurs {
         try processus.run()
       } catch {
         // Un échec muet rend le diagnostic impossible : on garde la raison.
-        diagnostic = "exécution impossible: \(error.localizedDescription)"
-        return []
+        return (nil, "exécution impossible: \(error.localizedDescription)")
       }
       let donnees = tube.fileHandleForReading.readDataToEndOfFile()
       processus.waitUntilExit()
       guard processus.terminationStatus == 0 else {
         let texte = String(data: erreurs.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        diagnostic = "tailscale a échoué (code \(processus.terminationStatus)): \(texte.prefix(200))"
-        return []
+        let ligne = texte.split(separator: "\n").first.map(String.init) ?? ""
+        return (nil, "tailscale a échoué (code \(processus.terminationStatus)): \(ligne.prefix(120))")
       }
-      let macs = analyser(donnees)
-      diagnostic = macs.isEmpty ? "sortie analysée mais aucun Mac macOS trouvé" : nil
-      return macs
+      return (analyser(donnees), "")
+    }
+  #endif
+
+  /// Vrai si Tailscale semble installé sur CETTE machine.
+  ///
+  /// Sert à distinguer « pas de tailnet configuré » de « Tailscale absent » :
+  /// les deux donnent une liste vide, mais n'appellent pas le même message.
+  public static func tailscaleSembleInstalle() -> Bool {
+    #if os(macOS)
+      if !candidats().isEmpty { return true }
+      return FileManager.default.fileExists(atPath: "/Applications/Tailscale.app")
     #else
-      diagnostic = "découverte automatique indisponible sur cette plateforme"
-      return []
+      // Sur iPhone, la seule trace fiable est l'application elle-meme :
+      // le systeme ne publie pas la liste des applications installees.
+      return false
+    #endif
+  }
+
+  /// Message à afficher quand la liste est vide ET qu'aucun hôte n'a pu être
+  /// interrogé.
+  ///
+  /// Il nomme la cause ET l'action. Une liste vide sans explication laisse
+  /// croire à une panne de l'application, alors que la cause est presque
+  /// toujours l'absence de Tailscale ou une adresse à saisir à la main — une
+  /// seule fois.
+  public static func messageDAbsence() -> String {
+    #if os(macOS)
+      if let diagnostic, !diagnostic.isEmpty {
+        return "Découverte automatique indisponible (\(diagnostic)). Saisissez l'adresse du Mac ci-dessous."
+      }
+      if tailscaleSembleInstalle() {
+        return "Aucun Mac trouvé sur le tailnet. Vérifiez que Tailscale est connecté, puis rafraîchissez."
+      }
+      return "Tailscale ne semble pas installé : installez-le, connectez-vous, puis rafraîchissez."
+    #else
+      // On ne dit plus « impossible sur iPhone » : la découverte y est
+      // impossible LOCALEMENT, mais un hôte déjà joint publie la liste. Le
+      // message donne donc l'action qui débloque, au lieu d'un constat.
+      return
+        "Saisissez l'adresse d'un Mac ci-dessous, puis connectez-vous : ce Mac publiera ensuite la liste des Macs de votre tailnet."
     #endif
   }
 
@@ -199,7 +280,7 @@ public enum DecouverteServeurs {
       // l'adresse soit directement utilisable.
       let propre = dns.hasSuffix(".") ? String(dns.dropLast()) : dns
       let enLigne = soiMeme ? true : ((objet["Online"] as? Bool) ?? false)
-      trouves.append(ServeurMac(nom: nom, nomDNS: propre, enLigne: enLigne))
+      trouves.append(ServeurMac(nom: nom, nomDNS: propre, enLigne: enLigne, estLocal: soiMeme))
     }
 
     if let soi = racine["Self"] as? [String: Any] { retenir(soi, soiMeme: true) }

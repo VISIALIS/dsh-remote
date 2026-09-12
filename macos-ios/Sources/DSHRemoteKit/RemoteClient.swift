@@ -118,6 +118,14 @@ public actor RemoteClient {
     case 403:
       throw ErreurRemote.origineRefusee
     default:
+      // L'hôte joint un motif STRUCTURÉ à ses refus (`erreur`, `code`, `detail`).
+      // Le perdre ici transformerait « aucun modèle n'est choisi pour cette
+      // session » en « HTTP 409 », c'est-à-dire en message que l'utilisateur ne
+      // peut pas suivre. On décode donc le corps avant de renoncer.
+      if let refus = try? JSONDecoder().decode(RefusEcriture.self, from: donnees) {
+        let motif = refus.detail?.isEmpty == false ? refus.detail! : (refus.erreur ?? "refus sans motif")
+        throw ErreurRemote.refusServeur(statut: http.statusCode, motif: motif, code: refus.code)
+      }
       throw ErreurRemote.reponseInattendue(code: http.statusCode)
     }
   }
@@ -154,6 +162,21 @@ public actor RemoteClient {
     return try decoder(ListeSessions.self, depuis: donnees)
   }
 
+  /// Demande à l'hôte la liste des Macs qu'il voit sur son tailnet.
+  ///
+  /// POURQUOI CE N'EST PAS LE CLIENT QUI DÉCOUVRE. Une application iOS ne peut
+  /// pas exécuter de processus, et le socket LocalAPI de l'application Tailscale
+  /// n'est pas lisible depuis un autre bac à sable : l'iPhone ne PEUT PAS
+  /// découvrir le tailnet. L'hôte, lui, tourne sur un Mac qui a Tailscale. Le
+  /// Mac découvre donc, et l'application lit le résultat.
+  ///
+  /// Une liste vide est une réponse NORMALE, pas une erreur : `diagnostic` dit
+  /// alors pourquoi, et la saisie manuelle reste disponible.
+  public func listerServeurs() async throws -> ListeServeurs {
+    let donnees = try await executer(try requete("/dsh-remote/v1/serveurs", methode: "GET", corps: nil))
+    return try decoder(ListeServeurs.self, depuis: donnees)
+  }
+
   /// Lit une page du journal d'une session.
   public func lireSession(_ identifiant: String, demande: DemandeJournal = DemandeJournal()) async throws
     -> JournalSession
@@ -163,5 +186,35 @@ public actor RemoteClient {
     let chemin = "/dsh-remote/v1/session/" + identifiant
     let donnees = try await executer(try requete(chemin, methode: "POST", corps: corps))
     return try decoder(JournalSession.self, depuis: donnees)
+  }
+
+  /// Adresse un prompt à une session — la SEULE opération de ce client qui écrit.
+  ///
+  /// REPRENDRE UNE SESSION FROIDE EST NORMAL. L'hôte résout la session ou la
+  /// reprend lui-même (même politique que l'interface web) : appeler cette
+  /// méthode sur une session fermée depuis hier fonctionne. La réponse porte
+  /// `reprise` pour que l'interface puisse l'annoncer, car une reprise prend
+  /// quelques secondes.
+  ///
+  /// IDEMPOTENCE. `demande.requestId` est l'identité de l'envoi : rejouer la
+  /// MÊME demande après une coupure réseau rend l'acceptation d'origine sans
+  /// insérer un second message. Le client doit donc conserver l'identifiant
+  /// jusqu'à l'acquittement, et ne pas en tirer un nouveau à chaque tentative.
+  public func envoyerPrompt(_ identifiant: String, demande: DemandePrompt) async throws -> ReponsePrompt {
+    let corps = try JSONEncoder().encode(demande)
+    let chemin = "/dsh-remote/v1/session/" + identifiant + "/prompt"
+    let donnees = try await executer(try requete(chemin, methode: "POST", corps: corps))
+    return try decoder(ReponsePrompt.self, depuis: donnees)
+  }
+
+  /// Interrompt le tour en cours d'une session.
+  ///
+  /// La file d'attente est CONSERVÉE : ce qui n'a pas encore été traité reste
+  /// en attente. Une session froide est refusée en `session/not-found` — il n'y
+  /// a rien à interrompre.
+  public func annuler(_ identifiant: String) async throws -> ReponseAnnulation {
+    let chemin = "/dsh-remote/v1/session/" + identifiant + "/annuler"
+    let donnees = try await executer(try requete(chemin, methode: "POST", corps: nil))
+    return try decoder(ReponseAnnulation.self, depuis: donnees)
   }
 }
