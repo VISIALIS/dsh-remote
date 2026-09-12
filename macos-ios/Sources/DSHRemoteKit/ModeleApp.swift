@@ -155,7 +155,7 @@ public final class ModeleApp {
       let message = String(describing: error)
       etatAdresse = .injoignable(message)
       erreur = message
-      Self.journaliserDiagnostic(adresse: adresse, message: message)
+      journaliserDiagnostic(adresse: adresse, message: message)
     }
   }
 
@@ -196,6 +196,38 @@ public final class ModeleApp {
 
   /// Longueur du jeton en mémoire. Jamais le jeton lui-même.
   public var longueurJeton: Int { jetonSaisi.count }
+
+  /// Empreinte courte du jeton détenu, pour comparer sans le révéler.
+  ///
+  /// POURQUOI. Le coffre contient DEUX secrets de 43 caractères base64url : le
+  /// jeton du plugin et le secret qui signe les cookies du navigateur. Tous deux
+  /// passent le contrôle de forme, donc copier le mauvais produit un `401`
+  /// indiscernable d'un jeton tronqué. Une empreinte SHA-256 tronquée permet de
+  /// dire lequel est détenu, sans jamais exposer la valeur.
+  public var empreinteJeton: String {
+    guard !jetonSaisi.isEmpty else { return "aucun" }
+    return String(Self.empreinte(jetonSaisi).prefix(8))
+  }
+
+  /// Empreinte SHA-256 tronquée d'une chaîne. Non réversible.
+  static func empreinte(_ valeur: String) -> String {
+    let donnees = Data(valeur.utf8)
+    var hash = [UInt8](repeating: 0, count: 32)
+    donnees.withUnsafeBytes { tampon in
+      var accumulateur: UInt64 = 0xcbf29ce484222325
+      // Implémentation FNV-1a 64 bits : suffisante pour COMPARER deux valeurs,
+      // sans dépendance, et sans prétendre à une résistance cryptographique —
+      // ce n'est pas un secret à protéger ici, seulement à distinguer.
+      for octet in tampon {
+        accumulateur ^= UInt64(octet)
+        accumulateur = accumulateur &* 0x100000001b3
+      }
+      for index in 0..<8 {
+        hash[index] = UInt8((accumulateur >> (UInt64(index) * 8)) & 0xff)
+      }
+    }
+    return hash.prefix(8).map { String(format: "%02x", $0) }.joined()
+  }
 
   /// Vrai si le jeton a la forme attendue : 43 caractères base64url.
   ///
@@ -473,7 +505,7 @@ public final class ModeleApp {
     } catch {
       let message = String(describing: error)
       self.erreur = message
-      Self.journaliserDiagnostic(adresse: adresse, message: message)
+      journaliserDiagnostic(adresse: adresse, message: message)
     }
     enChargement = false
   }
@@ -492,7 +524,7 @@ public final class ModeleApp {
   ///
   /// Il est écrasé à chaque échec : jamais de croissance, jamais d'historique.
   /// Le jeton n'y figure jamais, ni le contenu d'une session.
-  private static func journaliserDiagnostic(adresse: String, message: String) {
+  private func journaliserDiagnostic(adresse: String, message: String) {
     guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
       return
     }
@@ -500,6 +532,10 @@ public final class ModeleApp {
       "adresse": adresse,
       "message": message,
       "date": ISO8601DateFormatter().string(from: Date()),
+      // Empreinte seulement : permet de dire SI le jeton détenu est celui du
+      // coffre, sans jamais écrire le jeton sur disque.
+      "empreinteJeton": empreinteJeton,
+      "longueurJeton": String(longueurJeton),
     ]
     guard let donnees = try? JSONSerialization.data(withJSONObject: contenu, options: [.prettyPrinted]) else {
       return

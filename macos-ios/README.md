@@ -205,6 +205,34 @@ Marche à suivre, une seule fois :
 4. Sur l'iPhone, si iOS le demande : **Réglages ▸ Général ▸ VPN et gestion de
    l'appareil**, faire confiance au profil de développeur.
 
+### Le piège du jeton : deux secrets de 43 caractères
+
+Le coffre contient **deux** secrets de 43 caractères en base64url :
+
+| Clé | Rôle |
+|---|---|
+| `dsh-remote/device-token` → `payload.token` | **le** jeton d'appareil, celui qu'attend le plugin |
+| `client-connection/browser-session` → `payload.secret` | secret qui signe les cookies du navigateur |
+
+Les deux passent le contrôle de forme, et **seul le premier est accepté** : copier
+le second produit un `401` indiscernable d'un jeton tronqué. Deux garde-fous en
+découlent :
+
+- la commande à employer cible **l'enregistrement**, pas une ligne « token » :
+
+```bash
+python3 -c "
+import yaml, os
+d = yaml.safe_load(open(os.path.expanduser('~/.dsh/.credentials.yaml'), encoding='utf-8'))
+print(d['records']['dsh-remote/device-token']['payload']['token'])
+"
+```
+
+- l'application affiche une **empreinte** de 8 caractères hexadécimaux du jeton
+  qu'elle détient (`Documents/diagnostic.json`, champ `empreinteJeton`), jamais
+  le jeton. Comparer cette empreinte à celle du coffre dit lequel est détenu,
+  sans rien exposer.
+
 ### Adresse : deux pièges corrigés après essai sur l'appareil
 
 **1. La valeur par défaut était trompeuse sur iPhone.** Le champ partait avec
