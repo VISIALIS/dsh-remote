@@ -24,16 +24,32 @@
     <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
   <!--
-    AUCUNE exception App Transport Security.
+    AUCUNE exception App Transport Security n'est livree ici.
 
-    L'application vise l'adresse tailnet du Mac sous forme d'IP litterale
-    (100.x.y.z). App Transport Security n'impose TLS qu'aux NOMS DE DOMAINE
-    qualifies : une IP litterale en est exemptee, et le trajet est de toute
-    facon chiffre de bout en bout par Tailscale (WireGuard).
+    POURQUOI. L'application joint le Mac par le port 80 du nom MagicDNS publie
+    par `tailscale serve`, donc en HTTP, et ATS bloque le clair vers un nom de
+    domaine qualifie : une exception est donc bien necessaire.
 
-    Ajouter `NSAllowsArbitraryLoads` ici serait donc inutile ET dangereux :
-    cela autoriserait du clair vers n'importe quel domaine, pour ne resoudre
-    un probleme qui n'existe pas.
+    MAIS elle exige d'ECRIRE LE NOM DU DOMAINE EN CLAIR dans ce fichier, et un
+    nom de machine ou de tailnet ne doit pas entrer dans l'histoire du depot
+    (REGLE #0). J'ai essaye de l'injecter par $(DSH_ATS_DOMAINE) depuis un
+    xcconfig local : MESURE, cela ne fonctionne pas — Xcode n'etend pas les
+    variables de build dans les CLES d'un plist (une cle litterale passe, une
+    cle variable reste litterale). Plutot que de livrer une exception
+    inoperante, le mecanisme a ete retire.
+
+    LA SOLUTION PROPRE, sans aucune exception : publier en HTTPS.
+
+        tailscale serve --https 443 http://127.0.0.1:3080
+
+    Tailscale signe un vrai certificat pour le nom MagicDNS ; l'application vise
+    alors https://<nom-magicdns>/ et App Transport Security est satisfait. Ce
+    fichier n'a plus besoin d'etre modifie.
+
+    A defaut, ajouter localement le bloc NSExceptionDomains avec le domaine en
+    clair : il ne sera alors pas committee, et l'application construite le
+    contiendra — ce qui est inevitable, un binaire signe portant de toute facon
+    ses reglages.
   -->
 </dict>
 </plist>

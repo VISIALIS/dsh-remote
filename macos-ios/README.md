@@ -122,6 +122,58 @@ dû quitter la cible exécutable `DSHRemoteApp` pour rejoindre la bibliothèque
 plus de `swift run DSHRemote` ; l'application se lance depuis le projet Xcode, qui
 couvre iOS **et** macOS.
 
+### Installé sur l'iPhone — et l'adresse qui marche vraiment
+
+**C'est fait.** Xcode a enregistré l'appareil, créé le profil de provisionnement, et
+l'application est **installée et signée** (équipe `<equipe du proprietaire>`) :
+
+```bash
+xcodebuild -project DSHRemote.xcodeproj -scheme DSHRemote \
+  -destination 'id=<iphone>' -allowProvisioningUpdates build
+xcrun devicectl device install app --device <iphone> <chemin>/DSHRemote.app
+```
+
+**Correction importante sur l'adresse.** `tailscale serve` publie l'instance sur le
+**port 80 du nom MagicDNS**, PAS sur `100.x.y.z:3080` — le harness n'écoute que sur la
+boucle locale, et rien ne répond sur l'IP tailnet avec un port. Mesuré :
+
+| Adresse | Résultat |
+|---|---|
+| `http://100.101.102.103:3080` | `000` — rien n'écoute |
+| `http://<nom-magicdns-du-mac>` (port 80) | `200` — le bon chemin |
+
+Conséquence : l'adresse à saisir dans l'application est le **nom MagicDNS**, sans port.
+Obtenir le nom exact : `tailscale serve status`.
+C'est un nom de domaine qualifié, donc App Transport Security s'y applique et le HTTP en
+clair y est bloqué — d'où une exception `NSExceptionDomains` **ciblée sur ce seul
+domaine** dans `App/Info.plist`, et non `NSAllowsArbitraryLoads` quiouvrirait le clair
+vers n'importe quel hôte.
+
+**Le HTTP en clair exige une exception ATS — et elle n'est pas livrée ici.**
+
+ATS bloque le clair vers un nom de domaine qualifié. Or l'exception impose d'**écrire
+le nom du domaine en clair** dans `App/Info.plist`, et un nom de machine ou de tailnet
+n'a rien à faire dans l'histoire du dépôt (RÈGLE #0).
+
+J'ai tenté de l'injecter par `$(DSH_ATS_DOMAINE)` depuis un xcconfig local. **Mesuré :
+cela ne marche pas** — Xcode n'étend pas les variables de build dans les **clés** d'un
+plist. Une clé littérale traverse le prétraitement intacte, une clé variable reste
+littérale (`$(DSH_ATS_DOMAINE)`), donc l'exception serait inopérante. Le mécanisme a été
+retiré plutôt que livré mort.
+
+**La solution propre, sans aucune exception : publier en HTTPS.**
+
+```bash
+tailscale serve --https 443 http://127.0.0.1:3080
+```
+
+Tailscale signe un vrai certificat pour le nom MagicDNS ; l'application vise alors
+`https://<nom-magicdns>/` et App Transport Security est satisfait.
+
+**À défaut**, ajouter localement le bloc `NSExceptionDomains` avec le domaine en clair :
+il ne sera pas committé, et l'application construite le contiendra — ce qui est
+inévitable, un binaire signé portant de toute façon ses réglages.
+
 ### Pour installer sur l'iPhone : une action manuelle, inévitable
 
 Construire pour l'appareil échoue aujourd'hui sur deux points **administratifs**, pas
@@ -293,3 +345,6 @@ inactive.
 | Le projet Xcode produit une app installable | `DSHRemote.app` avec `Info.plist`, identifiant `org.example.DSHRemote`, installée et lancée dans le simulateur |
 | Le simulateur ne lit pas le coffre du Mac | conteneur en bac à sable : l'app affiche « Aucun jeton d'appareil » |
 | L'installation sur l'iPhone exige une action manuelle | `xcodebuild` échoue : appareil non enregistré, aucun profil pour `org.example.DSHRemote` |
+| L'application est INSTALLÉE sur l'iPhone | `devicectl device info apps` liste `DSH Remote — org.example.DSHRemote — 0.1` |
+| Elle est signée par l'équipe du propriétaire | `codesign -dv` : `TeamIdentifier=<equipe du proprietaire>`, `embedded.mobileprovision` présent |
+| L'IP tailnet avec port ne sert RIEN | `http://100.101.102.103:3080` → `000` ; le nom MagicDNS → `200` |
