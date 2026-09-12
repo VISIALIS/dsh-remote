@@ -12,8 +12,9 @@ import PackageDescription
 // cette contrainte, et non un choix esthétique, qui a déplacé le code.
 //
 // Les points d'entrée sont donc séparés : `dsh-remote-ctl` (tool de validation
-// en ligne de commande, macOS) et le projet Xcode `DSHRemote.xcodeproj`, qui
-// produit l'application installable sur iPhone et sur Mac.
+// en ligne de commande, macOS), `DSHRemote` (application macOS, pour REGARDER
+// l'interface sur le Mac) et le projet Xcode `DSHRemote.xcodeproj`, qui produit
+// l'application installable sur iPhone.
 let package = Package(
   name: "DSHRemote",
   platforms: [
@@ -23,6 +24,7 @@ let package = Package(
   products: [
     .library(name: "DSHRemoteKit", targets: ["DSHRemoteKit"]),
     .executable(name: "dsh-remote-ctl", targets: ["DSHRemoteCtl"]),
+    .executable(name: "DSHRemote", targets: ["DSHRemoteApp"]),
   ],
   targets: [
     .target(
@@ -31,6 +33,16 @@ let package = Package(
     ),
     .executableTarget(
       name: "DSHRemoteCtl",
+      dependencies: ["DSHRemoteKit"],
+      swiftSettings: [.swiftLanguageMode(.v6)]
+    ),
+    // macOS UNIQUEMENT : c'est la seule plateforme où ce paquet produit une
+    // application. iOS passe par le projet Xcode, dont le binaire de simulateur
+    // ne doit jamais être lancé comme un programme macOS — dyld le refuse
+    // (`DYLD_ROOT_PATH not set for simulator program`), et ce refus ressemble à
+    // s'y méprendre à un plantage de l'application.
+    .executableTarget(
+      name: "DSHRemoteApp",
       dependencies: ["DSHRemoteKit"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),

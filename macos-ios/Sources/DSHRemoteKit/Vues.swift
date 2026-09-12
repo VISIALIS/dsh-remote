@@ -156,7 +156,9 @@ struct VueListeSessions: View {
           // chercher annulerait l'intérêt de la recherche.
           DisclosureGroup(
             isExpanded: Binding(
-              get: { !modele.recherche.isEmpty || espacesDeplies.contains(espace.id) },
+              get: {
+                !modele.recherche.isEmpty || deplieParArgument || espacesDeplies.contains(espace.id)
+              },
               set: { ouvert in
                 if ouvert { espacesDeplies.insert(espace.id) } else { espacesDeplies.remove(espace.id) }
               }

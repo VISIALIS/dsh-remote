@@ -16,6 +16,11 @@ MISE À JOUR — jalons 2, 3 et l'écriture livrés : voir [Application](#applic
 swift run DSHRemote        # macOS : lit le jeton tout seul, aucune saisie
 ```
 
+**Observé** dans une fenêtre 1100×720 : Tailscale connecté, les serveurs du tailnet,
+et l'arbre des sessions groupé par espace de travail — la même vue que sur iPhone.
+Cette commande a été remise en état de marche : elle était devenue fausse après la
+restructuration (voir « Restructuration imposée par cette contrainte »).
+
 L'application réutilise **exactement** la bibliothèque du tool : les vues ne parlent
 jamais au réseau, elles observent `ModeleApp`. Remplacer le transport ne demande donc
 aucune retouche d'interface.
@@ -165,9 +170,16 @@ et le produit contient bien `DSHRemote.app` avec son `Info.plist` et son
 
 Une cible d'application **ne peut pas lier un exécutable**. L'interface SwiftUI a donc
 dû quitter la cible exécutable `DSHRemoteApp` pour rejoindre la bibliothèque
-`DSHRemoteKit`, qui porte désormais tout le code réutilisable. Conséquence : il n'y a
-plus de `swift run DSHRemote` ; l'application se lance depuis le projet Xcode, qui
-couvre iOS **et** macOS.
+`DSHRemoteKit`, qui porte désormais tout le code réutilisable. Conséquence : le projet
+Xcode ne produit qu'une application **iOS**.
+
+**MISE À JOUR, après une confusion coûteuse.** Ce paragraphe a d'abord conclu que
+« l'application se lance depuis le projet Xcode, qui couvre iOS **et** macOS ». C'était
+faux — `SDKROOT = iphoneos` — et la suite est instructive : privé de lancement macOS, on
+en vient à exécuter le binaire du simulateur comme un programme du Mac, où dyld le
+refuse (`DYLD_ROOT_PATH not set for simulator program`). Le paquet livre donc de nouveau
+une application macOS (`Sources/DSHRemoteApp`, `swift run DSHRemote`), qui n'ouvre que
+`VuePrincipale` : la même vue que sur iPhone.
 
 ### Installé sur l'iPhone — et l'adresse qui marche vraiment
 
@@ -601,12 +613,38 @@ cd packages/dsh-remote-swift
 swift build
 swift test
 
+swift run DSHRemote                       # l'application, sur le Mac
+
 ./.build/debug/dsh-remote-ctl http://127.0.0.1:3080 sante
 ./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> sessions 20
 ./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> journal <identifiant> 50
 ./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> prompt <identifiant> "ton message"
 ./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> annuler <identifiant>
 ```
+
+### NE JAMAIS lancer le binaire du simulateur comme un programme macOS
+
+Erreur facile à commettre, et son message ressemble à s'y méprendre à un plantage de
+l'application :
+
+```text
+dyld: DYLD_ROOT_PATH not set for simulator program
+Termination Reason: Namespace DYLD, Code 9
+```
+
+**Ce n'est pas un plantage.** C'est dyld qui refuse d'exécuter un binaire
+**iOS-simulateur** hors du simulateur : aucune ligne de notre code n'a été atteinte, et
+le rapport ne contient aucun cadre de `DSHRemote`. Reproduit sur les **deux**
+architectures d'un binaire universel — ce n'est donc pas une question de processeur.
+
+| Ce qu'il ne faut pas faire | Ce qu'il faut faire |
+|---|---|
+| `open` / double-clic sur le `.app` du conteneur du simulateur | `xcrun simctl launch <appareil> org.example.DSHRemote` |
+| exécuter `.build/…/Debug-iphonesimulator/DSHRemote.app/DSHRemote` | Xcode ▸ Run avec une destination **simulateur** |
+| viser « My Mac » avec cet exécutable | `swift run DSHRemote` — l'application macOS, décrite ci-dessous |
+
+L'application macOS existe donc **dans ce paquet**, et c'est elle qu'il faut lancer sur
+le Mac : `Sources/DSHRemoteApp` ouvre `VuePrincipale`, la même vue que l'application iOS.
 
 Le nom MagicDNS du Mac est celui que `tailscale status` affiche ; c'est aussi l'adresse
 que `tailscale serve` publie.
@@ -646,13 +684,17 @@ Sources/
 │   ├── EtatSession.swift  # pastilles et libellés d'état
 │   ├── RappelsDeFin.swift # détection des fins de tour non vues (pastille verte)
 │   ├── DecouverteServeurs.swift  # Macs du tailnet : découverte par l'hôte, ou locale sur macOS
+│   ├── Tailscale.swift    # état de Tailscale sur cette machine
 │   ├── FluxSession.swift  # WebSocket temps réel
 │   ├── RemoteClient.swift
 │   ├── ModeleApp.swift    # état de l'application — la vue ne parle jamais au réseau
 │   ├── Vues.swift         # liste des sessions
 │   ├── VueJournal.swift   # journal d'une session
-│   └── VueEcriture.swift  # composeur (écrire, interrompre)
-└── DSHRemoteCtl/          # tool de validation (macOS)
+│   ├── VueEcriture.swift  # composeur (écrire, interrompre)
+│   └── VueReglages.swift  # réglages (adresse, jeton, suivi)
+├── DSHRemoteCtl/          # tool de validation (macOS)
+│   └── main.swift
+└── DSHRemoteApp/          # application macOS : `swift run DSHRemote`
     └── main.swift
 Tests/
 └── DSHRemoteKitTests/     # décodage des charges utiles réelles, écriture, rappels de fin
@@ -660,8 +702,9 @@ Tests/
 
 L'interface vit dans la **bibliothèque**, pas dans une cible d'application : c'est
 la contrainte qui a déplacé le code (voir « Restructuration imposée par cette
-contrainte »). Le produit exécutable de ce paquet est le tool `dsh-remote-ctl` ;
-l'application vient du projet Xcode.
+contrainte »). Le paquet livre donc **deux exécutables macOS** — `dsh-remote-ctl` (le
+tool de validation) et `DSHRemote` (l'application, qui n'ouvre que `VuePrincipale`) —
+et l'application **iOS** vient du projet Xcode.
 
 ---
 
@@ -735,7 +778,9 @@ inactive.
 | La liste vide dit pourquoi | `/v1/serveurs` rend `diagnostic` quand la liste est vide ; 5 tests couvrent les charges utiles de l'hôte |
 | Chaque icône rendue EXISTE | test « Chaque icône rendue est un symbole SF qui existe vraiment » — il a mis en évidence que `macbook.air`, `macbook.pro` et `imac` n'existent pas |
 | Les refus sont respectés | `401` sans jeton, `403` avec `Origin`, `404` sur identifiant inconnu |
-| L'application démarre sur macOS | processus vivant après 6 s, fenêtre 1100×720 présente |
+| **L'application macOS existe et fonctionne** | `swift run DSHRemote` : fenêtre 1100×720 **à l'écran** (`isOnScreen=true`), Tailscale connecté, serveurs listés, **11 sessions** groupées en 4 espaces |
+| **La fenêtre reste derrière sans activation explicite** | mesuré : fenêtre créée mais `isOnScreen=false` ; `setActivationPolicy(.regular)` + `activate` la fait apparaître |
+| **Le binaire du simulateur lancé sur macOS est refusé par dyld** | reproduit : `DYLD_ROOT_PATH not set for simulator program`, sur les deux architectures, aucun cadre de `DSHRemote` |
 | L'application fonctionne sur iOS | simulateur iPhone 17 Pro : liste des sessions connectée à la vraie instance |
 | Le code compile pour un iPhone réel | `swift build --triple arm64-apple-ios18.0 --sdk <iphoneos>` |
 | Xcode compile et lie pour iOS | `xcodebuild -destination 'generic/platform=iOS' build` → `BUILD SUCCEEDED` |
