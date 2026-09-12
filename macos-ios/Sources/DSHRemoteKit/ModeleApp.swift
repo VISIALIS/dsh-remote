@@ -1,6 +1,12 @@
 import DSHRemoteKit
 import Foundation
 
+#if canImport(UIKit)
+  import UIKit
+#elseif canImport(AppKit)
+  import AppKit
+#endif
+
 #if canImport(Security)
   import Security
 #endif
@@ -96,15 +102,65 @@ public final class ModeleApp {
         ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".dsh")
       coffre = base.appendingPathComponent(".credentials.yaml")
     }
-    if let contenu = try? String(contentsOf: coffre, encoding: .utf8) {
-      for ligne in contenu.split(separator: "\n") {
-        let texte = ligne.trimmingCharacters(in: .whitespaces)
-        guard texte.hasPrefix("token:") else { continue }
-        let valeur = texte.dropFirst("token:".count).trimmingCharacters(in: .whitespaces)
-        if valeur.count >= 20 { return valeur }
-      }
+    if let contenu = try? String(contentsOf: coffre, encoding: .utf8),
+      let valeur = Self.jetonDuCoffre(contenu)
+    {
+      return valeur
     }
     return Trousseau.lire()
+  }
+
+  /// Extrait le jeton d'appareil du coffre, en ciblant SA clé.
+  ///
+  /// POURQUOI CE N'EST PAS UN SIMPLE `grep`. Le coffre contient au moins deux
+  /// secrets de 43 caractères en base64url : le jeton du plugin, mais aussi le
+  /// secret qui signe les cookies de session du navigateur
+  /// (`client-connection/browser-session`). Prendre la première ligne « token »
+  /// ramassait donc souvent le secret de signature, que le serveur refuse en
+  /// `401` — un jeton d'apparence valide, mais qui n'en est pas un.
+  ///
+  /// On suit donc la structure du document : on n'accepte un `token` que s'il
+  /// appartient à l'enregistrement `dsh-remote/device-token`.
+  static func jetonDuCoffre(_ contenu: String) -> String? {
+    var dansLeBonEnregistrement = false
+    for ligne in contenu.split(separator: "\n", omittingEmptySubsequences: false) {
+      let texte = ligne.trimmingCharacters(in: .whitespaces)
+      if texte.hasPrefix("dsh-remote/") || texte.hasPrefix("records/dsh-remote/") {
+        dansLeBonEnregistrement = true
+        continue
+      }
+      // Tout autre enregistrement de premier niveau referme la section.
+      if texte.hasSuffix(":") && !texte.hasPrefix("token") && !texte.hasPrefix("payload") {
+        if dansLeBonEnregistrement && !texte.contains("device-token") { dansLeBonEnregistrement = false }
+      }
+      guard dansLeBonEnregistrement, texte.hasPrefix("token:") else { continue }
+      let valeur = texte.dropFirst("token:".count).trimmingCharacters(in: .whitespaces)
+      if valeur.count >= 20 { return valeur }
+    }
+    return nil
+  }
+
+  /// Colle le jeton depuis le presse-papier.
+  ///
+  /// POURQUOI CE BOUTON. Le jeton fait 43 caractères en base64url, copié depuis
+  /// un terminal : à la main, sur un clavier de téléphone, une saisie exacte
+  /// est improbable. Le presse-papier supprime le risque de faute — et comme on
+  /// nettoie les espaces, un retour à la ligne collé avec la valeur ne gêne pas.
+  @discardableResult
+  public func collerLeJeton() -> Bool {
+    let valeur: String?
+    #if canImport(UIKit)
+      valeur = UIPasteboard.general.string
+    #elseif canImport(AppKit)
+      valeur = NSPasteboard.general.string(forType: .string)
+    #else
+      valeur = nil
+    #endif
+    guard let valeur else { return false }
+    let nettoye = valeur.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard nettoye.count >= 20 else { return false }
+    jetonSaisi = nettoye
+    return true
   }
 
   /// Enregistre le jeton saisi : au trousseau sur iOS, en mémoire sur macOS.

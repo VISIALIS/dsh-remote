@@ -27,9 +27,21 @@ func lireJeton() -> String? {
     ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".dsh")
   let coffre = chemin.appendingPathComponent(".credentials.yaml")
   guard let contenu = try? String(contentsOf: coffre, encoding: .utf8) else { return nil }
-  for ligne in contenu.split(separator: "\n") {
+  // On cible l'enregistrement du plugin : le coffre contient AUSSI le secret de
+  // signature des cookies du navigateur, de la meme longueur et du meme
+  // alphabet. Prendre la premiere ligne « token » ramassait souvent ce secret,
+  // qui n'est pas un jeton porteur et se fait refuser en 401.
+  var dansLeBonEnregistrement = false
+  for ligne in contenu.split(separator: "\n", omittingEmptySubsequences: false) {
     let texte = ligne.trimmingCharacters(in: .whitespaces)
-    guard texte.hasPrefix("token:") else { continue }
+    if texte.hasPrefix("dsh-remote/") || texte.hasPrefix("records/dsh-remote/") {
+      dansLeBonEnregistrement = true
+      continue
+    }
+    if texte.hasSuffix(":") && !texte.hasPrefix("token") && !texte.hasPrefix("payload") {
+      if dansLeBonEnregistrement && !texte.contains("device-token") { dansLeBonEnregistrement = false }
+    }
+    guard dansLeBonEnregistrement, texte.hasPrefix("token:") else { continue }
     let valeur = texte.dropFirst("token:".count).trimmingCharacters(in: .whitespaces)
     if valeur.count >= 20 { return valeur }
   }

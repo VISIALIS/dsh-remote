@@ -64,12 +64,22 @@ struct VueConnexion: View {
         // Afficher aussi l'état permet de comprendre pourquoi « Se connecter »
         // fonctionne sans rien saisir sur le Mac.
         LabeledContent("Jeton") {
-          SecureField(modele.jetonDisponible ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil", text: $modele.jetonSaisi)
-            .textFieldStyle(.roundedBorder)
-            #if os(iOS)
-              .textInputAutocapitalization(.never)
-              .autocorrectionDisabled()
-            #endif
+          HStack(spacing: 8) {
+            SecureField(modele.jetonDisponible ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil", text: $modele.jetonSaisi)
+              .textFieldStyle(.roundedBorder)
+              #if os(iOS)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+              #endif
+            // 43 caractères en base64url : les coller est plus sûr que les taper.
+            Button {
+              modele.collerLeJeton()
+            } label: {
+              Image(systemName: "doc.on.clipboard")
+            }
+            .buttonStyle(.borderless)
+            .help("Coller le jeton depuis le presse-papier")
+          }
         }
         HStack {
           Button("Se connecter") {
