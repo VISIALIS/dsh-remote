@@ -245,9 +245,12 @@ struct VueConnexion: View {
       // illisible : on ne cherche pas « une session », on cherche « la session
       // de ce projet ». On reproduit donc l'arbre de l'interface web plutôt que
       // d'inventer une présentation différente pour le même contenu.
-      Section("Sessions (\(modele.sessionsAffichees.count))") {
+      Section {
         ForEach(modele.espaces) { espace in
-          DisclosureGroup {
+          // Pendant une recherche, les groupes sont dépliés d'office : laisser
+          // l'utilisateur replier chaque dossier pour voir ce qu'il vient de
+          // chercher annulerait l'intérêt de la recherche.
+          DisclosureGroup(isExpanded: .constant(!modele.recherche.isEmpty)) {
             ForEach(espace.sessions, id: \.id) { session in
               if Regroupement.estSousAgent(session) {
                 HStack(spacing: 6) {
@@ -270,11 +273,19 @@ struct VueConnexion: View {
                 .foregroundStyle(Color.accentColor)
               Text(espace.nom).font(.body)
               Spacer()
-              if espace.nbVivantes > 0 {
-                Text("\(espace.nbVivantes)").font(.caption2).foregroundStyle(.secondary)
-              }
+              Text("\(espace.nbSessions)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             }
           }
+        }
+      } header: {
+        // « Workspaces », comme la version web : c'est ce que la section liste,
+        // et le nombre de sessions reste visible à côté.
+        HStack {
+          Text("Workspaces")
+          Spacer()
+          Text("\(modele.sessionsFiltrees.count) session\(modele.sessionsFiltrees.count > 1 ? "s" : "")")
         }
       }
     }
@@ -282,6 +293,9 @@ struct VueConnexion: View {
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
     #endif
+    // Recherche native, portant sur les sessions déjà chargées : instantanée,
+    // et sans exiger du harness qu'il expose un point d'entrée de recherche.
+    .searchable(text: $modele.recherche, prompt: "Titre, projet ou preset")
     .onChange(of: selection) { _, nouvelle in
       guard let nouvelle else { return }
       Task { await modele.ouvrir(nouvelle) }
@@ -290,16 +304,66 @@ struct VueConnexion: View {
   }
 }
 
+/// Pastille d'état d'une session.
+///
+/// Trois formes distinctes, pour ne pas confondre trois situations différentes :
+/// des carrés qui tournent quand un tour s'exécute, un point bleu pour une
+/// session ouverte au repos, un point vert pour une session dont le harness
+/// n'a plus l'agent — donc terminée.
+struct PastilleEtat: View {
+  let etat: EtatSession
+  @State private var phase = 0.0
+
+  var body: some View {
+    Group {
+      switch etat {
+      case .enCours:
+        // Quatre carrés qui tournent : le modèle travaille.
+        HStack(spacing: 1.5) {
+          ForEach(0..<2, id: \.self) { ligne in
+            VStack(spacing: 1.5) {
+              ForEach(0..<2, id: \.self) { colonne in
+                RoundedRectangle(cornerRadius: 0.5)
+                  .frame(width: 3, height: 3)
+                  .opacity(opacite(ligne: ligne, colonne: colonne))
+              }
+            }
+          }
+        }
+        .frame(width: 9, height: 9)
+        .rotationEffect(.degrees(phase))
+        .onAppear {
+          withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
+            phase = 360
+          }
+        }
+        .foregroundStyle(Color.orange)
+      case .inactive:
+        Circle().fill(Color.blue).frame(width: 7, height: 7)
+      case .inconnue:
+        Circle().fill(Color.green).frame(width: 7, height: 7)
+      }
+    }
+    .frame(width: 10, height: 10)
+  }
+
+  /// Les carrés s'allument en diagonale, ce qui donne une rotation lisible même
+  /// sur 9 points de côté.
+  private func opacite(ligne: Int, colonne: Int) -> Double {
+    (ligne + colonne) % 2 == 0 ? 1.0 : 0.35
+  }
+}
+
 /// Une ligne de la liste : point d'état, titre, projet, volume et date.
 struct LigneSession: View {
   let session: SessionListee
 
+  private var etat: EtatSession { EtatSession(statut: session.statut, vivante: session.vivante) }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 3) {
       HStack(spacing: 6) {
-        Circle()
-          .fill(session.vivante == true ? Color.green : Color.secondary.opacity(0.4))
-          .frame(width: 7, height: 7)
+        PastilleEtat(etat: etat)
         Text(session.titreAffiche)
           .lineLimit(1)
           .font(.body)

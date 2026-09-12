@@ -78,6 +78,10 @@ public struct SessionListee: Sendable, Decodable, Hashable {
   public let octets: Int?
   public let modifieLe: Double?
   public let vivante: Bool?
+  /// Statut d'agent transporté par le serveur : `en_cours`, `inactif`, ou `nil`
+  /// quand la session n'est pas ouverte dans le processus du harness — auquel
+  /// cas l'état est INCONNU, et non « inactif ».
+  public let statut: String?
   public let illisible: String?
   public let resume: ResumeSession
 
@@ -97,7 +101,7 @@ public struct SessionListee: Sendable, Decodable, Hashable {
   }
 
   enum CodingKeys: String, CodingKey {
-    case projet, dossier, fichier, octets, vivante, illisible
+    case projet, dossier, fichier, octets, vivante, illisible, statut
     case cwdIndicatif = "cwdIndicatif"
     case modifieLe = "modifieLe"
   }
@@ -111,6 +115,7 @@ public struct SessionListee: Sendable, Decodable, Hashable {
     self.octets = try conteneur.decodeIfPresent(Int.self, forKey: .octets)
     self.modifieLe = try conteneur.decodeIfPresent(Double.self, forKey: .modifieLe)
     self.vivante = try conteneur.decodeIfPresent(Bool.self, forKey: .vivante)
+    self.statut = try conteneur.decodeIfPresent(String.self, forKey: .statut)
     self.illisible = try conteneur.decodeIfPresent(String.self, forKey: .illisible)
     // Le résumé est aplati dans l'objet de session par le plugin : on le
     // redécode depuis le même conteneur plutôt que d'exiger une imbrication.

@@ -537,12 +537,37 @@ export function apply(ctx, config) {
           octets: information.size,
           modifieLe: information.mtimeMs,
           vivante: estVivante(faits?.id),
+          statut: statutDe(faits?.id),
           ...faits,
         })
       }
     }
     resultats.sort((a, b) => (b.dernierEvenementLe ?? b.modifieLe) - (a.dernierEvenementLe ?? a.modifieLe))
     return { racine, total: resultats.length, sessions: resultats.slice(0, limite) }
+  }
+
+  /**
+   * Statut d'une session : `en_cours` si un tour s'execute, `inactif` sinon.
+   *
+   * `agents.get(id).status` vaut `idle` ou `running` — c'est l'etat de cycle de
+   * vie de l'agent, emis a chaque transition. On le TRANSPORTE plutot que de le
+   * deduire du journal : deviner « ca travaille » en regardant si les
+   * enregistrements defilent donnerait un voyant qui s'allume en retard et
+   * s'eteint a tort entre deux etapes.
+   *
+   * Rend `null` quand la session n'est pas ouverte dans ce processus : l'etat
+   * est alors INCONNU, et un client ne doit pas le confondre avec « inactif ».
+   */
+  const statutDe = (identifiant) => {
+    if (typeof identifiant !== 'string' || identifiant.length === 0) return null
+    try {
+      if (agents === undefined || agents === null || typeof agents.get !== 'function') return null
+      const agent = agents.get(identifiant)
+      if (agent === undefined || agent === null) return null
+      return agent.status === 'running' ? 'en_cours' : 'inactif'
+    } catch {
+      return null
+    }
   }
 
   /** Une session est vivante si le harness la connait encore dans ce processus. */
@@ -620,7 +645,14 @@ export function apply(ctx, config) {
     }
     const page = retenus.slice(depuis, depuis + limite)
     return {
-      session: { ...faits, projet: trouve.projet, octets: trouve.information.size, modifieLe: trouve.information.mtimeMs, vivante: estVivante(faits.id) },
+      session: {
+        ...faits,
+        projet: trouve.projet,
+        octets: trouve.information.size,
+        modifieLe: trouve.information.mtimeMs,
+        vivante: estVivante(faits.id),
+        statut: statutDe(faits.id),
+      },
       depuis,
       limite,
       total: retenus.length,

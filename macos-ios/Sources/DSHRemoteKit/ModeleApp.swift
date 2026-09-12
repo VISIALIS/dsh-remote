@@ -580,9 +580,30 @@ public final class ModeleApp {
     filtresActifs ? sessions.filter { $0.vivante == true } : sessions
   }
 
+  /// Texte de recherche, appliqué localement aux sessions déjà chargées.
+  ///
+  /// La recherche porte sur ce que le client POSSÈDE déjà : titre, chemin de
+  /// travail, nom d'espace. Elle ne demande rien au serveur, donc elle reste
+  /// instantanée même avec plusieurs centaines de sessions — et elle fonctionne
+  /// sans que le harness ait à exposer un point d'entrée de recherche.
+  public var recherche: String = ""
+
+  /// Sessions retenues après recherche, puis filtre « vivantes ».
+  public var sessionsFiltrees: [SessionListee] {
+    let retenues = sessionsAffichees
+    let terme = recherche.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !terme.isEmpty else { return retenues }
+    return retenues.filter { session in
+      if session.titreAffiche.lowercased().contains(terme) { return true }
+      if let cwd = session.resume.cwd, cwd.lowercased().contains(terme) { return true }
+      if let preset = session.resume.preset, preset.lowercased().contains(terme) { return true }
+      return false
+    }
+  }
+
   /// Sessions regroupées par espace de travail, comme dans l'interface web.
   public var espaces: [EspaceDeTravail] {
-    Regroupement.espaces(sessionsAffichees)
+    Regroupement.espaces(sessionsFiltrees)
   }
 
   private func executer(_ travail: @escaping () async throws -> Void) async {
