@@ -138,6 +138,10 @@ public final class ModeleApp {
       etatAdresse = .injoignable("aucun jeton : collez-le d'abord")
       return
     }
+    guard jeton.count == 43 else {
+      etatAdresse = .injoignable("jeton incomplet : \(jeton.count) caractères au lieu de 43")
+      return
+    }
     do {
       let client = try RemoteClient(adresse: adresse, jeton: jeton)
       let sante = try await client.verifierSante()
@@ -189,6 +193,26 @@ public final class ModeleApp {
 
   /// Vrai si un jeton est disponible, sans jamais le révéler.
   public var jetonDisponible: Bool { !jetonSaisi.isEmpty }
+
+  /// Longueur du jeton en mémoire. Jamais le jeton lui-même.
+  public var longueurJeton: Int { jetonSaisi.count }
+
+  /// Vrai si le jeton a la forme attendue : 43 caractères base64url.
+  ///
+  /// POURQUOI CE CONTRÔLE EXISTE. Le jeton fait 43 caractères dans un champ
+  /// étroit : une saisie ou un collage peut n'en livrer qu'une partie, et rien
+  /// ne le montre — l'écran affiche des puces, et le serveur répond seulement
+  /// `401`. L'utilisateur cherche alors un problème de droits là où il manque
+  /// trois caractères. On refuse donc d'envoyer un jeton dont la forme est
+  /// fausse, en disant ce qui ne va pas.
+  ///
+  /// La forme est un FAIT VÉRIFIABLE (`randomBytes(32)` encodé en base64url),
+  /// pas une supposition : le plugin hôte produit exactement cela.
+  public var jetonBienForme: Bool {
+    jetonSaisi.count == 43 && jetonSaisi.allSatisfy { caractere in
+      caractere.isLetter || caractere.isNumber || caractere == "-" || caractere == "_"
+    }
+  }
 
   // MARK: - Jeton
 
@@ -294,6 +318,14 @@ public final class ModeleApp {
     return true
   }
 
+  /// Efface le jeton saisi, en mémoire et au trousseau.
+  public func effacerJeton() {
+    jetonSaisi = ""
+    #if !os(macOS)
+      Trousseau.effacer()
+    #endif
+  }
+
   /// Enregistre le jeton saisi : au trousseau sur iOS, en mémoire sur macOS.
   ///
   /// N'est appelé qu'à la SOUMISSION du formulaire, jamais à la frappe : un
@@ -318,6 +350,12 @@ public final class ModeleApp {
     let jeton = jetonSaisi.isEmpty ? (Self.jetonLocal() ?? "") : jetonSaisi
     guard !jeton.isEmpty else {
       erreur = "Aucun jeton d'appareil. Récupérez-le dans la sortie du harness sur le Mac, au premier chargement du plugin."
+      return
+    }
+    // Un jeton tronqué enverrait une requête vouée au 401, en accusant le
+    // serveur à tort : on le dit avant, avec le compte exact.
+    guard jeton.count == 43 else {
+      erreur = "jeton incomplet : \(jeton.count) caractères au lieu de 43. Recopiez-le en entier."
       return
     }
     // Le jeton n'est confié au trousseau qu'ici, une fois la saisie terminée.
@@ -492,6 +530,17 @@ enum Trousseau {
       return String(data: donnees, encoding: .utf8)
     #else
       return nil
+    #endif
+  }
+
+  static func effacer() {
+    #if canImport(Security)
+      let requete: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: compte,
+      ]
+      SecItemDelete(requete as CFDictionary)
     #endif
   }
 

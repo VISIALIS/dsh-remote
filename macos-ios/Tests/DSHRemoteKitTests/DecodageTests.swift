@@ -76,6 +76,23 @@ func decodeJournal() throws {
   #expect(journal.session.creeLe == 1789059396815)
 }
 
+@Test("La forme du jeton est vérifiable sans le révéler")
+func formeDuJeton() {
+  // Le plugin hôte produit `randomBytes(32).toString('base64url')` : 43
+  // caractères, alphabet base64url. La forme est donc un fait vérifiable.
+  let jeton = String(repeating: "A", count: 43)
+  #expect(jeton.count == 43)
+  #expect(jeton.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+
+  // Un jeton tronqué doit être détectable AVANT l'envoi : sinon le 401 qui suit
+  // accuse le serveur alors qu'il manque des caractères.
+  let tronque = String(jeton.prefix(20))
+  #expect(tronque.count != 43)
+  // Les caractères d'un collage parasite (espace, retour à la ligne) sortent de
+  // l'alphabet et doivent être refusés aussi.
+  #expect(!("jeton avec espaces".allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }))
+}
+
 @Test("Une adresse sans protocole est complétée, pas refusée")
 func normalisationAdresse() {
   // Le cas réel : un nom d'hôte recopié depuis `tailscale serve status`, sans

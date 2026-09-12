@@ -144,7 +144,29 @@ struct VueConnexion: View {
             }
             .buttonStyle(.borderless)
             .help("Coller le jeton depuis le presse-papier")
+            if modele.jetonDisponible {
+              Button {
+                modele.effacerJeton()
+              } label: {
+                Image(systemName: "xmark.circle")
+              }
+              .buttonStyle(.borderless)
+              .help("Effacer le jeton")
+            }
           }
+        }
+        // L'état du jeton, en clair. Un champ de 43 caractères affiche des
+        // puces : sans ce compte, un jeton tronqué est indiscernable d'un jeton
+        // complet, et le 401 qui suit accuse le serveur à tort.
+        if modele.jetonDisponible {
+          Label(
+            modele.jetonBienForme
+              ? "jeton complet (43 caractères)"
+              : "jeton incomplet : \(modele.longueurJeton) caractères au lieu de 43",
+            systemImage: modele.jetonBienForme ? "checkmark.seal" : "exclamationmark.triangle"
+          )
+          .font(.caption)
+          .foregroundStyle(modele.jetonBienForme ? Color.green : Color.orange)
         }
         HStack(spacing: 12) {
           Button("Se connecter") {
