@@ -8,7 +8,8 @@ Ce paquet ne contient **aucune** interface pour l'instant : il livre la biblioth
 un tool de validation. L'application SwiftUI est le jalon 2 (voir la feuille de route du
 [README du plugin](../../plugins/dsh-remote/#feuille-de-route)).
 
-MISE À JOUR — le jalon 2 est écrit : voir [Application](#application) plus bas.
+MISE À JOUR — jalons 2 et 3 livrés : voir [Application](#application) et
+[Flux temps réel](#flux-temps-reel).
 
 ---
 
@@ -163,6 +164,24 @@ Sources/
 Tests/
 └── DSHRemoteKitTests/   # décodage des charges utiles réelles
 ```
+
+---
+
+## Flux temps réel
+
+```bash
+./.build/debug/dsh-remote-ctl http://127.0.0.1:3080 flux <identifiant> 30
+```
+
+`FluxSession` s'appuie sur `URLSessionWebSocketTask`, fourni par la plateforme : ajouter
+une bibliothèque WebSocket tierce à une application qui détient un jeton d'accès au
+harness serait une surface d'attaque gratuite.
+
+`sequenceConnue` porte le dernier `seq` observé. C'est ce qu'il faut passer à
+`depuisSeq` en cas de reconnexion : le serveur ne renverra alors que ce qui manque.
+
+Vérifié contre le serveur : 5 évènements et 3 deltas reçus en direct pendant que la
+session écrivait, **0 doublon**, curseur de reprise conservé.
 
 ---
 

@@ -45,6 +45,7 @@ func aider() {
       dsh-remote-ctl <adresse> sante
       dsh-remote-ctl <adresse> sessions [limite]
       dsh-remote-ctl <adresse> journal <identifiant> [limite]
+      dsh-remote-ctl <adresse> flux <identifiant> [secondes]
 
     ARGUMENTS
       <adresse>   http://127.0.0.1:3080 ou le nom MagicDNS du tailnet
@@ -125,6 +126,48 @@ do {
     for enregistrement in journal.enregistrements {
       print("  seq \(enregistrement.seq.map(String.init) ?? "—")  \(enregistrement.type ?? "?")")
     }
+
+  case "flux":
+    guard arguments.count > 3 else { echouer("identifiant de session manquant") }
+    let identifiant = arguments[3]
+    let duree = arguments.count > 4 ? (Double(arguments[4]) ?? 12) : 12
+    guard let flux = FluxSession(adresse: adresse, jeton: jeton, identifiant: identifiant) else {
+      echouer("adresse inutilisable pour un flux")
+    }
+    var bases = 0
+    var evenements = 0
+    var deltas = 0
+    var sequences: [Int] = []
+    print("flux ouvert sur \(identifiant), \(Int(duree)) s…")
+    let expiration = Task {
+      try? await Task.sleep(nanoseconds: UInt64(duree * 1_000_000_000))
+      await flux.fermer()
+    }
+    for await message in await flux.messages() {
+      switch message {
+      case let .base(session, enregistrements, dernierSeq):
+        bases += 1
+        sequences.append(contentsOf: enregistrements.compactMap(\.seq))
+        print("  base : « \(session.titre ?? "sans titre") » — \(enregistrements.count) enregistrement(s), dernierSeq=\(dernierSeq.map(String.init) ?? "—")")
+      case let .evenement(enregistrement):
+        evenements += 1
+        if let seq = enregistrement.seq { sequences.append(seq) }
+        print("  évènement seq=\(enregistrement.seq.map(String.init) ?? "—") \(enregistrement.type ?? "?")")
+      case let .delta(dernierSeq):
+        deltas += 1
+        print("  delta, dernierSeq=\(dernierSeq.map(String.init) ?? "—")")
+      case let .tronque(message):
+        print("  TRONQUÉ : \(message)")
+      case let .erreur(message):
+        print("  ERREUR : \(message)")
+      }
+    }
+    expiration.cancel()
+    let connue = await flux.sequenceConnue
+    let doublons = sequences.count - Set(sequences).count
+    print("\nbase=\(bases) évènements=\(evenements) deltas=\(deltas)")
+    print("seq reçus=\(sequences.count) distincts=\(Set(sequences).count) doublons=\(doublons)")
+    print("curseur de reprise conservé : \(connue.map(String.init) ?? "—")")
 
   default:
     aider()

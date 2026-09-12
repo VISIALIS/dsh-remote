@@ -48,15 +48,14 @@
 // de lever une exception au chargement.
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { open, readFile, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import zlib from 'node:zlib'
 
 export const name = 'dsh-remote'
 
-// Aucun service n'est exigé : le plugin doit se charger même sur une composition
-// qui n'a pas de serveur web, pour pouvoir le DIRE au lieu de disparaître.
-export const inject = []
+// Services requis par le plugin pour enregistrer ses routes et gérer son jeton.
+export const inject = ['webServer', 'credentials']
 
 const PREFIX = '/dsh-remote'
 const VERSION_PROTOCOLE = 1
@@ -78,7 +77,7 @@ const TYPES_VOLUMINEUX = new Set([
   'session/title-llm-request',
 ])
 
-const CLE_JETON = 'grant:dsh-remote/device-token'
+const CLE_JETON = 'dsh-remote/device-token'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lecture d'un journal de session
@@ -163,6 +162,80 @@ function analyserLigne(ligne) {
   } catch {
     return null
   }
+}
+
+/**
+ * Décode les trames qui COMMENCENT dans les `tailleMax` derniers octets.
+ *
+ * POURQUOI PAR LA FIN. Un journal de session grossit sans fin : le relire en
+ * entier toutes les 750 ms pour un flux temps réel coûterait de plus en plus
+ * cher, jusqu'à épuiser la mémoire du harness sur une session longue. Comme un
+ * journal est append-only, tout ce qui précède la fin est déjà connu du client :
+ * seuls les derniers octets peuvent porter du nouveau.
+ *
+ * Les écritures font au plus quelques kilo-octets ; 64 Kio offrent une marge
+ * confortable, et la fonction dit `borneAtteinte` quand elle n'a pas pu
+ * remonter assez loin — le client peut alors redemander une page complète
+ * plutôt que de subir une lacune silencieuse.
+ *
+ * @param {string} fichier
+ * @param {number} taille
+ * @param {number} tailleMax
+ * @returns {Promise<{enregistrements: object[], debut: number, borneAtteinte: boolean}>}
+ */
+async function decoderFinDeJournal(fichier, taille, tailleMax) {
+  const debutFenetre = Math.max(0, taille - tailleMax)
+  const poignee = await open(fichier, 'r')
+  let tampon
+  try {
+    const longueur = taille - debutFenetre
+    tampon = Buffer.allocUnsafe(longueur)
+    let lu = 0
+    while (lu < longueur) {
+      const morceau = await poignee.read(tampon, lu, longueur - lu, debutFenetre + lu)
+      if (morceau.bytesRead === 0) break
+      lu += morceau.bytesRead
+    }
+    if (lu < longueur) tampon = tampon.subarray(0, lu)
+  } finally {
+    await poignee.close()
+  }
+
+  const minimum = Math.max(0, taille - tampon.length)
+  const marques = []
+  let curseur = 0
+  for (;;) {
+    const trouve = tampon.indexOf(MAGIE_ZSTD, curseur)
+    if (trouve === -1) break
+    marques.push(trouve)
+    curseur = trouve + 1
+    if (marques.length > 20000) break
+  }
+  if (marques.length === 0) {
+    // Aucune trame atteignable dans la fenêtre : l'appelant doit élargir.
+    return { enregistrements: [], debut: taille, borneAtteinte: true }
+  }
+
+  // La dernière marque peut être un faux positif à l'intérieur d'une charge
+  // compressée. On retient la plus GRANDE marque qui décode réellement : tout ce
+  // qui la suit n'est alors qu'une queue tronquée, pas une lacune.
+  for (let index = marques.length - 1; index >= 0; index--) {
+    const depart = marques[index]
+    const { lignes, offset, tronque } = decoderJournal(tampon, depart)
+    if (lignes.length === 0) continue
+    const enregistrements = []
+    for (const ligne of lignes) {
+      const analyse = analyserLigne(ligne)
+      if (analyse !== null) enregistrements.push(analyse)
+    }
+    if (enregistrements.length === 0) continue
+    const debut = minimum + depart
+    // `tronque` signale une trame interrompue en cours d'écriture : c'est normal
+    // sur un journal vivant, et ce n'est PAS une lacune. On ne le remonte donc pas
+    // comme telle — seule une fenêtre trop courte empêche de servir le client.
+    return { enregistrements, debut: minimum + offset, borneAtteinte: false }
+  }
+  return { enregistrements: [], debut: taille, borneAtteinte: true }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -309,7 +382,7 @@ export function apply(ctx, config) {
   const options = config ?? {}
   const journaliser = options.journaliser !== false
 
-  const webServer = ctx.get('webServer')
+  const webServer = ctx.get('webServer') ?? ctx.webServer
   if (webServer === undefined || webServer === null || typeof webServer.register !== 'function') {
     console.log('[dsh-remote] ECHEC: service webServer indisponible, aucune route enregistree')
     return
@@ -341,7 +414,7 @@ export function apply(ctx, config) {
   let jeton = null
 
   const coffre = () => {
-    const credentials = ctx.get('credentials')
+    const credentials = ctx.get('credentials') ?? ctx.credentials
     if (credentials === undefined || credentials === null) return null
     if (typeof credentials.readRecord !== 'function' || typeof credentials.modifyRecord !== 'function') return null
     return credentials
@@ -713,11 +786,46 @@ export function apply(ctx, config) {
     },
   })
 
-  // ── WebSocket /dsh-remote/v1/flux — evenements d'une session ───────────────
+  // ── WebSocket /dsh-remote/v1/flux — evenements d'une session, en direct ────
   //
-  // Le jeton ne peut pas tenir dans un en-tete `Authorization` cote navigateur ;
-  // un client natif, lui, le peut : on l'exige donc en en-tete, jamais en
-  // parametre d'URL, pour qu'il ne finisse pas dans un journal d'acces.
+  // PROTOCOLE. Le client ouvre, puis envoie un message JSON :
+  //   { "type": "demarrer", "session": "<id>", "depuisSeq": <n|null> }
+  // Le serveur repond :
+  //   { "type": "base",  "session": {...}, "enregistrements": [...], "dernierSeq": n }
+  //   { "type": "delta", "enregistrements": [...], "dernierSeq": n }
+  //   { "type": "tronque" }   quand la fenetre de lecture n'a pas suffi
+  //   { "type": "erreur", "message": "..." }
+  //
+  // REPRISE. `depuisSeq` evite de renvoyer ce que le client a deja : le serveur ne
+  // transmet que les enregistrements dont `seq` depasse cette valeur. C'est ce qui
+  // rend une reconnexion apres coupure reseau non destructive.
+  //
+  // Le jeton est exige en en-tete `Authorization`, jamais en parametre d'URL :
+  // un parametre finit dans un journal d'acces.
+  const FENETRE_FLUX_MIN = 64 * 1024
+  const FENETRE_FLUX_MAX = 8 * 1024 * 1024
+  const INTERVALLE_FLUX_MS = 750
+  const PING_FLUX_MS = 30000
+  const MAX_TAMPON_EN_ATTENTE = 4 * 1024 * 1024
+
+  /**
+   * Lit ce qui a ete ecrit apres `offset`, en elargissant la fenetre si besoin.
+   *
+   * La fenetre part de 64 Kio et double jusqu'a 8 Mio tant que la fin du fichier
+   * ne contient aucune trame atteignable. Un journal qui n'a rien ecrit depuis
+   * longtemps peut en effet avoir sa derniere ecriture loin de la fin ; sans
+   * elargissement on annoncerait une lacune qui n'existe pas.
+   */
+  const lireDepuis = async (fichier, taille, offset) => {
+    let fenetre = FENETRE_FLUX_MIN
+    for (;;) {
+      const lecture = await decoderFinDeJournal(fichier, taille, fenetre)
+      if (!lecture.borneAtteinte) return lecture
+      if (fenetre >= FENETRE_FLUX_MAX || fenetre >= taille) return lecture
+      fenetre *= 2
+    }
+  }
+
   routes.push(
     webServer.registerUpgrade({
       path: PREFIX + '/v1/flux',
@@ -744,14 +852,19 @@ export function apply(ctx, config) {
             '\r\n\r\n',
         )
         tracer(req, 101, 'flux ouvert')
-        // Le protocole de flux n'est pas encore tranche (jalon 3) : on ouvre, on
-        // accuse reception, et on ferme proprement. Aucune donnee n'est envoyee.
-        socket.write(trameTexte(JSON.stringify({ protocole: VERSION_PROTOCOLE, type: 'pret', flux: 'non-implemente' })))
+
         let restant = Buffer.alloc(0)
         let ferme = false
-        const fermer = (code) => {
+        let minuteur = null
+        let minuteurPing = null
+
+        const arreter = (code) => {
           if (ferme) return
           ferme = true
+          if (minuteur !== null) clearInterval(minuteur)
+          if (minuteurPing !== null) clearInterval(minuteurPing)
+          minuteur = null
+          minuteurPing = null
           try {
             socket.write(trameFermeture(code))
           } catch {
@@ -759,18 +872,148 @@ export function apply(ctx, config) {
           }
           socket.end()
         }
+
+        const envoyer = (charge) => {
+          if (ferme) return
+          // Client trop lent : on coupe plutot que de laisser le tampon du noyau
+          // enfler jusqu'a faire enfler la memoire du harness. Le client se
+          // reconnectera avec `depuisSeq` et rattrapera sans perte.
+          if (socket.writableLength > MAX_TAMPON_EN_ATTENTE) return arreter(1008)
+          try {
+            socket.write(trameTexte(JSON.stringify(charge)))
+          } catch {
+            arreter(1011)
+          }
+        }
+
+        // Etat du suivi, tenu par la connexion et non par une fabrique : le
+        // seuil de reprise et l'offset de lecture doivent survivre a chaque tour.
+        let chemin = null
+        let offset = 0
+        let seuilReprise = -1
+        let enCours = false
+
+        const interroger = async () => {
+          if (ferme || enCours || chemin === null) return
+          enCours = true
+          try {
+            let information
+            try {
+              information = await stat(chemin)
+            } catch {
+              return
+            }
+            if (information.size <= offset) return
+            const lecture = await lireDepuis(chemin, information.size, offset)
+            if (lecture.borneAtteinte) {
+              envoyer({ type: 'tronque', message: 'fenetre de lecture insuffisante' })
+              return
+            }
+            offset = lecture.debut
+            const nouveaux = lecture.enregistrements.filter(
+              (enregistrement) => typeof enregistrement.seq === 'number' && enregistrement.seq > seuilReprise,
+            )
+            if (nouveaux.length === 0) return
+            for (const enregistrement of nouveaux) envoyer({ type: 'evenement', enregistrement })
+            const dernier = nouveaux[nouveaux.length - 1].seq
+            seuilReprise = dernier
+            envoyer({ type: 'delta', dernierSeq: dernier })
+          } catch (erreur) {
+            envoyer({ type: 'erreur', message: String(erreur?.message ?? erreur) })
+          } finally {
+            enCours = false
+          }
+        }
+
+        const demarrer = async (identifiant, depuisSeq) => {
+          const trouve = await resoudreJournal(identifiant)
+          if (trouve === null) {
+            envoyer({ type: 'erreur', message: 'session inconnue' })
+            return arreter(1008)
+          }
+          chemin = trouve.fichier
+          seuilReprise = depuisSeq === null ? -1 : depuisSeq
+
+          // Base : l'en-tete, le titre et les derniers enregistrements. Une session
+          // peut porter des milliers d'evenements ; le client en demande davantage
+          // par pages via /v1/session/<id> s'il en a besoin.
+          const base = await lireDepuis(trouve.fichier, trouve.information.size, 0)
+          let faits = resumer(base.enregistrements)
+          if (faits.id === null) {
+            // La fenetre n'a pas atteint l'en-tete : on lit le debut du fichier.
+            const tampon = await readFile(trouve.fichier)
+            const complet = decoderJournal(tampon)
+            const tous = []
+            for (const ligne of complet.lignes) {
+              const analyse = analyserLigne(ligne)
+              if (analyse !== null) tous.push(analyse)
+            }
+            faits = resumer(tous)
+          }
+          offset = base.debut
+          const enregistrements = base.enregistrements.filter(
+            (enregistrement) => typeof enregistrement.seq === 'number' && enregistrement.seq > seuilReprise,
+          )
+          if (enregistrements.length > 0) seuilReprise = enregistrements[enregistrements.length - 1].seq
+
+          envoyer({
+            type: 'base',
+            protocole: VERSION_PROTOCOLE,
+            session: faits,
+            enregistrements,
+            dernierSeq: seuilReprise,
+          })
+
+          if (minuteur !== null) clearInterval(minuteur)
+          minuteur = setInterval(() => {
+            interroger()
+          }, INTERVALLE_FLUX_MS)
+          if (minuteurPing === null) {
+            minuteurPing = setInterval(() => {
+              if (ferme) return
+              try {
+                socket.write(Buffer.from([0x89, 0x00]))
+              } catch {
+                arreter(1011)
+              }
+            }, PING_FLUX_MS)
+          }
+        }
+
         socket.on('data', (morceau) => {
           const lecture = lireTrames(Buffer.concat([restant, morceau]))
           restant = lecture.restant
-          if (lecture.trop) return fermer(1009)
+          if (lecture.trop) return arreter(1009)
           for (const trame of lecture.trames) {
-            if (trame.opcode === 0x8) return fermer(1000)
-            if (trame.opcode === 0x9) socket.write(tramePong(trame.charge))
+            if (trame.opcode === 0x8) return arreter(1000)
+            if (trame.opcode === 0x9) {
+              socket.write(tramePong(trame.charge))
+              continue
+            }
+            if (trame.opcode !== 0x1) continue
+            let message = null
+            try {
+              message = JSON.parse(trame.charge.toString('utf8'))
+            } catch {
+              message = null
+            }
+            if (message === null || message.type !== 'demarrer') {
+              envoyer({ type: 'erreur', message: 'premier message attendu: demarrer' })
+              continue
+            }
+            const identifiant = typeof message.session === 'string' ? message.session : ''
+            const depuisSeq = typeof message.depuisSeq === 'number' ? message.depuisSeq : null
+            demarrer(identifiant, depuisSeq).catch((erreur) => {
+              envoyer({ type: 'erreur', message: String(erreur?.message ?? erreur) })
+              arreter(1011)
+            })
           }
         })
-        socket.on('error', () => fermer(1011))
+        socket.on('error', () => arreter(1011))
         socket.on('close', () => {
           ferme = true
+          if (minuteur !== null) clearInterval(minuteur)
+          if (minuteurPing !== null) clearInterval(minuteurPing)
         })
       },
     }),

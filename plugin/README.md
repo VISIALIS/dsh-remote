@@ -46,8 +46,24 @@ Déclaration dans `~/.dsh/profiles/web/cordis.patch.yml` :
         journaliser: true
 ```
 
-Le profil déclare `patchReload: live` : une modification de ce fichier est prise
-en compte **sans redémarrer** `dsh web`.
+### Ce que `patchReload: live` recharge — et ce qu'il ne recharge pas
+
+Le profil déclare `patchReload: live`. Mesuré, et contre-intuitif :
+
+| Changement | Effet |
+|---|---|
+| Ligne ajoutée, retirée ou désactivée dans `cordis.patch.yml` | **rechargé à chaud** — les routes apparaissent ou disparaissent en quelques secondes |
+| **Code** de `dynamic/host.js` | **NON rechargé** |
+
+Le rechargement à chaud porte sur la **configuration**, pas sur le module : Node met en
+cache un module ESM par URL résolue, et Cordis réimporte la même URL. Une modification
+de code exige donc un **redémarrage du processus**.
+
+Ce n'est pas une précision gratuite : pendant le développement de ce plugin, trois
+vérifications « à chaud » ont été crues bonnes alors que l'ancien code tournait encore.
+Les routes répondaient — donc tout semblait en place — mais le comportement observé
+était celui de la version précédente. **Toute modification de code doit être éprouvée
+dans un processus neuf.**
 
 ---
 
@@ -88,7 +104,7 @@ d'URL — un paramètre finit dans un journal d'accès ou un historique.
 | `/dsh-remote/v1/sante` | `GET` | Poignée de main : version du protocole, capacités. Aucune donnée. |
 | `/dsh-remote/v1/sessions` | `GET`, `POST` | Liste des sessions, de la plus récente à la plus ancienne. |
 | `/dsh-remote/v1/session/<id>` | `POST` | Une page du journal d'une session. |
-| `/dsh-remote/v1/flux` | `Upgrade` | WebSocket. **Ouvert et authentifié, mais aucune donnée n'y circule encore** (jalon 3). |
+| `/dsh-remote/v1/flux` | `Upgrade` | WebSocket temps réel : une base, puis un message par écriture du journal. |
 
 ### `POST /v1/sessions`
 
@@ -101,6 +117,38 @@ d'URL — un paramètre finit dans un journal d'accès ou un historique.
 ```json
 { "depuis": 0, "limite": 200, "types": ["user/message", "assistant/message"] }
 ```
+
+### `Upgrade /v1/flux` — le flux temps réel
+
+Le client ouvre le WebSocket (jeton en en-tête `Authorization`, **jamais** en paramètre
+d'URL), puis envoie un premier message :
+
+```json
+{ "type": "demarrer", "session": "session-…", "depuisSeq": 1044 }
+```
+
+`depuisSeq` est facultatif, et c'est lui qui rend la **reprise non destructive** : le
+serveur ne transmet que les enregistrements dont `seq` dépasse cette valeur. Une
+reconnexion après coupure réseau ne renvoie donc pas ce que le client possède déjà.
+
+Le serveur répond :
+
+| Message | Contenu |
+|---|---|
+| `base` | Le résumé de la session, les derniers enregistrements, et `dernierSeq`. |
+| `evenement` | Un enregistrement, dès qu'une écriture est détectée. |
+| `delta` | Le nouveau `dernierSeq`, après un groupe d'évènements. |
+| `tronque` | La fenêtre de lecture n'a pas suffi : le client doit redemander une page. |
+| `erreur` | Un message lisible, jamais une trace technique. |
+
+Le serveur sonde le fichier toutes les **750 ms** et ne décompresse que les **derniers
+64 Kio**, fenêtre qu'il élargit jusqu'à 8 Mio si nécessaire. Relire le journal entier à
+chaque tour ferait croître le coût sans fin sur une session longue ; comme un journal
+est append-only, tout ce qui précède la fin est déjà connu du client.
+
+Boucle de vie : un `ping` toutes les 30 s, et une fermeture `1008` si le client n'absorbe
+pas ses messages (4 Mio en attente) — un client lent ne doit pas faire enfler la mémoire
+du harness. Il se reconnecte avec `depuisSeq` et rattrape sans perte.
 
 `depuis` et `limite` paginent les enregistrements **filtrés**. `types` restreint
 aux types demandés. Sans `types`, les enregistrements volumineux
@@ -228,7 +276,11 @@ limite la surface de casse.
 | Une route nommée échappe à l'authentification navigateur | `200` sans cookie sur `/dsh-remote-probe/ping` (sonde), là où `/` répond `401` |
 | Le tailnet atteint la route | `200` via le nom MagicDNS du Mac (`tailscale serve`) |
 | Le WebSocket traverse `tailscale serve` | `101 Switching Protocols` + trame reçue, via le tailnet |
-| Le plugin se recharge à chaud | routes actives après modification de `cordis.patch.yml`, sans redémarrage |
+| La CONFIGURATION se recharge à chaud | route en `404` après désactivation de la ligne, `401` après réactivation, sans redémarrage |
+| Le CODE exige un redémarrage | après modification du fichier et rechargement de la configuration, l'ancien code répondait encore |
+| Le flux pousse de vrais évènements | instance neuve : `base=1`, `evenement=5`, `delta=3`, 0 doublon, ordre croissant, pendant que la session écrivait |
+| La reprise ne renvoie rien de connu | reconnexion avec `depuisSeq` = dernier seq : 0 évènement déjà connu |
+| Le flux fonctionne depuis Swift | `dsh-remote-ctl <adresse> flux <id>` : 5 évènements et 3 deltas reçus en direct, 0 doublon, curseur conservé |
 | Sans jeton : refus | `401` sur `/v1/sante` et sur l'`Upgrade` WebSocket |
 | Avec `Origin` : refus | `403` |
 | L'identité tailnet est falsifiable | `curl` local avec `Tailscale-User-Login: attaquant@exemple.fr` → accepté |
@@ -251,9 +303,12 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 - **Lecture seule.** `capacites.ecriture` et `capacites.approbations` valent
   `false`. Envoyer un prompt, répondre à une approbation ou à une question n'est
   pas implémenté (jalon 4).
-- **Le flux WebSocket ne transporte rien.** Il s'ouvre et s'authentifie, puis
-  annonce `flux: non-implemente` (jalon 3). Les clients doivent interroger
-  `/v1/sessions` en boucle en attendant.
+- **Le flux interroge le disque, il n'écoute pas le bus d'évènements interne du
+  harness.** La latence est donc celle de l'intervalle de scrutation (750 ms). En
+  contrepartie, il suit aussi les sessions écrites par un AUTRE processus — ce que
+  ne permettrait pas un abonnement interne.
+- **Modifier le code du flux exige un redémarrage du harness** (voir « Ce que
+  `patchReload: live` recharge »).
 - **Aucune révocation par appareil.** Le jeton est unique : le tourner révoque
   tout le monde.
 - **`vivante` n'est pas une preuve d'activité.** Une session reprise par un autre

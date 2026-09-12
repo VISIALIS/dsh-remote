@@ -48,6 +48,22 @@ public struct ResumeSession: Sendable, Decodable {
     case dernierSeq = "dernierSeq"
     case nbEnregistrements = "nbEnregistrements"
   }
+
+  /// Résumé vide, employé quand le serveur n'a pas pu atteindre l'en-tête du
+  /// journal : mieux vaut un résumé vide qu'un flux refusé.
+  public init() {
+    self.id = nil
+    self.cwd = nil
+    self.creeLe = nil
+    self.preset = nil
+    self.profondeurDelegation = nil
+    self.seme = nil
+    self.titre = nil
+    self.dernierEvenementLe = nil
+    self.dernierSeq = nil
+    self.nbEnregistrements = nil
+    self.tronque = nil
+  }
 }
 
 /// Une session telle qu'elle apparaît dans une liste.
@@ -126,6 +142,15 @@ public struct EnregistrementJournal: Sendable, Decodable {
   public let time: Int?
   /// Charge utile `data`, ré-encodée en JSON, ou `nil` si l'enregistrement n'en porte pas.
   public let corpsBrut: Data?
+
+  /// Construit un enregistrement de toutes pièces — employé par le flux, qui
+  /// reçoit la charge utile en JSON déjà encodé.
+  public init(type: String?, seq: Int?, time: Int?, corpsBrut: Data?) {
+    self.type = type
+    self.seq = seq
+    self.time = time
+    self.corpsBrut = corpsBrut
+  }
 
   enum CodingKeys: String, CodingKey {
     case type, seq, time, data
