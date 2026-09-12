@@ -92,6 +92,33 @@ DOCS=$(xcrun simctl get_app_container <device> org.example.dsh-remote data)/Docu
 faut le déposer explicitement dans un conteneur. Sur un iPhone réel, rien ne le lit — le
 jeton vient alors du trousseau, après une saisie unique.
 
+### Installer sur l'iPhone : ce qui bloque, mesuré
+
+Trois faits établis sur cette machine, dans cet ordre :
+
+1. **Xcode accepte une destination iOS** pour ce paquet. `xcodebuild -showdestinations
+   -scheme DSHRemote` liste `platform:iOS … Any iOS Device` (malgré l'avertissement
+   « Supported platforms for the buildables in the current scheme is empty »).
+2. **Le code compile et se lie pour un vrai iPhone** :
+   `xcodebuild -scheme DSHRemote -destination 'generic/platform=iOS' build` →
+   `BUILD SUCCEEDED`, `-target arm64-apple-ios17.0`, SDK `iPhoneOS26.5`.
+   C'est une vérification réelle de la chaîne de compilation iOS, pas une supposition.
+3. **Mais Xcode ne produit PAS de `.app`** : un exécutable SwiftPM donne un **binaire
+   Mach-O nu** (`Build/Products/Debug-iphoneos/DSHRemote`), sans bundle ni `Info.plist`.
+   Or iOS n'installe que des paquets `.app` signés. **Ce paquet ne peut donc pas être
+   installé sur l'iPhone tel quel**, quel que soit le réglage de signature.
+
+Il faut donc une **cible d'application Xcode** (`com.apple.product-type.application`)
+consommant `DSHRemoteKit` comme dépendance de paquet local. Le simulateur, lui,
+fonctionne déjà : un `.app` assemblé à la main et signé ad hoc s'y installe et s'y
+lance (voir plus haut).
+
+**Prérequis côté appareil**, indépendants du code : brancher l'iPhone en USB (ou activer
+la synchronisation Wi-Fi), l'appairer et faire confiance à cet ordinateur, puis activer
+**Réglages ▸ Confidentialité et sécurité ▸ Mode développeur** sur l'iPhone. Tant que
+`xcrun devicectl list devices` répond `No devices found`, aucune installation n'est
+possible — c'est un préalable matériel, pas logiciel.
+
 ### Ce qui reste non prouvé
 
 - **Le rendu de l'interface macOS.** `screencapture` exige l'autorisation
@@ -220,3 +247,5 @@ inactive.
 | L'application démarre sur macOS | processus vivant après 6 s, fenêtre 1100×720 présente |
 | L'application fonctionne sur iOS | simulateur iPhone 17 Pro : 48 sessions vivantes affichées, connectées à la vraie instance |
 | Le code compile pour un iPhone réel | `swift build --triple arm64-apple-ios18.0 --sdk <iphoneos>` |
+| Xcode compile et lie pour iOS | `xcodebuild -destination 'generic/platform=iOS' build` → `BUILD SUCCEEDED` |
+| Xcode ne produit PAS d'app installable | aucun `.app` dans `Build/Products/Debug-iphoneos`, seulement un binaire nu |
