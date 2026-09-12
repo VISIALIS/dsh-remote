@@ -92,6 +92,34 @@ DOCS=$(xcrun simctl get_app_container <device> org.example.dsh-remote data)/Docu
 faut le déposer explicitement dans un conteneur. Sur un iPhone réel, rien ne le lit — le
 jeton vient alors du trousseau, après une saisie unique.
 
+### Découverte des serveurs : ce qui est possible, et la voie retenue
+
+J'ai d'abord écrit que « la découverte est impossible sur iPhone ». **C'était trop
+absolu** — vrai de la méthode que j'avais choisie, faux comme conclusion. Une
+application iOS ne peut pas lancer `tailscale status`, et le socket LocalAPI de
+l'application Tailscale n'est pas lisible depuis un autre bac à sable ; mais cela
+n'épuise pas les moyens praticables.
+
+**Trois voies, par ordre de qualité :**
+
+1. **Le Mac découvre, l'iPhone consomme — VOIE RETENUE.** Une instance DSH sait
+   déjà voir le tailnet (elle a le binaire, ou peut lire son état). Le plugin
+   publie donc la liste des Macs qu'il voit, et l'application la consomme. Zéro
+   dépendance à une API Apple ou à une permission Tailscale : l'iPhone ne
+   découvre rien, il LIT une découverte faite ailleurs. C'est la seule voie qui
+   donne une liste exacte et à jour.
+2. **Balayer des noms candidats.** Le domaine du tailnet se déduit de l'adresse
+   que l'utilisateur a déjà saisie ; il ne reste qu'à tester des noms plausibles.
+   Fonctionne, mais devine, et le nom d'une machine renommée est introuvable.
+3. **Se souvenir de ce qui a marché.** Une liste de serveurs connus, réutilisable
+   et testable d'un appui. C'est le complément naturel de la voie 1, et il
+   fonctionne même hors ligne.
+
+**Ce qui est déjà en place** : la liste des machines sait s'afficher avec icône et
+état (`ServeurMac`, `DecouverteServeurs`), la persistance de l'adresse, et le
+message qui explique une liste vide. Seule la SOURCE de la liste manque — ce qui
+est précisément ce que la voie 1 apporte.
+
 ### Installer sur l'iPhone : ce qui bloque, mesuré
 
 Trois faits établis sur cette machine, dans cet ordre :
