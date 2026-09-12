@@ -82,6 +82,14 @@ public struct SessionListee: Sendable, Decodable, Hashable {
   /// quand la session n'est pas ouverte dans le processus du harness — auquel
   /// cas l'état est INCONNU, et non « inactif ».
   public let statut: String?
+  /// Le harness attend-il une DÉCISION de l'utilisateur pour cette session
+  /// (question d'un tool, ou autorisation) ?
+  ///
+  /// Optionnel À DESSEIN : un hôte plus ancien ne renvoie pas ce champ, et `nil`
+  /// signifie « ne sait pas », pas « non ». Une session bloquée sur une question
+  /// ne repartira pas toute seule — c'est l'information la plus actionnable de la
+  /// liste, et l'annoncer à tort serait pire que de l'ignorer.
+  public let attendReponse: Bool?
   public let illisible: String?
   public let resume: ResumeSession
 
@@ -104,6 +112,7 @@ public struct SessionListee: Sendable, Decodable, Hashable {
     case projet, dossier, fichier, octets, vivante, illisible, statut
     case cwdIndicatif = "cwdIndicatif"
     case modifieLe = "modifieLe"
+    case attendReponse = "attendReponse"
   }
 
   public init(from decoder: any Decoder) throws {
@@ -116,6 +125,7 @@ public struct SessionListee: Sendable, Decodable, Hashable {
     self.modifieLe = try conteneur.decodeIfPresent(Double.self, forKey: .modifieLe)
     self.vivante = try conteneur.decodeIfPresent(Bool.self, forKey: .vivante)
     self.statut = try conteneur.decodeIfPresent(String.self, forKey: .statut)
+    self.attendReponse = try conteneur.decodeIfPresent(Bool.self, forKey: .attendReponse)
     self.illisible = try conteneur.decodeIfPresent(String.self, forKey: .illisible)
     // Le résumé est aplati dans l'objet de session par le plugin : on le
     // redécode depuis le même conteneur plutôt que d'exiger une imbrication.
@@ -275,6 +285,11 @@ public struct Sante: Sendable, Decodable {
     /// le dit pas. Sans ce champ, l'application proposerait un bouton
     /// « Arrêter » qui ne ferait rien — un mensonge d'interface.
     public let annulation: Bool?
+    /// L'hôte sait-il SIGNALER qu'une session attend une décision humaine ?
+    ///
+    /// À ne pas confondre avec `approbations` : ici l'hôte annonce seulement
+    /// l'attente, il ne permet pas d'y répondre.
+    public let questions: Bool?
   }
 }
 
@@ -299,7 +314,13 @@ public enum ErreurRemote: Error, CustomStringConvertible {
   public var description: String {
     switch self {
     case .jetonRefuse:
-      return "jeton refusé (401) — le jeton d'appareil est absent, révoqué ou faux"
+      // Le message DIT QUOI FAIRE, parce que les trois causes possibles se
+      // corrigent de la même façon et qu'aucune n'est devinable depuis l'écran :
+      // le trousseau ne contient pas de jeton (première installation), il en
+      // contient un devenu faux (le coffre du harness a été tourné depuis), ou
+      // le jeton a été tronqué au collage.
+      return
+        "jeton refusé (401) — le jeton d'appareil est absent, révoqué ou faux. Recopiez le jeton affiché par le harness, puis collez-le dans Réglages."
     case .origineRefusee:
       return "origine refusée (403) — un client natif ne doit jamais envoyer d'en-tête Origin"
     case let .versionIncompatible(recue, supportee):

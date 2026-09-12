@@ -9,9 +9,30 @@
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>0.2</string>
+  <key>CFBundleVersion</key><string>2</string>
   <key>LSRequiresIPhoneOS</key><true/>
+  <!--
+    POURQUOI CE SCHEMA EST DECLARE ICI.
+
+    La carte d'accueil de l'application propose d'INSTALLER Tailscale, de
+    l'OUVRIR, ou de VERIFIER la connexion. Se tromper d'action est un mensonge
+    d'interface : envoyer quelqu'un sur l'App Store pour une application deja
+    installee, par exemple.
+
+    Or iOS ne publie PAS la liste des applications installees. Le seul test
+    possible est `canOpenURL("tailscale://")`, et il exige que le schema soit
+    declare ici : SANS CETTE DECLARATION, `canOpenURL` rend TOUJOURS `false`,
+    sans lever d'erreur. L'application proposerait alors d'installer un
+    Tailscale deja present — une panne silencieuse, invisible a la compilation.
+
+    Ce schema n'ouvre aucun droit et n'expose aucune donnee : il permet
+    seulement de savoir si l'application Tailscale repond.
+  -->
+  <key>LSApplicationQueriesSchemes</key>
+  <array>
+    <string>tailscale</string>
+  </array>
   <key>UILaunchScreen</key><dict/>
   <key>UIApplicationSceneManifest</key>
   <dict>

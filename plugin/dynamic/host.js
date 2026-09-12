@@ -720,6 +720,10 @@ export function apply(ctx, config) {
           modifieLe: information.mtimeMs,
           vivante: estVivante(faits?.id),
           statut: statutDe(faits?.id),
+          // Le harness attend-il une DECISION de l'utilisateur pour cette
+          // session ? C'est l'information la plus actionnable de la liste : une
+          // session bloquee sur une question ne repartira pas toute seule.
+          attendReponse: attendUneReponse(faits?.id),
           ...faits,
         })
       }
@@ -752,8 +756,87 @@ export function apply(ctx, config) {
     }
   }
 
-  /** Une session est vivante si le harness la connait encore dans ce processus. */
-  const estVivante = (identifiant) => {
+  /**
+   * Identifiant de session porte par un agent d'evenement.
+   *
+   * Les deux waterfalls qui demandent une decision passent l'agent vivant pour
+   * portee ; son identifiant EST celui de la session.
+   */
+  const identifiantDeLagent = (agent) => {
+    if (agent === undefined || agent === null) return null
+    if (typeof agent.id === 'string' && agent.id.length > 0) return agent.id
+    const parSession = agent.session?.id
+    return typeof parSession === 'string' && parSession.length > 0 ? parSession : null
+  }
+
+  // ── Attente d'une decision de l'utilisateur ────────────────────────────────
+  //
+  // Deux waterfalls du harness suspendent un tour en attendant un HUMAIN : une
+  // question d'un tool (`user-questions/request`) et une autorisation
+  // (`approval/request`). Toutes deux sont diffusees avec l'agent pour portee,
+  // donc un listener pose ici, a la racine, les recoit — c'est le meme seam que
+  // l'interface web consomme.
+  //
+  // CE PLUGIN N'Y REPOND PAS. Il rend la main au repondeur suivant et se
+  // contente de compter : repondre depuis cette surface reste impossible (un
+  // seul repondeur terminal par deploiement, occupe par l'interface web). Ce qui
+  // est nouveau, c'est de pouvoir DIRE qu'une decision est attendue — une
+  // session bloquee sur une question ne repartira pas toute seule, et c'est
+  // exactement ce qu'un telephone doit signaler.
+  //
+  // La duree de l'attente n'est pas devinee : c'est celle de la promesse du
+  // waterfall. Le listener la traverse (`next()`), donc il voit le moment exact
+  // ou la question est resolue — repondue, refusee ou abandonnee. Un compteur
+  // par session, parce que deux demandes peuvent se superposer.
+  const attentes = new Map()
+
+  const suivreAttente = (evenement) => {
+    try {
+      // `{ prepend: true }` EST INDISPENSABLE, et c'est une MESURE.
+      //
+      // Un waterfall s'arrete au premier ecouteur qui ne rappelle pas `next()`
+      // (`waterfall()` : `cbs.shift()`) — et le repondeur, lui, repond : il ne
+      // rappelle pas `next`. Un ecouteur inscrit APRES lui n'est donc JAMAIS
+      // appele. Mesure : 4 ecouteurs inscrits sur l'evenement, dont le notre,
+      // et le notre jamais atteint — jusqu'a ce qu'il passe en tete.
+      //
+      // `global` n'est PAS necessaire : un ecouteur non etiquete est admis par
+      // le filtre de portee. Seule la place dans la chaine comptait.
+      //
+      // Le desabonnement reste solidaire du cycle de vie du plugin : `ctx.on`
+      // enregistre l'ecouteur comme effet de sa fibre.
+      ctx.on(
+        evenement,
+        (requete, next) => {
+          const identifiant = identifiantDeLagent(requete?.agent)
+          if (identifiant !== null) attentes.set(identifiant, (attentes.get(identifiant) ?? 0) + 1)
+          // Passer la main, jamais repondre : le repondeur reste celui du harness.
+          const suite = typeof next === 'function' ? next() : undefined
+          return Promise.resolve(suite).finally(() => {
+            try {
+              if (identifiant === null) return
+              const restant = (attentes.get(identifiant) ?? 1) - 1
+              if (restant > 0) attentes.set(identifiant, restant)
+              else attentes.delete(identifiant)
+            } catch {
+              // Un compteur ne doit jamais faire echouer une question en cours.
+            }
+          })
+        },
+        { prepend: true },
+      )
+    } catch {
+      // Le harness a change de forme : on perd l'indicateur, pas la lecture.
+    }
+  }
+  suivreAttente('user-questions/request')
+  suivreAttente('approval/request')
+
+  /** Le harness attend-il une decision de l'utilisateur pour cette session ? */
+  const attendUneReponse = (identifiant) =>
+    typeof identifiant === 'string' && identifiant.length > 0 && attentes.has(identifiant)
+
+  /** Une session est vivante si le harness la connait encore dans ce processus. */  const estVivante = (identifiant) => {
     if (typeof identifiant !== 'string' || identifiant.length === 0) return false
     try {
       if (sessions !== undefined && sessions !== null && typeof sessions.get === 'function') {
@@ -943,6 +1026,10 @@ export function apply(ctx, config) {
           // Annuler le tour en cours. Meme service que l'ecriture : un client qui
           // lit `false` ne propose pas de bouton « Arreter » qui ne ferait rien.
           annulation: controleurEcriture() !== null,
+          // L'hote sait-il dire qu'une session ATTEND une decision humaine ?
+          // Annonce a part de `approbations` : ici on ne fait que SIGNALER
+          // l'attente, jamais y repondre.
+          questions: true,
           // Les approbations ne sont PAS exposees : le seam d'approbation de DSH
           // n'admet qu'un repondeur terminal par deploiement, et l'interface web
           // l'occupe deja. Repondre depuis l'iPhone exigerait de le remplacer.

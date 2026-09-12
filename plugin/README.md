@@ -274,7 +274,8 @@ rarement ce qu'un client veut afficher.
   "vivante": true,
   "octets": 425393,
   "projet": "--chemin-du-projet-encode--",
-  "cwdIndicatif": "/chemin/du/projet/indicatif//"
+  "cwdIndicatif": "/chemin/du/projet/indicatif//",
+  "attendReponse": false
 }
 ```
 
@@ -298,6 +299,57 @@ Trois avertissements sur ces champs :
   du journal lui-même.
 - `vivante` signifie « le harness connaît encore cette session dans ce
   processus ». Une session ancienne est `false` ; elle reste lisible.
+- **`attendReponse` dit qu'une DÉCISION humaine est attendue** — une question d'un
+  tool (`ask_user`) ou une autorisation. C'est l'information la plus actionnable de
+  la liste : une session dans cet état ne repartira pas toute seule. `false` est la
+  réponse normale, et le champ est **absent** d'un hôte plus ancien, ce qui veut
+  dire « ne sait pas » et non « non ».
+
+---
+
+## « L'agent attend une réponse » : observer sans répondre
+
+Une session peut être bloquée sur une décision de l'utilisateur — le modèle a posé une
+question, ou un tool demande une autorisation. C'est le seul état de la liste qui
+n'avance **jamais** tout seul, et donc celui qu'un téléphone doit signaler.
+
+**Ce plugin n'y répond pas**, et ne le prétend pas : le harness n'admet qu'un répondeur
+terminal par déploiement, et l'interface web l'occupe. Mais il peut le **dire**, en
+s'inscrivant sur les deux waterfalls concernés (`user-questions/request` et
+`approval/request`) pour compter les demandes en cours, puis en les relâchant.
+
+La durée de l'attente n'est pas devinée : le listener **traverse** la promesse du
+waterfall (`next()`), donc il voit le moment exact où la question est résolue — répondue,
+refusée ou abandonnée. Un compteur par session, parce que deux demandes peuvent se
+superposer.
+
+### Le piège : dans un waterfall, un observateur placé après le répondeur ne voit RIEN
+
+Trois mesures ont été nécessaires, et chacune a écarté une explication plausible :
+
+| Hypothèse | Mesure | Verdict |
+|---|---|---|
+| Le service n'existe pas / mauvaise portée | l'évènement arrive bien à la racine comme dans un plugin | écartée |
+| Il faut `{ global: true }` pour franchir le filtre de portée | posé, l'observateur ne voit toujours rien | écartée |
+| L'inscription est trop tardive | une sonde inscrite 8 s après le démarrage ne voit rien non plus | écartée… |
+
+La cause est ailleurs, et elle est structurelle : `ctx.waterfall` construit une chaîne
+d'écouteurs et **s'arrête au premier qui ne rappelle pas `next()`**. Le répondeur, lui,
+répond — il ne rappelle donc pas `next`. Un observateur inscrit après lui n'est **jamais
+appelé**, quel que soit son contexte. Mesuré : 4 écouteurs inscrits sur l'évènement, dont
+le nôtre, et le nôtre jamais atteint.
+
+D'où l'inscription en tête :
+
+```js
+ctx.on(evenement, (requete, next) => {
+  marquer(requete.agent)                 // on note l'attente
+  return Promise.resolve(next()).finally(() => relacher(requete.agent))
+}, { prepend: true })                    // AVANT le répondeur, sinon jamais appelé
+```
+
+`{ global: true }` n'est **pas** nécessaire : un écouteur non étiqueté est admis par le
+filtre de portée. Seule la place dans la chaîne comptait.
 
 ---
 
@@ -352,8 +404,13 @@ pour le lancer** :
 Un lien symbolique fait perdre au CLI l'identité de bundle dont il a besoin pour
 joindre l'application Tailscale. Le plugin essaie donc ses candidats **jusqu'à un
 succès**, et non jusqu'au premier fichier exécutable — c'est la différence entre une
-liste qui se remplit et une liste qui reste vide sans explication. Le candidat qui a
-répondu est mémorisé pour ne pas repayer les échecs suivants.
+liste qui se remplit et une liste qui reste vide sans explication.
+
+Aucun binaire n'est mémorisé côté plugin : chaque découverte fraîche refait l'essai dans
+l'ordre et s'arrête au premier qui répond. Le coût est de quelques dizaines de
+millisecondes, payé au plus une fois par période de cache. (Côté Swift, le binaire qui a
+répondu *est* retenu — les deux implémentations ne se comportent pas pareil, et c'est
+écrit ici pour que personne ne s'étonne de la différence.)
 
 ### Ce que cette route ne fait pas
 
@@ -365,7 +422,10 @@ répondu est mémorisé pour ne pas repayer les échecs suivants.
 - **Aucun scan réseau, aucune requête sortante** : on lit l'état LOCAL d'un Tailscale
   déjà en place. Le plugin n'émet aucun paquet.
 - **Coût borné** : délai de 8 s, sortie plafonnée à 4 Mio, résultat mis en cache 15 s
-  (un tailnet ne change pas d'une seconde à l'autre), et un seul processus à la fois.
+  (un tailnet ne change pas d'une seconde à l'autre). **Le cache n'est pas un verrou** :
+  deux requêtes simultanées à cache froid lancent chacune son processus. Le cache limite
+  la fréquence, il ne sérialise pas — le dire autrement serait une affirmation non
+  mesurée.
 - **Aucun chemin absolu publié** : le diagnostic ne contient qu'une ligne courte, jamais
   le chemin d'un binaire.
 
@@ -478,6 +538,7 @@ testée, et le plugin se dégrade au lieu de lever une exception au chargement.
 | `credentials.readRecord` / `.modifyRecord` | stocker le jeton | sans coffre, aucune authentification n'est possible : toutes les routes répondent `401` |
 | `sessions.get`, `agents.roots` | marquer une session `vivante` | `vivante` vaut `false` partout ; le reste fonctionne |
 | `sessionController.prompt` / `.cancel` | écrire et interrompre | `capacites.ecriture` vaut `false`, la lecture continue de fonctionner, les deux routes répondent `503` |
+| `ctx.on('user-questions/request' \| 'approval/request', …, { prepend: true })` | signaler qu'une décision humaine est attendue | `attendReponse` reste `false` partout : l'indicateur disparaît, rien d'autre ne casse |
 | `ctx.effect` | retirer les routes au déchargement | les routes fuient jusqu'au redémarrage |
 
 **`sessionController` est relu à chaque requête, jamais au chargement** : la
@@ -502,6 +563,11 @@ limite la surface de casse.
 |---|---|
 | Une route nommée échappe à l'authentification navigateur | `200` sans cookie sur `/dsh-remote-probe/ping` (sonde), là où `/` répond `401` |
 | Le tailnet atteint la route | `200` via le nom MagicDNS du Mac (`tailscale serve`) |
+| L'hôte publie la liste du tailnet | instance neuve : `GET /v1/serveurs` → 3 Macs, `local: true` sur celui qui répond, et **NI** le PC Windows **NI** l'iPhone |
+| La découverte ne lit rien avant l'authentification | sur cette route : `401` sans jeton, `403` avec `Origin`, `405` en `POST` |
+| Le CHEMIN du binaire décide du succès | `/usr/local/bin/tailscale` (lien symbolique) échoue « The current bundleIdentifier is unknown to the registry » ; `/Applications/Tailscale.app/Contents/MacOS/Tailscale` rend l'état complet |
+| La capacité est annoncée | `capacites.decouverte: true` dans `/v1/sante` |
+| L'iPhone CONSOMME la découverte | simulateur iPhone 17 Pro : les 3 Macs s'affichent avec icône et état, « hôte interrogé » sur la machine qui répond |
 | Le WebSocket traverse `tailscale serve` | `101 Switching Protocols` + trame reçue, via le tailnet |
 | La CONFIGURATION se recharge à chaud | route en `404` après désactivation de la ligne, `401` après réactivation, sans redémarrage |
 | Le CODE exige un redémarrage | après modification du fichier et rechargement de la configuration, l'ancien code répondait encore |
@@ -515,6 +581,9 @@ limite la surface de casse.
 | L'annulation fonctionne | session froide → `404` ; tour vivant → `202 {"annule":true}` |
 | Le prompt respecte la barrière d'accès | `401` sans jeton, `403` avec `Origin`, sur la route d'écriture comme sur les autres |
 | L'écriture fonctionne depuis Swift | `dsh-remote-ctl <adresse> prompt <id> "…"` → `accepté: true` ; essai d'intégration `swift test --filter ecritureReelle` vert contre un hôte réel |
+| L'attente d'une décision est SIGNALÉE | `ask_user` déclenché pour de vrai : `attendReponse: true` tant que la question est en attente, `false` après la réponse (les deux fronts mesurés) |
+| La capacité est annoncée séparément | `capacites.questions: true`, distinct de `capacites.approbations: false` — signaler n'est pas répondre |
+| L'observateur doit être EN TÊTE | 4 écouteurs inscrits sur le waterfall, le nôtre jamais atteint avant `{ prepend: true }` |
 | Le flux fonctionne depuis Swift | `dsh-remote-ctl <adresse> flux <id>` : 5 évènements et 3 deltas reçus en direct, 0 doublon, curseur conservé |
 | Sans jeton : refus | `401` sur `/v1/sante` et sur l'`Upgrade` WebSocket |
 | Avec `Origin` : refus | `403` |
@@ -538,10 +607,11 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 - **L'écriture est opérationnelle, avec une portée à connaître** : envoyer un prompt
   et interrompre un tour. Le jeton d'appareil autorise donc **l'écriture**, pas
   seulement la lecture (voir « Sécurité »).
-- **Les questions de l'agent ne sont pas exposées.** Un prompt peut être envoyé
-  pendant qu'un tool `ask_user` attend une réponse — mais répondre à la question
-  n'est pas possible : elle n'est pas dans la surface du plugin. L'agent attend,
-  et la réponse se donne sur le Mac.
+- **Les questions et les autorisations sont SIGNALÉES, jamais résolues.** Le plugin
+  annonce qu'une décision est attendue (`attendReponse`) sans permettre d'y répondre :
+  le harness n'admet qu'un répondeur terminal par déploiement, et l'interface web
+  l'occupe. Un prompt peut donc être envoyé pendant qu'un tool attend une réponse, mais
+  la réponse se donne sur le Mac.
 - **Les approbations ne sont pas exposées, par conception.** Le seam d'approbation de
   DSH n'admet **qu'un répondeur terminal par déploiement**, et l'interface web occupe
   déjà cette place : répondre depuis l'iPhone exigerait de la lui retirer. Toute
@@ -577,5 +647,5 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 | 1 | Plugin, protocole, jeton, lecture des journaux, tool Swift de validation | **livré et prouvé** |
 | 2 | Application SwiftUI lecture seule, macOS puis iOS | **livré et connecté** — 106 sessions affichées sur l'iPhone réel via Tailscale |
 | 3 | Flux temps réel des événements (`/v1/flux`) | **livré et prouvé** (plugin, client Swift et application) |
-| 4 | Écriture : prompt, approbations, questions | **prompt et annulation livrés et prouvés** ; le « blocage » était une capture précoce du service, corrigée. Approbations et questions restent hors d'atteinte : un seul répondeur terminal par déploiement, déjà occupé par l'interface web |
+| 4 | Écriture : prompt, approbations, questions | **prompt, annulation et SIGNALEMENT d'une décision attendue livrés et prouvés** ; le « blocage » était une capture précoce du service, corrigée. Répondre aux questions et aux approbations reste hors d'atteinte : un seul répondeur terminal par déploiement, déjà occupé par l'interface web |
 | 5 | Installation et signature iOS | **livré** — app signée et installée sur l'iPhone du propriétaire, connectée au harness via Tailscale (106 sessions) |

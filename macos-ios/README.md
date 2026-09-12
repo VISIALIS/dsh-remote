@@ -331,14 +331,27 @@ l'état des agents. Il ne touche pas non plus au journal ouvert, pour ne pas
 déplacer la lecture sous les yeux de l'utilisateur, et un échec passager ne
 signale rien — l'utilisateur n'a rien demandé, il ne doit pas être interrompu.
 
-### Quatre états, dont un qui ne conclut pas
+### Quatre états affichés, et un cinquième qui ne s'affiche pas
 
 | Affichage | Sens |
 |---|---|
 | carrés orange qui tournent | `en_cours` — un tour s'exécute |
+| **point orange plein** | `attendReponse` — l'agent attend une **décision de l'utilisateur** |
 | **point vert** | un tour vient de **finir sans être vu** (voir ci-dessous) |
 | anneau vide | état **inconnu** — la session n'est pas ouverte dans le processus |
-| point bleu | `inactif` — chargée dans le harness, au repos |
+| *(rien)* | `inactif` — chargée dans le harness, au repos |
+
+**La session au repos n'affiche RIEN**, et c'est délibéré : c'est l'état le plus
+fréquent, et une pastille permanente pour lui apprend à ne plus regarder les
+pastilles — précisément quand l'une change. Une version précédente affichait un point
+bleu ; il a été retiré, et l'interface web masque elle aussi sa pastille dans ce cas.
+L'emplacement reste occupé, donc les titres restent alignés.
+
+**Le point orange n'est pas l'animation orange** : les carrés veulent dire « ça
+travaille », le point plein veut dire « **ça t'attend** ». Une session dans cet état ne
+repartira pas toute seule, et c'est la seule information de la liste qui demande une
+action immédiate. L'ordre de priorité le dit : décision attendue > travail en cours >
+rappel de fin > silence.
 
 L'anneau vide mérite une explication : dans une première version, l'état inconnu
 s'affichait comme un point **vert**, donc comme une session terminée. L'interface
@@ -349,9 +362,9 @@ inconnu se montre comme inconnu.
 
 ### La pastille verte : un rappel de fin, pas un état
 
-Le vert ne dit **pas** « terminée » — le bleu dit « au repos ». Il dit : *cette
-session a fini de travailler pendant que tu ne la regardais pas*. C'est le rappel
-de fin de l'interface web, et sa règle a été recopiée de son implémentation
+Le vert ne dit **pas** « terminée » — le repos ne dit plus rien du tout. Il dit :
+*cette session a fini de travailler pendant que tu ne la regardais pas*. C'est le
+rappel de fin de l'interface web, et sa règle a été recopiée de son implémentation
 (`syncCompletedNotifications` du contrôleur de sessions) plutôt que devinée :
 
 1. à la **première** observation d'une session, on retient seulement si elle
@@ -372,15 +385,23 @@ n'observe que ce que l'application voit — une fin de tour survenue pendant que
 l'application était fermée ne produit pas de pastille verte. L'interface web a
 exactement la même limite, son état de rappel étant lui aussi en mémoire.
 
-**Deux différences assumées avec le web**, à savoir :
+### « L'agent attend une réponse » : signalé, pas résolu
 
-- le web **masque** la pastille d'une session au repos jamais interrompue ; ici
-  elle reste un point bleu, qui porte une information utile (« le harness la
-  garde en mémoire ») sans jamais la confondre avec un rappel ;
-- le web affiche un état supplémentaire — « demande en attente » (question de
-  l'agent ou approbation) — que ce plugin n'expose pas : répondre à une demande
-  n'est pas possible depuis cette surface, et l'annoncer sans pouvoir y répondre
-  serait pire que de l'ignorer.
+Le point orange vient d'un champ que l'hôte publie par session
+(`attendReponse`), alimenté par l'observation des deux waterfalls du harness
+(question d'un tool, autorisation). Sa mécanique — et le piège qui a coûté trois
+mesures — est racontée dans le [README du
+plugin](../../plugins/dsh-remote/#lagent-attend-une-reponse--observer-sans-repondre).
+
+**CE QUE L'APPLICATION FAIT, ET CE QU'ELLE NE FAIT PAS.** Elle **signale** qu'une
+décision est attendue ; elle ne permet **pas** d'y répondre. Répondre exigerait de
+retirer à l'interface web son rôle de répondeur terminal — ce n'est pas un ajout
+anodin, et l'annoncer sans le faire serait pire que de l'ignorer. Le champ est donc
+lu, jamais écrit.
+
+Un hôte plus ancien ne renvoie pas `attendReponse` : `nil` signifie « ne sait
+pas », et l'application s'abstient — elle n'affiche pas un point orange qu'elle
+devrait deviner.
 
 ### « Chargée » n'est pas « active »
 
@@ -528,6 +549,15 @@ et l'écran ne peut plus mentir sur son contenu.
 
 ### Ce qui reste non prouvé
 
+- **Le PIXEL du point orange.** La décision est prouvée de bout en bout — la charge
+  utile réelle de l'hôte donne `attendReponse: true` pour une session bloquée sur
+  une question, et `EtatSession` rend `.attendReponse`, la valeur exacte que la
+  pastille traduit en point orange. Mais la capture d'écran du point lui-même
+  manque : elle demanderait une instance de test *dont l'hôte publie le champ*, et
+  l'application vise désormais l'instance réelle par sa découverte — dont le plugin
+  est antérieur au champ. **Conséquence pratique pour toi : tant que le harness
+  n'est pas redémarré, le point orange ne peut pas apparaître** (le plugin chargé
+  ne connaît pas `attendReponse`), exactement comme l'écriture.
 - **Le clic sur « Envoyer » dans le simulateur iOS.** Le composeur est **observé**
   (capture), la frappe ne l'est pas : cet environnement n'injecte pas de texte dans
   le simulateur (ni frappe clavier vers l'appareil, ni « Coller » par appui long —
@@ -695,7 +725,9 @@ inactive.
 | **Le journal s'ouvre vraiment dans l'application** | simulateur : « Journal (41 affichés) » là où l'écran restait vide ; côté hôte, `POST /v1/session/<id> -> 200` |
 | **La liste se redessine quand l'état change** | avant correction : serveur à `inactif` / 30 évts, écran figé sur l'animation et « 27 évts » une minute plus tard ; après : 38 évts et la pastille à jour |
 | **La pastille verte apparaît à la fin d'un tour non vu** | capture du simulateur : carrés orange pendant le tour, **point vert** après, sans avoir ouvert la session |
-| **Elle s'efface quand on ouvre la session** | ouvrir la session puis revenir à la liste : point bleu, plus de vert — et il ne revient pas |
+| **Elle s'efface quand on ouvre la session** | ouvrir la session puis revenir à la liste : plus de vert, et il ne revient pas |
+| **Le repos n'affiche plus rien** | capture du simulateur : onze sessions chargées, aucune pastille |
+| **La décision attendue devient un point orange** | chaîne mesurée sur une charge utile RÉELLE : `attendReponse: true` → `EtatSession.attendReponse` (la valeur que la pastille rend), pendant qu'une question d'un tool est en attente |
 | **Le flux alimente l'écran ouvert** | la même capture passe de 41 à 48 enregistrements pendant qu'une autre session écrit |
 | **Le composeur est rendu** | capture du simulateur : champ « Écrire à cette session… », sélecteur de mode, bouton d'envoi |
 | **L'hôte publie la liste des Macs du tailnet** | `dsh-remote-ctl <adresse> serveurs` → 3 Macs ; le PC Windows et l'iPhone sont écartés |

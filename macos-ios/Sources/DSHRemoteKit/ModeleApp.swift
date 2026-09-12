@@ -257,6 +257,9 @@ public final class ModeleApp {
         self.serveurs = trouvees
         self.diagnosticServeurs = raison
         self.sourceServeurs = .tailscaleLocal
+        // La liste vient d'arriver : c'est le moment de dire si le tailnet
+        // fonctionne, et non seulement si Tailscale est installé.
+        self.relireEtatTailscale()
       }
     }
   }
@@ -271,6 +274,7 @@ public final class ModeleApp {
     serveurs = liste.serveurs
     diagnosticServeurs = liste.diagnostic
     sourceServeurs = .hote
+    relireEtatTailscale()
   }
 
   /// Choisit un serveur et met l'adresse en conséquence.
@@ -282,6 +286,7 @@ public final class ModeleApp {
     nomServeur = serveur.nom
     adresse = serveur.adresse
     memoriserPreference()
+    relireEtatTailscale()
   }
 
   /// Un appui sur une machine AGIT : il choisit et se connecte, parce que c'est
@@ -324,6 +329,61 @@ public final class ModeleApp {
     #else
       return false
     #endif
+  }
+
+  // MARK: - Tailscale
+
+  /// État de Tailscale, relu à la demande et jamais deviné.
+  public private(set) var etatTailscale: EtatTailscale = .absent
+
+  /// Relit l'état de Tailscale.
+  ///
+  /// DEUX SOURCES, ET ELLES NE DISENT PAS LA MÊME CHOSE :
+  ///
+  ///   1. l'application Tailscale répond-elle à son schéma d'URL ? C'est le
+  ///      seul test d'installation possible sur iOS, qui ne publie pas la liste
+  ///      des applications installées ;
+  ///   2. au moins un serveur est-il EN LIGNE ? C'est ce qui distingue
+  ///      « installé » de « connecté », et cela ne se lit nulle part ailleurs.
+  ///
+  /// Le second critère est volontairement restrictif : un Tailscale installé
+  /// mais déconnecté, ou dont le Mac est éteint, doit proposer « Ouvrir » — pas
+  /// afficher un état connecté que rien ne confirme.
+  public func relireEtatTailscale() {
+    guard DetectionTailscale.applicationInstallee() else {
+      etatTailscale = .absent
+      return
+    }
+    etatTailscale = serveurs.contains(where: \.enLigne) ? .connecte : .installe
+  }
+
+  /// Exécute l'action de la carte : ouvrir Tailscale, ou son magasin.
+  ///
+  /// Rend `false` quand rien n'a pu être ouvert. L'appelant le DIT : un appui
+  /// qui ne produit rien doit s'expliquer, pas rester muet.
+  @discardableResult
+  public func ouvrirTailscale() -> Bool {
+    DetectionTailscale.ouvrir()
+  }
+
+  /// Affiche un message à l'utilisateur, sans toucher au reste de l'état.
+  ///
+  /// Sert aux actions dont l'échec ne vient d'aucune requête : un `openURL`
+  /// refusé, par exemple. Sans ce chemin, l'appui ne produirait rien du tout —
+  /// et « rien ne s'est passé » ne doit jamais être une réponse possible.
+  public func signaler(_ message: String) {
+    erreur = message
+  }
+
+  /// L'adresse a répondu, mais le jeton a été refusé.
+  ///
+  /// Sert à proposer l'action qui répare VRAIMENT : rouvrir les réglages pour
+  /// recopier le jeton. Un `401` ne se distingue pas à l'œil d'un `404` ou d'une
+  /// panne réseau — sans ce repérage, l'utilisateur cherche une panne là où il
+  /// manque un secret, ou l'inverse.
+  public var jetonRefuse: Bool {
+    guard let message = erreur else { return false }
+    return message.contains("401") || message.contains("jeton d'appareil")
   }
 
   /// Vrai quand appuyer sur « Rafraîchir la liste » peut réellement changer
@@ -616,6 +676,9 @@ public final class ModeleApp {
       diagnosticServeurs = nil
       sourceServeurs = .aucune
     }
+    // Sans serveur, plus rien ne prouve que le tailnet fonctionne : on retombe
+    // sur « installé », pas sur un état connecté hérité du serveur oublié.
+    relireEtatTailscale()
     sessions = []
     journal = []
     sessionOuverte = nil
@@ -685,6 +748,7 @@ public final class ModeleApp {
       // Une connexion réussie est le moment où la liste des Macs devient
       // disponible sur iPhone : l'hôte joint, lui, sait voir le tailnet.
       if capacites?.decouverte == true { await chargerServeursDeLhote() }
+      relireEtatTailscale()
     }
   }
 

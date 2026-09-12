@@ -3,27 +3,33 @@ import SwiftUI
 /// État visuel d'une session dans la liste.
 ///
 /// POURQUOI UN TYPE PLUTÔT QU'UN BOOLÉEN. L'interface web distingue plusieurs
-/// situations — un tour en cours, une session inactive, une session dont l'état
-/// n'est pas connu — et un simple « vivante » les confondait toutes. Le serveur
-/// transporte maintenant le statut d'agent (`en_cours` / `inactif`), et ce type
-/// en fait un affichage.
+/// situations — un tour en cours, une décision attendue, une fin non vue, un état
+/// inconnu — et un simple « vivante » les confondait toutes. Le serveur transporte
+/// maintenant ce qu'il faut pour les distinguer, et ce type en fait un affichage.
+///
+/// CE QUI NE S'AFFICHE PAS COMPTE AUSSI. Une session au repos n'a PAS d'indicateur
+/// (`.rien`) : c'est le cas le plus fréquent, et lui donner une pastille — un point
+/// bleu, dans une version précédente — revenait à décorer la liste d'une
+/// information qui n'appelle aucune action. L'interface web masque elle aussi sa
+/// pastille dans ce cas.
 public enum EtatSession: Sendable, Equatable {
+  /// Rien à signaler : la session est chargée et au repos.
+  case rien
   /// Un tour s'exécute : le modèle travaille.
   case enCours
+  /// Le harness attend une DÉCISION de l'utilisateur (question d'un tool ou
+  /// autorisation). Une session dans cet état ne repartira pas toute seule.
+  ///
+  /// C'est l'information la plus actionnable de la liste, et elle PRIME sur
+  /// « en cours » : l'agent travaille, mais il est bloqué sur vous.
+  case attendReponse
   /// Un tour vient de se TERMINER et l'utilisateur ne l'a pas encore vu.
   ///
   /// C'est le rappel de fin de l'interface web, et il ne dit PAS la même chose
-  /// que l'inactivité : une session au repos depuis toujours est bleue, une
+  /// que l'inactivité : une session au repos depuis toujours n'affiche rien, une
   /// session qui vient de finir est verte. La différence est celle qui compte
-  /// quand on a lancé un travail et qu'on attend son résultat — sans elle, il
-  /// faut ouvrir chaque session pour savoir laquelle a avancé.
+  /// quand on a lancé un travail et qu'on attend son résultat.
   case terminee
-  /// Session chargée dans le processus du harness, sans travail en cours.
-  ///
-  /// « Chargée » et non « vivante » : être en mémoire signifie que le harness
-  /// peut la reprendre instantanément, pas qu'elle travaille. La confusion entre
-  /// les deux fait paraître anormale une situation qui ne l'est pas.
-  case inactive
   /// Session présente sur disque mais absente du processus : état INCONNU.
   ///
   /// CE CAS NE DOIT PAS RESSEMBLER À UN AUTRE. Il était affiché comme un point
@@ -38,15 +44,22 @@ public enum EtatSession: Sendable, Equatable {
   ///   - vivante: le harness connaît-il encore cette session ?
   ///   - rappelDeFin: une fin de tour non vue a-t-elle été détectée ?
   ///     Voir `RappelsDeFin` pour la règle, qui est une transition et non un champ.
-  public init(statut: String?, vivante: Bool?, rappelDeFin: Bool = false) {
-    // L'ordre est délibéré : travailler PRIME sur tout le reste. Une session qui
-    // a fini puis repris ne doit pas rester verte — elle est de nouveau orange.
-    if statut == "en_cours" {
+  ///   - attendReponse: le harness attend-il une décision de l'utilisateur ?
+  public init(
+    statut: String?, vivante: Bool?, rappelDeFin: Bool = false, attendReponse: Bool = false
+  ) {
+    // L'ordre est délibéré, et il est lisible : ce qui demande une ACTION passe
+    // avant ce qui décrit une activité. Une question en attente prime sur le
+    // travail en cours (l'agent est bloqué sur vous), qui prime sur un rappel de
+    // fin déjà consommable, qui prime sur le silence.
+    if attendReponse {
+      self = .attendReponse
+    } else if statut == "en_cours" {
       self = .enCours
     } else if rappelDeFin {
       self = .terminee
     } else if statut == "inactif" {
-      self = .inactive
+      self = .rien
     } else {
       self = .inconnue
     }

@@ -98,12 +98,68 @@ func inconnuApresFin() {
   #expect(rappels.observer([observation("a", false)], regardee: nil) == ["a"])
 }
 
-@Test("L'état affiché donne la priorité au travail en cours")
+@Test("L'état affiché donne la priorité à ce qui demande une action")
 func prioriteDeLEtatAffiche() {
   // Un rappel armé ne doit jamais masquer une session qui retravaille : la
   // pastille orange est une information plus récente que la verte.
   #expect(EtatSession(statut: "en_cours", vivante: true, rappelDeFin: true) == .enCours)
   #expect(EtatSession(statut: "inactif", vivante: true, rappelDeFin: true) == .terminee)
-  #expect(EtatSession(statut: "inactif", vivante: true, rappelDeFin: false) == .inactive)
+  // Au repos, RIEN ne s'affiche : c'est l'état le plus banal, et une pastille
+  // permanente apprend à ne plus les regarder.
+  #expect(EtatSession(statut: "inactif", vivante: true, rappelDeFin: false) == .rien)
   #expect(EtatSession(statut: nil, vivante: false, rappelDeFin: false) == .inconnue)
+}
+
+@Test("Une décision attendue prime sur tout le reste")
+func prioriteDeLaDecisionAttendue() {
+  // L'agent travaille, mais il est bloqué sur une question : l'information
+  // actionnable est la question, pas l'activité.
+  #expect(
+    EtatSession(statut: "en_cours", vivante: true, rappelDeFin: true, attendReponse: true)
+      == .attendReponse)
+  #expect(
+    EtatSession(statut: "inactif", vivante: true, rappelDeFin: false, attendReponse: true)
+      == .attendReponse)
+  // Et sans attente, rien ne change.
+  #expect(
+    EtatSession(statut: "inactif", vivante: true, rappelDeFin: false, attendReponse: false)
+      == .rien)
+}
+
+@Test("Le champ d'attente d'une session se décode, et son absence reste « ne sait pas »")
+func decodageAttenteDeReponse() throws {
+  // Réponse réelle d'un hôte qui sait signaler l'attente.
+  let json = """
+    {"protocole":1,"total":1,"sessions":[
+      {"projet":"--tmp-x--","id":"session-1","vivante":true,"statut":"en_cours","attendReponse":true,
+       "nbEnregistrements":12,"titre":"Question"}
+    ]}
+    """.data(using: .utf8)!
+  let liste = try JSONDecoder().decode(ListeSessions.self, from: json)
+  #expect(liste.sessions.first?.attendReponse == true)
+
+  // Hôte plus ancien : le champ est ABSENT, donc `nil` — « ne sait pas », et non
+  // « non ». Un test qui n'exercerait que le cas présent laisserait passer une
+  // exigence de champ obligatoire, qui casserait tout client plus ancien.
+  let sansChamp = """
+    {"protocole":1,"total":1,"sessions":[
+      {"projet":"--tmp-x--","id":"session-2","vivante":true,"statut":"inactif","nbEnregistrements":3}
+    ]}
+    """.data(using: .utf8)!
+  let ancienne = try JSONDecoder().decode(ListeSessions.self, from: sansChamp)
+  #expect(ancienne.sessions.first?.attendReponse == nil)
+}
+
+@Test("Une capacité de questions absente n'est pas une capacité refusée")
+func capaciteQuestionsOptionnelle() throws {
+  let sansChamp = #"{"protocole":1,"capacites":{"sessions":true,"journal":true,"flux":true,"ecriture":true,"approbations":false}}"#
+    .data(using: .utf8)!
+  let sante = try JSONDecoder().decode(Sante.self, from: sansChamp)
+  #expect(sante.capacites.questions == nil)
+
+  let avecChamp = """
+    {"protocole":1,"capacites":{"sessions":true,"journal":true,"flux":true,"ecriture":true,"questions":true,"approbations":false}}
+    """.data(using: .utf8)!
+  let annoncee = try JSONDecoder().decode(Sante.self, from: avecChamp)
+  #expect(annoncee.capacites.questions == true)
 }

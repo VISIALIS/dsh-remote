@@ -52,6 +52,16 @@ public struct ServeurMac: Sendable, Identifiable, Hashable, Decodable {
   /// port 80 du nom MagicDNS, donc sans port explicite.
   public var adresse: String { "http://\(nomDNS)" }
 
+  /// Premier mot du nom, pour la légende d'une icône de serveur.
+  ///
+  /// POURQUOI UN SEUL MOT. Un nom de machine Tailscale est long — « MacBook Air
+  /// de Camille », « MacStudio Atelier » — et une légende d'icône se lit d'un
+  /// mot : au-delà, elle est tronquée à l'écran et n'apprend rien. Le nom
+  /// complet reste lu par VoiceOver, qui n'a pas cette contrainte de place.
+  public var premierMot: String {
+    nom.split(separator: " ").first.map(String.init) ?? nom
+  }
+
   /// Symbole à afficher, déduit du nom de la machine.
   ///
   /// Tailscale ne rapporte PAS le modèle matériel (`tailscale status --json`
