@@ -108,10 +108,52 @@ Trois faits établis sur cette machine, dans cet ordre :
    Or iOS n'installe que des paquets `.app` signés. **Ce paquet ne peut donc pas être
    installé sur l'iPhone tel quel**, quel que soit le réglage de signature.
 
-Il faut donc une **cible d'application Xcode** (`com.apple.product-type.application`)
-consommant `DSHRemoteKit` comme dépendance de paquet local. Le simulateur, lui,
-fonctionne déjà : un `.app` assemblé à la main et signé ad hoc s'y installe et s'y
-lance (voir plus haut).
+**C'est fait** : `DSHRemote.xcodeproj` produit une vraie cible d'application
+(`com.apple.product-type.application`) qui consomme `DSHRemoteKit`. Vérifié :
+`xcodebuild -destination 'generic/platform=iOS Simulator' build` → `BUILD SUCCEEDED`,
+et le produit contient bien `DSHRemote.app` avec son `Info.plist` et son
+`CFBundleIdentifier`.
+
+### Restructuration imposée par cette contrainte
+
+Une cible d'application **ne peut pas lier un exécutable**. L'interface SwiftUI a donc
+dû quitter la cible exécutable `DSHRemoteApp` pour rejoindre la bibliothèque
+`DSHRemoteKit`, qui porte désormais tout le code réutilisable. Conséquence : il n'y a
+plus de `swift run DSHRemote` ; l'application se lance depuis le projet Xcode, qui
+couvre iOS **et** macOS.
+
+### Pour installer sur l'iPhone : une action manuelle, inévitable
+
+Construire pour l'appareil échoue aujourd'hui sur deux points **administratifs**, pas
+techniques :
+
+```text
+error: Device "Mon iPhone" isn't registered in your developer account.
+error: No profiles for 'org.example.DSHRemote' were found.
+```
+
+L'enregistrement de l'appareil et la création du profil exigent la session Apple ID
+ouverte dans Xcode. `xcodebuild -allowProvisioningUpdates` ne suffit pas : il lui
+faudrait une clé d'API App Store Connect ou un mot de passe d'application — un secret
+que ce dépôt ne manipule pas.
+
+Marche à suivre, une seule fois :
+
+1. Ouvrir `DSHRemote.xcodeproj` dans Xcode.
+2. Cible `DSHRemote` ▸ onglet **Signing & Capabilities** ▸ cocher
+   **Automatically manage signing** et choisir l'équipe.
+3. Brancher l'iPhone, le choisir comme destination, puis **Run**. Xcode enregistre
+   l'appareil et crée le profil lui-même.
+4. Sur l'iPhone, si iOS le demande : **Réglages ▸ Général ▸ VPN et gestion de
+   l'appareil**, faire confiance au profil de développeur.
+
+### Le jeton sur l'iPhone
+
+La lecture automatique du coffre ne fonctionne **pas** dans le simulateur : son
+conteneur est en bac à sable et ne voit pas le `~/.dsh` du Mac — vérifié, l'application
+affiche « Aucun jeton d'appareil » alors que `DSH_REMOTE_COFFRE` désigne bien le fichier.
+Sur un iPhone réel, ce chemin n'existe de toute façon pas : le jeton se saisit **une
+fois** dans le champ prévu, puis il est conservé au trousseau.
 
 **Prérequis côté appareil**, indépendants du code : brancher l'iPhone en USB (ou activer
 la synchronisation Wi-Fi), l'appairer et faire confiance à cet ordinateur, puis activer
@@ -248,4 +290,6 @@ inactive.
 | L'application fonctionne sur iOS | simulateur iPhone 17 Pro : 48 sessions vivantes affichées, connectées à la vraie instance |
 | Le code compile pour un iPhone réel | `swift build --triple arm64-apple-ios18.0 --sdk <iphoneos>` |
 | Xcode compile et lie pour iOS | `xcodebuild -destination 'generic/platform=iOS' build` → `BUILD SUCCEEDED` |
-| Xcode ne produit PAS d'app installable | aucun `.app` dans `Build/Products/Debug-iphoneos`, seulement un binaire nu |
+| Le projet Xcode produit une app installable | `DSHRemote.app` avec `Info.plist`, identifiant `org.example.DSHRemote`, installée et lancée dans le simulateur |
+| Le simulateur ne lit pas le coffre du Mac | conteneur en bac à sable : l'app affiche « Aucun jeton d'appareil » |
+| L'installation sur l'iPhone exige une action manuelle | `xcodebuild` échoue : appareil non enregistré, aucun profil pour `org.example.DSHRemote` |

@@ -3,11 +3,17 @@ import PackageDescription
 
 // Paquet multiplateforme « DSH Remote ».
 //
-// Une seule bibliothèque partagée (`DSHRemoteKit`) porte le protocole, le
-// transport et les modèles ; l'application macOS et l'application iOS la
-// consomment telle quelle. Le tool `dsh-remote-ctl` existe pour PROUVER le
-// transport en ligne de commande, sans interface : c'est lui qui doit passer au
-// vert avant qu'une ligne de SwiftUI soit écrite.
+// `DSHRemoteKit` porte TOUT le code réutilisable : protocole, transport,
+// modèles, flux temps réel, et l'interface SwiftUI elle-même.
+//
+// POURQUOI L'INTERFACE EST DANS LA BIBLIOTHÈQUE. Parce qu'une cible
+// d'application Xcode ne peut pas lier un exécutable : pour qu'une app iOS
+// puisse afficher ces vues, elles doivent vivre dans une bibliothèque. C'est
+// cette contrainte, et non un choix esthétique, qui a déplacé le code.
+//
+// Les points d'entrée sont donc séparés : `dsh-remote-ctl` (tool de validation
+// en ligne de commande, macOS) et le projet Xcode `DSHRemote.xcodeproj`, qui
+// produit l'application installable sur iPhone et sur Mac.
 let package = Package(
   name: "DSHRemote",
   platforms: [
@@ -17,7 +23,6 @@ let package = Package(
   products: [
     .library(name: "DSHRemoteKit", targets: ["DSHRemoteKit"]),
     .executable(name: "dsh-remote-ctl", targets: ["DSHRemoteCtl"]),
-    .executable(name: "DSHRemote", targets: ["DSHRemoteApp"]),
   ],
   targets: [
     .target(
@@ -26,11 +31,6 @@ let package = Package(
     ),
     .executableTarget(
       name: "DSHRemoteCtl",
-      dependencies: ["DSHRemoteKit"],
-      swiftSettings: [.swiftLanguageMode(.v6)]
-    ),
-    .executableTarget(
-      name: "DSHRemoteApp",
       dependencies: ["DSHRemoteKit"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
