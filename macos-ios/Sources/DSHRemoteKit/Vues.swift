@@ -110,7 +110,7 @@ struct VueConnexion: View {
 
       Section(modele.serveurs.isEmpty ? "Serveur" : "Adresse") {
         LabeledContent("Adresse") {
-          TextField("http://127.0.0.1:3080", text: $modele.adresse)
+          TextField(modele.adresseExemple, text: $modele.adresse)
             .textFieldStyle(.roundedBorder)
             #if os(iOS)
               .textInputAutocapitalization(.never)

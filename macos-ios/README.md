@@ -205,6 +205,31 @@ Marche à suivre, une seule fois :
 4. Sur l'iPhone, si iOS le demande : **Réglages ▸ Général ▸ VPN et gestion de
    l'appareil**, faire confiance au profil de développeur.
 
+### Adresse : deux pièges corrigés après essai sur l'appareil
+
+**1. La valeur par défaut était trompeuse sur iPhone.** Le champ partait avec
+`http://127.0.0.1:3080`, la bonne valeur sur le Mac — mais sur iOS, `127.0.0.1`
+désigne **le téléphone lui-même**. La connexion échouait donc en `-1004`
+(« rien n'écoute sur cet hôte et ce port »), ce qui envoie chercher une panne
+réseau là où le problème est une valeur par défaut fausse. Le champ part
+désormais **vide** sur iOS, avec un exemple en filigrane : aucune adresse n'y est
+devinable, et une valeur fausse est pire qu'une absence de valeur.
+
+La connexion automatique au lancement est également désactivée quand l'adresse
+est vide : afficher un échec de transport avant toute action de l'utilisateur
+accuse le réseau à tort.
+
+**2. Le bouton « Rafraîchir » ne pouvait rien faire.** La découverte est
+impossible sur iPhone, donc appuyer réassignait une liste vide : ni succès, ni
+erreur, ni changement. Il n'est plus proposé que là où le rafraîchissement change
+quelque chose, et l'action utile — **« Tester l'adresse »** — a été ajoutée : elle
+vérifie l'adresse ET le jeton, puis annonce le résultat (nombre de sessions, ou
+la raison exacte de l'échec). Un bouton sans effet est un mensonge d'interface.
+
+Ajoute aussi : la découverte part d'une tâche détachée, car la lancer depuis
+l'initialisation du modèle exécutait un processus sur le fil principal et
+pouvait retarder l'affichage de la fenêtre.
+
 ### Le jeton sur l'iPhone
 
 La lecture automatique du coffre ne fonctionne **pas** dans le simulateur : son

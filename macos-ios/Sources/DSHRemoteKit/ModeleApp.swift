@@ -178,15 +178,40 @@ public final class ModeleApp {
     if let valeur = objet["jeton"], valeur.count >= 20 { jetonSaisi = valeur }
   }
 
+  /// Exemple d'adresse à montrer dans le champ vide, selon la plateforme.
+  public var adresseExemple: String {
+    #if os(macOS)
+      return "http://127.0.0.1:3080"
+    #else
+      return "http://mon-mac.mon-tailnet.ts.net"
+    #endif
+  }
+
   /// Vrai si un jeton est disponible, sans jamais le révéler.
   public var jetonDisponible: Bool { !jetonSaisi.isEmpty }
 
   // MARK: - Jeton
 
   /// Adresse par défaut, surchargeable par l'environnement.
+  ///
+  /// ELLE DÉPEND DE LA PLATEFORME, et c'est important : `http://127.0.0.1:3080`
+  /// est la bonne valeur sur le Mac, où le harness écoute en boucle locale —
+  /// mais sur un iPhone, `127.0.0.1` désigne LE TÉLÉPHONE, pas le Mac. Laisser
+  /// cette valeur par défaut sur iOS fait échouer la connexion en `-1004`
+  /// (« rien n'écoute »), ce qui envoie l'utilisateur chercher une panne
+  /// réseau là où le problème est une valeur par défaut trompeuse.
+  ///
+  /// Sur iOS, le champ part donc VIDE : aucune adresse n'est devinable, et une
+  /// valeur fausse est pire qu'une absence de valeur.
   public static var adresseParDefaut: String {
-    let declaree = ProcessInfo.processInfo.environment["DSH_REMOTE_ADRESSE"]
-    return declaree.flatMap { $0.isEmpty ? nil : $0 } ?? "http://127.0.0.1:3080"
+    if let declaree = ProcessInfo.processInfo.environment["DSH_REMOTE_ADRESSE"], !declaree.isEmpty {
+      return declaree
+    }
+    #if os(macOS)
+      return "http://127.0.0.1:3080"
+    #else
+      return ""
+    #endif
   }
 
   /// Lit le jeton d'appareil dans le coffre du harness, si le fichier est là.
@@ -284,6 +309,12 @@ public final class ModeleApp {
   // MARK: - Connexion
 
   public func connecter() async {
+    guard !adresse.trimmingCharacters(in: .whitespaces).isEmpty else {
+      // Pas d'adresse : ce n'est pas une erreur, c'est un formulaire pas encore
+      // rempli. Afficher un échec de transport ici accuserait le réseau à tort.
+      erreur = nil
+      return
+    }
     let jeton = jetonSaisi.isEmpty ? (Self.jetonLocal() ?? "") : jetonSaisi
     guard !jeton.isEmpty else {
       erreur = "Aucun jeton d'appareil. Récupérez-le dans la sortie du harness sur le Mac, au premier chargement du plugin."
