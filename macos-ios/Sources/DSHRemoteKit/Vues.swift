@@ -15,7 +15,7 @@ public struct VuePrincipale: View {
 
   public var body: some View {
     NavigationSplitView {
-      VueConnexion(modele: modele)
+      VueListeSessions(modele: modele, selection: $sessionSelectionnee)
     } detail: {
       if let session = sessionSelectionnee {
         VueJournal(modele: modele, session: session)
@@ -38,300 +38,293 @@ public struct VuePrincipale: View {
 }
 
 /// Colonne de gauche : connexion, état, puis liste des sessions.
-struct VueConnexion: View {
+/// Liste des sessions, destinée à l'emplacement LATÉRAL d'un `NavigationSplitView`.
+///
+/// POURQUOI CETTE VUE EXISTE SÉPARÉMENT, ET POURQUOI ELLE PORTE LA `List`.
+/// Sur iOS, la sélection d'une liste liée à un `NavigationSplitView` n'est
+/// fiable que si la `List` occupe directement l'emplacement latéral. Une liste
+/// enveloppée dans une vue qui a son propre état de sélection ne pilote pas la
+/// navigation : l'utilisateur appuie sur une ligne et rien ne s'ouvre. C'est
+/// exactement le défaut observé — « Aucune session ouverte » après un appui.
+struct VueListeSessions: View {
   @Bindable var modele: ModeleApp
-  @State private var selection: SessionListee?
+  @Binding var selection: SessionListee?
 
   /// Espaces de travail dépliés, par identifiant.
   ///
-  /// POURQUOI UN ÉTAT, ET NON UNE CONSTANTE. J'avais écrit
-  /// `isExpanded: .constant(...)` : une liaison constante ignore les clics, donc
-  /// AUCUN espace ne pouvait se déplier. Un `DisclosureGroup` piloté par une
-  /// constante n'est pas un groupe dépliable, c'est une ligne inerte.
-  ///
   /// L'état est tenu par identifiant de chemin, pour que replier un espace ne
-  /// touche pas aux autres et survive à un rafraîchissement de la liste.
+  /// touche pas aux autres et survive à un rafraîchissement de la liste. Un
+  /// `DisclosureGroup` piloté par une constante ignorerait les clics.
   @State private var espacesDeplies: Set<String> = []
 
   var body: some View {
+    // La List occupe DIRECTEMENT cet emplacement : c'est la condition pour que la
+    // sélection pilote la navigation sur iOS.
     List(selection: $selection) {
-      // ── Choix du serveur ───────────────────────────────────────────────────
-      //
-      // On choisit une MACHINE, pas une adresse. L'adresse en découle : personne
-      // ne devrait avoir à taper un nom MagicDNS de 40 caractères pour dire
-      // « le Mac mini ». Le champ d'adresse reste disponible plus bas pour les
-      // cas que la découverte ne couvre pas.
-      Section("Serveur") {
-        if modele.serveurs.isEmpty {
-          // Une liste vide DOIT s'expliquer. Sans ce texte, l'utilisateur croit
-          // à une panne de l'application alors que la cause est presque
-          // toujours l'absence de Tailscale ou une adresse à saisir.
-          VStack(alignment: .leading, spacing: 8) {
-            Label(DecouverteServeurs.messageDAbsence(), systemImage: "exclamationmark.triangle")
-              .font(.callout)
-              .foregroundStyle(.orange)
-            HStack(spacing: 12) {
-              // « Rafraîchir » n'est proposé QUE là où la découverte peut
-              // réellement rendre des machines. Sur iPhone elle est impossible,
-              // donc le bouton n'y produisait ni succès ni erreur : un bouton
-              // sans effet est un mensonge d'interface.
-              if modele.decouvertePossible {
-                Button("Rafraîchir la liste") { modele.rafraichirServeurs() }
-                  .font(.caption)
-              }
-              #if os(iOS)
-                Button("Installer Tailscale") {
-                  if let url = URL(string: "https://apps.apple.com/app/tailscale/id1470499037") {
-                    UIApplication.shared.open(url)
-                  }
-                }
+    // ── Choix du serveur ───────────────────────────────────────────────────
+    //
+    // On choisit une MACHINE, pas une adresse. L'adresse en découle : personne
+    // ne devrait avoir à taper un nom MagicDNS de 40 caractères pour dire
+    // « le Mac mini ». Le champ d'adresse reste disponible plus bas pour les
+    // cas que la découverte ne couvre pas.
+    Section("Serveur") {
+      if modele.serveurs.isEmpty {
+        // Une liste vide DOIT s'expliquer. Sans ce texte, l'utilisateur croit
+        // à une panne de l'application alors que la cause est presque
+        // toujours l'absence de Tailscale ou une adresse à saisir.
+        VStack(alignment: .leading, spacing: 8) {
+          Label(DecouverteServeurs.messageDAbsence(), systemImage: "exclamationmark.triangle")
+            .font(.callout)
+            .foregroundStyle(.orange)
+          HStack(spacing: 12) {
+            // « Rafraîchir » n'est proposé QUE là où la découverte peut
+            // réellement rendre des machines. Sur iPhone elle est impossible,
+            // donc le bouton n'y produisait ni succès ni erreur : un bouton
+            // sans effet est un mensonge d'interface.
+            if modele.decouvertePossible {
+              Button("Rafraîchir la liste") { modele.rafraichirServeurs() }
                 .font(.caption)
-              #endif
             }
-          }
-          .padding(.vertical, 4)
-        } else {
-          ForEach(modele.serveurs) { serveur in
-            Button {
-              Task { await modele.choisirEtConnecter(serveur) }
-            } label: {
-              HStack(spacing: 10) {
-                Image(systemName: serveur.symbole)
-                  .font(.title3)
-                  .frame(width: 26)
-                  .foregroundStyle(serveur.enLigne ? Color.accentColor : Color.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                  Text(serveur.nom).font(.body)
-                  Text(serveur.enLigne ? "en ligne" : "hors ligne")
-                    .font(.caption2)
-                    .foregroundStyle(serveur.enLigne ? Color.green : Color.secondary)
-                }
-                Spacer()
-                if modele.serveurChoisi == serveur {
-                  Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
+            #if os(iOS)
+              Button("Installer Tailscale") {
+                if let url = URL(string: "https://apps.apple.com/app/tailscale/id1470499037") {
+                  UIApplication.shared.open(url)
                 }
               }
-            }
-            .buttonStyle(.plain)
+              .font(.caption)
+            #endif
           }
-          Button("Rafraîchir la liste") { modele.rafraichirServeurs() }
-            .font(.caption)
         }
+        .padding(.vertical, 4)
+      } else {
+        ForEach(modele.serveurs) { serveur in
+          Button {
+            Task { await modele.choisirEtConnecter(serveur) }
+          } label: {
+            HStack(spacing: 10) {
+              Image(systemName: serveur.symbole)
+                .font(.title3)
+                .frame(width: 26)
+                .foregroundStyle(serveur.enLigne ? Color.accentColor : Color.secondary)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(serveur.nom).font(.body)
+                Text(serveur.enLigne ? "en ligne" : "hors ligne")
+                  .font(.caption2)
+                  .foregroundStyle(serveur.enLigne ? Color.green : Color.secondary)
+              }
+              Spacer()
+              if modele.serveurChoisi == serveur {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
+              }
+            }
+          }
+          .buttonStyle(.plain)
+        }
+        Button("Rafraîchir la liste") { modele.rafraichirServeurs() }
+          .font(.caption)
       }
+    }
 
-      Section(modele.serveurs.isEmpty ? "Serveur" : "Adresse") {
-        LabeledContent("Adresse") {
-          HStack(spacing: 8) {
-            // L'icône dit à quelle machine on parle, d'un coup d'œil.
-            Image(systemName: modele.symboleServeur)
-              .font(.title3)
-              .foregroundStyle(modele.adresse.isEmpty ? Color.secondary : Color.accentColor)
-            // Liaison passant par le modèle : l'adresse est mémorisée dès la
-            // frappe, sans attendre une connexion réussie.
-            TextField(
-              modele.adresseExemple,
-              text: Binding(
-                get: { modele.adresse },
-                set: { modele.definirAdresse($0) }
-              ))
-              .textFieldStyle(.roundedBorder)
-              #if os(iOS)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.URL)
-              #endif
-            if !modele.adresse.isEmpty {
-              Button {
-                modele.oublierServeur()
-              } label: {
-                Image(systemName: "xmark.circle")
-              }
-              .buttonStyle(.borderless)
-              .help("Oublier ce serveur")
-            }
-          }
-        }
-        if let nom = modele.nomServeur, !nom.isEmpty {
-          Label(nom, systemImage: modele.symboleServeur)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-        // Le champ du jeton est TOUJOURS visible.
-        //
-        // Il était auparavant conditionné par `!modele.jetonDisponible`, c'est-à-dire
-        // caché dès qu'un jeton était présent. Le défaut : `jetonDisponible` devient
-        // vrai dès le PREMIER caractère saisi, donc le champ disparaissait sous les
-        // doigts de l'utilisateur, qui ne pouvait jamais terminer sa saisie. Un
-        // formulaire dont un champ s'évapore à la frappe n'est pas un formulaire.
-        //
-        // Afficher aussi l'état permet de comprendre pourquoi « Se connecter »
-        // fonctionne sans rien saisir sur le Mac.
-        LabeledContent("Jeton") {
-          HStack(spacing: 8) {
-            SecureField(modele.jetonDisponible ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil", text: $modele.jetonSaisi)
-              .textFieldStyle(.roundedBorder)
-              #if os(iOS)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-              #endif
-            // 43 caractères en base64url : les coller est plus sûr que les taper.
+    Section(modele.serveurs.isEmpty ? "Serveur" : "Adresse") {
+      LabeledContent("Adresse") {
+        HStack(spacing: 8) {
+          // L'icône dit à quelle machine on parle, d'un coup d'œil.
+          Image(systemName: modele.symboleServeur)
+            .font(.title3)
+            .foregroundStyle(modele.adresse.isEmpty ? Color.secondary : Color.accentColor)
+          // Liaison passant par le modèle : l'adresse est mémorisée dès la
+          // frappe, sans attendre une connexion réussie.
+          TextField(
+            modele.adresseExemple,
+            text: Binding(
+              get: { modele.adresse },
+              set: { modele.definirAdresse($0) }
+            ))
+            .textFieldStyle(.roundedBorder)
+            #if os(iOS)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+              .keyboardType(.URL)
+            #endif
+          if !modele.adresse.isEmpty {
             Button {
-              modele.collerLeJeton()
+              modele.oublierServeur()
             } label: {
-              Image(systemName: "doc.on.clipboard")
+              Image(systemName: "xmark.circle")
             }
             .buttonStyle(.borderless)
-            .help("Coller le jeton depuis le presse-papier")
-            if modele.jetonDisponible {
-              Button {
-                modele.effacerJeton()
-              } label: {
-                Image(systemName: "xmark.circle")
-              }
-              .buttonStyle(.borderless)
-              .help("Effacer le jeton")
-            }
+            .help("Oublier ce serveur")
           }
         }
-        // L'état du jeton, en clair. Un champ de 43 caractères affiche des
-        // puces : sans ce compte, un jeton tronqué est indiscernable d'un jeton
-        // complet, et le 401 qui suit accuse le serveur à tort.
-        if modele.jetonDisponible {
-          Label(
-            modele.jetonBienForme
-              ? "jeton complet (43 caractères)"
-              : "jeton incomplet : \(modele.longueurJeton) caractères au lieu de 43",
-            systemImage: modele.jetonBienForme ? "checkmark.seal" : "exclamationmark.triangle"
-          )
+      }
+      if let nom = modele.nomServeur, !nom.isEmpty {
+        Label(nom, systemImage: modele.symboleServeur)
           .font(.caption)
-          .foregroundStyle(modele.jetonBienForme ? Color.green : Color.orange)
-        }
-        HStack(spacing: 12) {
-          Button("Se connecter") {
-            Task { await modele.connecter() }
-          }
-          .disabled(modele.enChargement)
-          // Vérifie l'adresse ET le jeton, et le dit. C'est l'action qui a du
-          // sens quand on a saisi une adresse à la main.
-          Button("Tester l'adresse") {
-            Task { await modele.testerAdresse() }
-          }
-          .disabled(modele.enChargement || modele.adresse.isEmpty)
-          if modele.enChargement { ProgressView().controlSize(.small) }
-        }
-
-        // Le résultat du test, nommé : « rien ne s'est passé » ne doit jamais
-        // être une réponse possible à un appui.
-        switch modele.etatAdresse {
-        case .inconnu:
-          EmptyView()
-        case .enCours:
-          Label("test de l'adresse…", systemImage: "hourglass").font(.caption)
-        case let .joignable(reponses):
-          Label("\(reponses) session(s) — adresse et jeton acceptés", systemImage: "checkmark.circle")
-            .font(.caption)
-            .foregroundStyle(.green)
-        case let .injoignable(detail):
-          Label(detail, systemImage: "xmark.circle")
-            .font(.caption)
-            .foregroundStyle(.red)
-        }
+          .foregroundStyle(.secondary)
       }
-
-      if let erreur = modele.erreur {
-        Section {
-          Label(erreur, systemImage: "exclamationmark.triangle")
-            .foregroundStyle(.red)
-            .font(.callout)
-        }
-      }
-
-      Section {
-        // L'étiquette dit ce que le critère EST, pas ce qu'il suggère.
-        //
-        // « Vivantes » laissait croire à des sessions en train de travailler :
-        // le propriétaire s'est étonné d'en compter dix. Or ce champ signifie
-        // « chargée dans le processus du harness », c'est-à-dire prête à être
-        // reprise instantanément — pas active. La nuance compte : dix sessions
-        // actives serait anormal, dix sessions chargées est normal après une
-        // journée de travail.
-        Toggle("Chargées en mémoire seulement", isOn: $modele.filtresActifs)
-
-        // Le suivi se voit et se commande : sans lui, les pastilles d'état
-        // resteraient figées au moment du chargement, et une session qui se met
-        // à travailler n'apparaîtrait jamais comme telle.
-        Toggle("Suivre l'activité", isOn: $modele.suiviAutomatique)
-      }
-
-      // ── Arbre des sessions, groupé par espace de travail ───────────────────
+      // Le champ du jeton est TOUJOURS visible.
       //
-      // Une liste plate de plus de cent sessions mêlant dix projets est
-      // illisible : on ne cherche pas « une session », on cherche « la session
-      // de ce projet ». On reproduit donc l'arbre de l'interface web plutôt que
-      // d'inventer une présentation différente pour le même contenu.
+      // Il était auparavant conditionné par `!modele.jetonDisponible`, c'est-à-dire
+      // caché dès qu'un jeton était présent. Le défaut : `jetonDisponible` devient
+      // vrai dès le PREMIER caractère saisi, donc le champ disparaissait sous les
+      // doigts de l'utilisateur, qui ne pouvait jamais terminer sa saisie. Un
+      // formulaire dont un champ s'évapore à la frappe n'est pas un formulaire.
+      //
+      // Afficher aussi l'état permet de comprendre pourquoi « Se connecter »
+      // fonctionne sans rien saisir sur le Mac.
+      LabeledContent("Jeton") {
+        HStack(spacing: 8) {
+          SecureField(modele.jetonDisponible ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil", text: $modele.jetonSaisi)
+            .textFieldStyle(.roundedBorder)
+            #if os(iOS)
+              .textInputAutocapitalization(.never)
+              .autocorrectionDisabled()
+            #endif
+          // 43 caractères en base64url : les coller est plus sûr que les taper.
+          Button {
+            modele.collerLeJeton()
+          } label: {
+            Image(systemName: "doc.on.clipboard")
+          }
+          .buttonStyle(.borderless)
+          .help("Coller le jeton depuis le presse-papier")
+          if modele.jetonDisponible {
+            Button {
+              modele.effacerJeton()
+            } label: {
+              Image(systemName: "xmark.circle")
+            }
+            .buttonStyle(.borderless)
+            .help("Effacer le jeton")
+          }
+        }
+      }
+      // L'état du jeton, en clair. Un champ de 43 caractères affiche des
+      // puces : sans ce compte, un jeton tronqué est indiscernable d'un jeton
+      // complet, et le 401 qui suit accuse le serveur à tort.
+      if modele.jetonDisponible {
+        Label(
+          modele.jetonBienForme
+            ? "jeton complet (43 caractères)"
+            : "jeton incomplet : \(modele.longueurJeton) caractères au lieu de 43",
+          systemImage: modele.jetonBienForme ? "checkmark.seal" : "exclamationmark.triangle"
+        )
+        .font(.caption)
+        .foregroundStyle(modele.jetonBienForme ? Color.green : Color.orange)
+      }
+      HStack(spacing: 12) {
+        Button("Se connecter") {
+          Task { await modele.connecter() }
+        }
+        .disabled(modele.enChargement)
+        // Vérifie l'adresse ET le jeton, et le dit. C'est l'action qui a du
+        // sens quand on a saisi une adresse à la main.
+        Button("Tester l'adresse") {
+          Task { await modele.testerAdresse() }
+        }
+        .disabled(modele.enChargement || modele.adresse.isEmpty)
+        if modele.enChargement { ProgressView().controlSize(.small) }
+      }
+
+      // Le résultat du test, nommé : « rien ne s'est passé » ne doit jamais
+      // être une réponse possible à un appui.
+      switch modele.etatAdresse {
+      case .inconnu:
+        EmptyView()
+      case .enCours:
+        Label("test de l'adresse…", systemImage: "hourglass").font(.caption)
+      case let .joignable(reponses):
+        Label("\(reponses) session(s) — adresse et jeton acceptés", systemImage: "checkmark.circle")
+          .font(.caption)
+          .foregroundStyle(.green)
+      case let .injoignable(detail):
+        Label(detail, systemImage: "xmark.circle")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+    }
+
+    if let erreur = modele.erreur {
       Section {
-        ForEach(modele.espaces) { espace in
-          // Pendant une recherche, les groupes sont dépliés d'office : laisser
-          // l'utilisateur replier chaque dossier pour voir ce qu'il vient de
-          // chercher annulerait l'intérêt de la recherche.
-          DisclosureGroup(
-            isExpanded: Binding(
-              get: { !modele.recherche.isEmpty || espacesDeplies.contains(espace.id) },
-              set: { ouvert in
-                if ouvert { espacesDeplies.insert(espace.id) } else { espacesDeplies.remove(espace.id) }
-              }
-            )
-          ) {
-            ForEach(espace.sessions, id: \.id) { session in
-              if Regroupement.estSousAgent(session) {
-                HStack(spacing: 6) {
-                  // Les sous-agents sont en retrait et marqués, comme dans
-                  // l'interface web : ce sont des sessions déléguées, pas des
-                  // conversations ouvertes par l'utilisateur.
-                  Image(systemName: "arrow.turn.down.right")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                  LigneSession(session: session).tag(session)
-                }
-                .padding(.leading, 14)
-              } else {
+        Label(erreur, systemImage: "exclamationmark.triangle")
+          .foregroundStyle(.red)
+          .font(.callout)
+      }
+    }
+
+    Section {
+      // L'étiquette dit ce que le critère EST, pas ce qu'il suggère.
+      //
+      // « Vivantes » laissait croire à des sessions en train de travailler :
+      // le propriétaire s'est étonné d'en compter dix. Or ce champ signifie
+      // « chargée dans le processus du harness », c'est-à-dire prête à être
+      // reprise instantanément — pas active. La nuance compte : dix sessions
+      // actives serait anormal, dix sessions chargées est normal après une
+      // journée de travail.
+      Toggle("Chargées en mémoire seulement", isOn: $modele.filtresActifs)
+
+      // Le suivi se voit et se commande : sans lui, les pastilles d'état
+      // resteraient figées au moment du chargement, et une session qui se met
+      // à travailler n'apparaîtrait jamais comme telle.
+      Toggle("Suivre l'activité", isOn: $modele.suiviAutomatique)
+    }
+
+    // ── Arbre des sessions, groupé par espace de travail ───────────────────
+    //
+    // Une liste plate de plus de cent sessions mêlant dix projets est
+    // illisible : on ne cherche pas « une session », on cherche « la session
+    // de ce projet ». On reproduit donc l'arbre de l'interface web plutôt que
+    // d'inventer une présentation différente pour le même contenu.
+    Section {
+      ForEach(modele.espaces) { espace in
+        // Pendant une recherche, les groupes sont dépliés d'office : laisser
+        // l'utilisateur replier chaque dossier pour voir ce qu'il vient de
+        // chercher annulerait l'intérêt de la recherche.
+        DisclosureGroup(
+          isExpanded: Binding(
+            get: { !modele.recherche.isEmpty || espacesDeplies.contains(espace.id) },
+            set: { ouvert in
+              if ouvert { espacesDeplies.insert(espace.id) } else { espacesDeplies.remove(espace.id) }
+            }
+          )
+        ) {
+          ForEach(espace.sessions, id: \.id) { session in
+            if Regroupement.estSousAgent(session) {
+              HStack(spacing: 6) {
+                // Les sous-agents sont en retrait et marqués, comme dans
+                // l'interface web : ce sont des sessions déléguées, pas des
+                // conversations ouvertes par l'utilisateur.
+                Image(systemName: "arrow.turn.down.right")
+                  .font(.caption2)
+                  .foregroundStyle(.tertiary)
                 LigneSession(session: session).tag(session)
               }
-            }
-          } label: {
-            HStack(spacing: 8) {
-              Image(systemName: "folder")
-                .foregroundStyle(Color.accentColor)
-              Text(espace.nom).font(.body)
-              Spacer()
-              Text("\(espace.nbSessions)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+              .padding(.leading, 14)
+            } else {
+              LigneSession(session: session).tag(session)
             }
           }
-        }
-      } header: {
-        // « Workspaces », comme la version web : c'est ce que la section liste,
-        // et le nombre de sessions reste visible à côté.
-        HStack {
-          Text("Workspaces")
-          Spacer()
-          Text("\(modele.sessionsFiltrees.count) session\(modele.sessionsFiltrees.count > 1 ? "s" : "")")
+        } label: {
+          HStack(spacing: 8) {
+            Image(systemName: "folder")
+              .foregroundStyle(Color.accentColor)
+            Text(espace.nom).font(.body)
+            Spacer()
+            Text("\(espace.nbSessions)")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
         }
       }
+    } header: {
+      // « Workspaces », comme la version web : c'est ce que la section liste,
+      // et le nombre de sessions reste visible à côté.
+      HStack {
+        Text("Workspaces")
+        Spacer()
+        Text("\(modele.sessionsFiltrees.count) session\(modele.sessionsFiltrees.count > 1 ? "s" : "")")
     }
-    .navigationTitle("DSH Remote")
-    #if os(iOS)
-      .navigationBarTitleDisplayMode(.inline)
-    #endif
-    // Recherche native, portant sur les sessions déjà chargées : instantanée,
-    // et sans exiger du harness qu'il expose un point d'entrée de recherche.
-    .searchable(text: $modele.recherche, prompt: "Titre, projet ou preset")
-    .onChange(of: selection) { _, nouvelle in
-      guard let nouvelle else { return }
-      Task { await modele.ouvrir(nouvelle) }
-    }
-    .refreshable { await modele.rafraichir() }
+  }
   }
 }
 
@@ -423,5 +416,6 @@ struct LigneSession: View {
       }
     }
     .padding(.vertical, 2)
+    }
   }
 }
