@@ -247,7 +247,15 @@ struct VueConnexion: View {
       }
 
       Section {
-        Toggle("Sessions vivantes seulement", isOn: $modele.filtresActifs)
+        // L'étiquette dit ce que le critère EST, pas ce qu'il suggère.
+        //
+        // « Vivantes » laissait croire à des sessions en train de travailler :
+        // le propriétaire s'est étonné d'en compter dix. Or ce champ signifie
+        // « chargée dans le processus du harness », c'est-à-dire prête à être
+        // reprise instantanément — pas active. La nuance compte : dix sessions
+        // actives serait anormal, dix sessions chargées est normal après une
+        // journée de travail.
+        Toggle("Chargées en mémoire seulement", isOn: $modele.filtresActifs)
       }
 
       // ── Arbre des sessions, groupé par espace de travail ───────────────────

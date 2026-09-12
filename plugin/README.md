@@ -209,7 +209,18 @@ rarement ce qu'un client veut afficher.
 }
 ```
 
-Deux avertissements sur ces champs :
+Trois avertissements sur ces champs :
+
+- **`vivante` ne veut PAS dire « active ».** Le champ indique que DSH garde la
+  session chargée dans le processus — donc reprenable instantanément — et non
+  qu'un tour s'y exécute. Mesuré sur une installation réelle : dix sessions
+  étaient marquées vivantes, dont sept dont le dernier évènement datait de la
+  minute du démarrage du harness. C'est le comportement normal après une journée
+  de travail, mais l'étiquette « vivantes » le faisait passer pour une anomalie.
+  Pour l'activité réelle, lire **`statut`**.
+- **`statut` vaut `null` quand la session n'est pas ouverte dans ce processus.**
+  `null` signifie « état inconnu », à ne pas confondre avec `inactif`. Quand il
+  est renseigné, il vaut `en_cours` (un tour s'exécute) ou `inactif`.
 
 - **`cwdIndicatif` n'est pas fiable.** DSH encode `/chemin/projet-externe` en
   `--Users-x-dsh-plugins--` en remplaçant chaque `/` par `-` : le tiret de

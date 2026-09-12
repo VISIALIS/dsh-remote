@@ -230,6 +230,19 @@ d'hôte Tailscale, qui remplace les espaces par des tirets
 afficherait l'icône générique pour un portable. Une machine renommée « bureau »
 retombe sur l'icône générique, ce qui reste correct.
 
+### « Chargée » n'est pas « active »
+
+Le filtre de la liste s'appelle **« Chargées en mémoire seulement »**, et non
+« vivantes » : il retient les sessions que le harness garde dans son processus —
+donc reprenables instantanément — sans rien dire de leur activité.
+
+La distinction n'est pas cosmétique. Sur une installation réelle, dix sessions
+étaient chargées, dont sept dont le dernier évènement datait de la minute du
+démarrage du harness : comportement normal après une journée de travail, mais
+l'étiquette « vivantes » le faisait passer pour une anomalie. L'activité réelle
+se lit dans `statut` (`en_cours` / `inactif`), qui vaut `null` — état inconnu —
+quand la session n'est pas ouverte dans le processus.
+
 ### Arbre des sessions, groupé par espace de travail
 
 L'application reproduit l'arbre de l'interface web plutôt que d'inventer une

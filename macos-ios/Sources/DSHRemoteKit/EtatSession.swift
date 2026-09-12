@@ -10,7 +10,11 @@ import SwiftUI
 public enum EtatSession: Sendable, Equatable {
   /// Un tour s'exécute : le modèle travaille.
   case enCours
-  /// Session ouverte dans le harness, sans travail en cours.
+  /// Session chargée dans le processus du harness, sans travail en cours.
+  ///
+  /// « Chargée » et non « vivante » : être en mémoire signifie que le harness
+  /// peut la reprendre instantanément, pas qu'elle travaille. La confusion entre
+  /// les deux fait paraître anormale une situation qui ne l'est pas.
   case inactive
   /// Session présente sur disque mais absente du processus : état INCONNU.
   case inconnue
