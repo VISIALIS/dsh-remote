@@ -14,8 +14,12 @@ import Foundation
 @Observable
 public final class ModeleApp {
   /// Adresse du serveur DSH. Par défaut la boucle locale : sur le Mac, c'est
-  /// toujours la bonne. Sur iPhone, on y met l'adresse tailnet du Mac.
-  public var adresse: String = "http://127.0.0.1:3080"
+  /// Boucle locale par défaut : sur le Mac, c'est toujours la bonne. Surchargeable
+  /// par `DSH_REMOTE_ADRESSE` — ce qui sert à viser l'adresse tailnet depuis un
+  /// iPhone, et à lancer l'application dans le simulateur iOS sans saisie manuelle.
+  /// Le simulateur partage la pile réseau et le système de fichiers du Mac, donc
+  /// il atteint le tailnet et lit le coffre : c'est ce qui rend l'essai possible.
+  public var adresse: String = ModeleApp.adresseParDefaut
   public var jetonSaisi: String = ""
 
   public private(set) var sessions: [SessionListee] = []
@@ -28,34 +32,72 @@ public final class ModeleApp {
 
   private var client: RemoteClient?
 
-  public init() {}
+  public init() {
+    chargerConfiguration()
+  }
+
+  /// Charge une configuration déposée dans le conteneur de l'application.
+  ///
+  /// POURQUOI CE FICHIER EXISTE. `simctl launch` transmet ses arguments en
+  /// `argv`, pas dans l'environnement : les surcharges par variable
+  /// d'environnement n'arrivent donc pas à une application iOS, et il n'existe
+  /// aucun autre moyen d'amorcer une application non signée sans saisie manuelle.
+  /// Ce fichier permet d'ESSAYER l'application sur un simulateur en y déposant
+  /// adresse et jeton depuis le Mac.
+  ///
+  /// PORTÉE RÉELLE : en production, ce fichier n'existe pas — il n'est jamais
+  /// créé par l'application, et il doit être déposé explicitement dans un
+  /// conteneur de simulateur. Sur un iPhone réel, rien ne le lit.
+  private func chargerConfiguration() {
+    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+    guard let documents else { return }
+    let fichier = documents.appendingPathComponent("dsh-remote-config.json")
+    guard let donnees = try? Data(contentsOf: fichier),
+      let objet = try? JSONSerialization.jsonObject(with: donnees) as? [String: String]
+    else { return }
+    if let valeur = objet["adresse"], !valeur.isEmpty { adresse = valeur }
+    if let valeur = objet["jeton"], valeur.count >= 20 { jetonSaisi = valeur }
+  }
 
   /// Vrai si un jeton est disponible, sans jamais le révéler.
   public var jetonDisponible: Bool { !jetonSaisi.isEmpty }
 
   // MARK: - Jeton
 
-  /// Lit le jeton d'appareil sur cette machine, si possible.
+  /// Adresse par défaut, surchargeable par l'environnement.
+  public static var adresseParDefaut: String {
+    let declaree = ProcessInfo.processInfo.environment["DSH_REMOTE_ADRESSE"]
+    return declaree.flatMap { $0.isEmpty ? nil : $0 } ?? "http://127.0.0.1:3080"
+  }
+
+  /// Lit le jeton d'appareil dans le coffre du harness, si le fichier est là.
   ///
-  /// Sur macOS, l'application tourne sur le même Mac que le harness : le coffre
-  /// lui est accessible, et l'utilisateur n'a rien à saisir. Sur iOS, ce fichier
-  /// n'existe pas — le jeton doit être saisi une fois, puis conservé au trousseau.
+  /// Sur le Mac, l'application et le harness partagent le même utilisateur : le
+  /// coffre est lisible et l'utilisateur n'a rien à saisir. Sur iPhone, ce fichier
+  /// n'existe pas — `Trousseau.lire()` prend alors le relais, et le jeton a été
+  /// saisi une fois puis conservé au trousseau.
+  ///
+  /// `DSH_REMOTE_COFFRE` force le chemin du coffre, ce qui permet d'essayer
+  /// l'application dans le simulateur iOS où `HOME` désigne le conteneur simulé.
   public static func jetonLocal() -> String? {
-    #if os(macOS)
-      let base = ProcessInfo.processInfo.environment["DSH_HOME"].map { URL(fileURLWithPath: $0) }
+    let environnement = ProcessInfo.processInfo.environment
+    let coffre: URL
+    if let force = environnement["DSH_REMOTE_COFFRE"], !force.isEmpty {
+      coffre = URL(fileURLWithPath: force)
+    } else {
+      let base = environnement["DSH_HOME"].flatMap { $0.isEmpty ? nil : $0 }.map { URL(fileURLWithPath: $0) }
         ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".dsh")
-      let coffre = base.appendingPathComponent(".credentials.yaml")
-      guard let contenu = try? String(contentsOf: coffre, encoding: .utf8) else { return nil }
+      coffre = base.appendingPathComponent(".credentials.yaml")
+    }
+    if let contenu = try? String(contentsOf: coffre, encoding: .utf8) {
       for ligne in contenu.split(separator: "\n") {
         let texte = ligne.trimmingCharacters(in: .whitespaces)
         guard texte.hasPrefix("token:") else { continue }
         let valeur = texte.dropFirst("token:".count).trimmingCharacters(in: .whitespaces)
         if valeur.count >= 20 { return valeur }
       }
-      return nil
-    #else
-      return Trousseau.lire()
-    #endif
+    }
+    return Trousseau.lire()
   }
 
   /// Enregistre le jeton saisi : au trousseau sur iOS, en mémoire sur macOS.

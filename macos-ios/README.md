@@ -51,15 +51,58 @@ SwiftUI replie en pile sur iPhone. La seule différence réelle est la provenanc
    bout (WireGuard) ; `tailscale serve` publie en HTTP, il n'y a donc pas de TLS à
    attendre et aucune exception ATS n'est nécessaire.
 
-### Ce qui n'est pas prouvé pour l'application
+### Essai sur le simulateur iOS — fait, et ce qu'il a appris
 
-- **Aucune capture d'écran.** `screencapture` exige l'autorisation macOS
-  « Enregistrement de l'écran », que je n'ai pas demandée. L'application **compile et
-  démarre sans planter** (vérifié : processus vivant après 6 s, fenêtre 1100×720
-  présente), mais son rendu n'a pas été observé.
-- **Aucun essai sur iPhone réel.** Le code iOS compile pour la plateforme, la chaîne
-  iPhone → tailnet → Mac est prouvée par le tool en ligne de commande, mais l'application
-  elle-même n'a pas été lancée sur l'appareil.
+L'application a été **lancée et observée** dans le simulateur iPhone 17 Pro (iOS 26.2),
+connectée à la véritable instance DSH : elle affiche **48 sessions vivantes** avec leurs
+titres, projets, compteurs d'événements et volumes. Trois faits en sont sortis, chacun
+contredisant une hypothèse raisonnable :
+
+1. **Le simulateur partage la pile réseau du Mac *et* sa boucle locale.** Il atteint
+   `http://127.0.0.1:3080` — donc le harness — mais **pas** l'adresse tailnet du Mac
+   (`100.x.y.z`), qui n'est pas routeable depuis le simulateur. Un essai sur simulateur
+   ne prouve donc rien du chemin tailnet.
+2. **Les surcharges par variable d'environnement n'arrivent pas à une application iOS.**
+   `simctl launch` place ses arguments additionnels dans `argv`, pas dans
+   l'environnement : `ProcessInfo.environment` ne les voit pas. `DSH_REMOTE_ADRESSE` et
+   `DSH_REMOTE_COFFRE` sont donc inopérants sur iOS — utiles seulement sur macOS.
+3. **Aucun compte développeur Apple n'est configuré** sur cette machine : zéro identité
+   de signature, zéro profil de provisionnement. Le code compile pour l'iPhone réel
+   (`swift build --triple arm64-apple-ios18.0`), mais **rien ne peut être signé ni
+   installé sur l'appareil** sans ton identifiant Apple.
+
+### Amorce par fichier — pour essayer l'application
+
+Puisque l'environnement ne traverse pas, l'application lit au démarrage une
+configuration déposée dans **son propre conteneur** :
+
+```json
+{ "adresse": "http://127.0.0.1:3080", "jeton": "…" }
+```
+
+Chemin : `Documents/dsh-remote-config.json`. Sur un simulateur, on l'y dépose depuis le
+Mac :
+
+```bash
+DOCS=$(xcrun simctl get_app_container <device> org.example.dsh-remote data)/Documents
+```
+
+**Portée réelle : nulle en production.** L'application ne crée jamais ce fichier ; il
+faut le déposer explicitement dans un conteneur. Sur un iPhone réel, rien ne le lit — le
+jeton vient alors du trousseau, après une saisie unique.
+
+### Ce qui reste non prouvé
+
+- **Le rendu de l'interface macOS.** `screencapture` exige l'autorisation
+  « Enregistrement de l'écran ». L'application **compile et démarre sans planter**
+  (processus vivant après 6 s, fenêtre 1100×720 présente), mais son rendu n'a pas été
+  observé — alors que celui de la version iOS l'a été, par `simctl io screenshot`.
+- **L'ouverture d'un journal depuis l'interface.** Les interactions système
+  (accessibilité) sont refusées à cet environnement : je n'ai pas pu cliquer une ligne
+  dans le simulateur. La lecture d'un journal est prouvée par `dsh-remote-ctl`, qui
+  emprunte exactement le même `RemoteClient`.
+- **Tout essai sur iPhone réel** : voir le point 3 ci-dessus, qui est un préalable
+  administratif et non technique.
 
 ---
 
@@ -149,4 +192,6 @@ Tests/
 | Le bout en bout fonctionne | `dsh-remote-ctl <tailnet> sessions` liste 102 sessions avec titres, compteurs et dates |
 | Le journal se lit | `dsh-remote-ctl <tailnet> journal <id> 8` affiche les enregistrements typés |
 | Les refus sont respectés | `401` sans jeton, `403` avec `Origin`, `404` sur identifiant inconnu |
-| L'application démarre | processus vivant après 6 s, fenêtre 1100×720 présente |
+| L'application démarre sur macOS | processus vivant après 6 s, fenêtre 1100×720 présente |
+| L'application fonctionne sur iOS | simulateur iPhone 17 Pro : 48 sessions vivantes affichées, connectées à la vraie instance |
+| Le code compile pour un iPhone réel | `swift build --triple arm64-apple-ios18.0 --sdk <iphoneos>` |
