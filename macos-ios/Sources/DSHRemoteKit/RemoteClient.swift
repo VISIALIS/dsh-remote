@@ -18,7 +18,11 @@ public actor RemoteClient {
   ///   - adresse: racine du serveur, par exemple `http://127.0.0.1:3080` ou le
   ///     nom MagicDNS du tailnet. Le schéma et l'hôte sont validés.
   ///   - jeton: le jeton d'appareil, lu une fois dans le coffre du Mac.
-  public init(adresse: String, jeton: String) throws {
+  ///   - delai: délai d'une requête, en secondes. Vingt secondes par défaut —
+  ///     assez pour un tailnet lent. La SONDER de découverte passe un délai
+  ///     court : elle interroge des machines dont on ne sait rien, et une
+  ///     machine éteinte ne doit pas figer la liste pendant vingt secondes.
+  public init(adresse: String, jeton: String, delai: TimeInterval = 20) throws {
     let normalisee = RemoteClient.normaliser(adresse)
     guard let url = URL(string: normalisee), let schema = url.scheme, let hote = url.host else {
       throw ErreurRemote.adresseInvalide(adresse)
@@ -37,8 +41,8 @@ public actor RemoteClient {
     configuration.urlCache = nil
     configuration.httpShouldSetCookies = false
     configuration.httpCookieAcceptPolicy = .never
-    configuration.timeoutIntervalForRequest = 30
-    configuration.timeoutIntervalForResource = 120
+    configuration.timeoutIntervalForRequest = delai
+    configuration.timeoutIntervalForResource = max(delai, 120)
     self.session = URLSession(configuration: configuration)
   }
 

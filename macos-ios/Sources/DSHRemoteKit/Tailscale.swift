@@ -66,6 +66,48 @@ public enum DetectionTailscale {
   /// Adresse de l'application Tailscale sur l'App Store.
   public static let adresseAppStore = "https://apps.apple.com/app/tailscale/id1470499037"
 
+  /// Vrai si CET APPAREIL a une adresse dans la plage du tailnet.
+  ///
+  /// POURQUOI CE TEST EXISTE, ET POURQUOI IL A REMPLACÉ UN DEEP LINK. La
+  /// détection se contentait de deux signaux : l'application Tailscale
+  /// répond-elle à son schéma, et un serveur répond-il. Sur l'iPhone du
+  /// propriétaire, le second manquait — Tailscale installé et connecté, mais
+  /// aucun serveur encore joint — et la carte proposait donc « Ouvrir ». Or
+  /// ouvrir `tailscale://` sur iOS déclenche le flux d'ENREGISTREMENT D'APPAREIL
+  /// de l'application Tailscale, qui a affiché « Could not sign device : unable
+  /// to verify deeplink ». Un cul-de-sac, provoqué par notre propre bouton.
+  ///
+  /// La lecture des interfaces réseau donne la réponse sans rien ouvrir : quand
+  /// Tailscale est connecté, l'appareil porte une adresse dans `100.64.0.0/10`,
+  /// la plage réservée à ses adresses de tailnet. C'est une CONSTATION, pas une
+  /// supposition — et elle est vraie même sans aucun serveur joignable.
+  ///
+  /// `getifaddrs` est disponible sur iOS ; lire les adresses de ses propres
+  /// interfaces ne demande aucune autorisation.
+  public static func adresseDeTailnetPresente() -> Bool {
+    var curseur: UnsafeMutablePointer<ifaddrs>?
+    guard getifaddrs(&curseur) == 0, let premiere = curseur else { return false }
+    defer { freeifaddrs(curseur) }
+
+    var noeud: UnsafeMutablePointer<ifaddrs>? = premiere
+    while let interface = noeud {
+      defer { noeud = interface.pointee.ifa_next }
+      guard let adresse = interface.pointee.ifa_addr,
+        adresse.pointee.sa_family == UInt8(AF_INET)
+      else { continue }
+
+      // `sin_addr` est stocké en OCTETS RÉSEAU : l'octet de tête est le premier.
+      var brut = adresse.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+        $0.pointee.sin_addr.s_addr
+      }
+      let octets = withUnsafeBytes(of: &brut) { Array($0) }
+      guard octets.count == 4 else { continue }
+      // 100.64.0.0/10 : premier octet 100, second entre 64 et 127.
+      if octets[0] == 100, (64...127).contains(octets[1]) { return true }
+    }
+    return false
+  }
+
   /// Vrai si l'application Tailscale répond à son schéma.
   ///
   /// Sur macOS, `canOpenURL` n'existe pas pour les schémas d'application :

@@ -24,7 +24,21 @@ let package = Package(
   products: [
     .library(name: "DSHRemoteKit", targets: ["DSHRemoteKit"]),
     .executable(name: "dsh-remote-ctl", targets: ["DSHRemoteCtl"]),
-    .executable(name: "DSHRemote", targets: ["DSHRemoteApp"]),
+    // POURQUOI « DSHRemoteMac » ET NON « DSHRemote ».
+    //
+    // Le produit s'appelait `DSHRemote`, comme la CIBLE D'APPLICATION iOS du
+    // projet Xcode. Tant que le projet n'avait aucune phase de ressources, la
+    // collision restait invisible ; dès qu'on y ajoute le catalogue d'assets de
+    // l'icône, Xcode résout le schéma `DSHRemote` vers le PRODUIT DU PAQUET au
+    // lieu de la cible d'application, compile `Sources/DSHRemoteApp/main.swift`
+    // (code macOS : `NSApplicationDelegateAdaptor`) pour iOS, et le build
+    // échoue. Mesuré, et isolé : la seule phase de ressources suffit à
+    // déclencher la bascule.
+    //
+    // Deux noms identiques pour deux choses différentes n'étaient pas tenables :
+    // on renomme côté paquet, et `swift run DSHRemoteMac` remplace
+    // `swift run DSHRemote` sur le Mac.
+    .executable(name: "DSHRemoteMac", targets: ["DSHRemoteApp"]),
   ],
   targets: [
     .target(

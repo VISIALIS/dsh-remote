@@ -32,8 +32,9 @@ public struct VuePrincipale: View {
         modele.enregistrerJeton(local)
       }
       modele.relireEtatTailscale()
-      modele.demarrerDecouverte()
-      await modele.connecter()
+      // UN SEUL point d'entrée : il choisit une machine joignable AVANT de se
+      // connecter. `demarrerDecouverte` reste pour le rafraîchissement manuel.
+      await modele.demarrer()
     }
   }
 }
@@ -59,7 +60,12 @@ struct VueListeSessions: View {
   /// `DisclosureGroup` piloté par une constante ignorerait les clics.
   @State private var espacesDeplies: Set<String> = []
   /// La feuille de configuration : adresse, jeton, filtres.
-  @State private var reglagesOuverts = false
+  ///
+  /// `--reglages` l'ouvre au lancement : c'est une ancre de VÉRIFICATION, qui
+  /// permet de capturer la feuille pour la juger sans piloter la souris — un
+  /// réglage de mise en page ne se vérifie pas autrement. Aucun effet sans cet
+  /// argument, jamais transmis par un lancement depuis le Dock.
+  @State private var reglagesOuverts = ProcessInfo.processInfo.arguments.contains("--reglages")
 
   /// Ancre de VÉRIFICATION, et rien d'autre.
   ///
@@ -118,6 +124,17 @@ struct VueListeSessions: View {
             ? nil : "\(modele.serveurs.filter(\.enLigne).count) en ligne")
       }
 
+      // La bascule de serveur se DIT : changer la machine de l'utilisateur sans
+      // le prévenir serait une substitution silencieuse.
+      if let ajuste = modele.choixAjuste {
+        Section {
+          Label(ajuste, systemImage: "arrow.triangle.swap")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+
       if let erreur = modele.erreur {
         Section {
           VStack(alignment: .leading, spacing: 10) {
@@ -125,6 +142,38 @@ struct VueListeSessions: View {
               .foregroundStyle(.red)
               .font(.callout)
               .fixedSize(horizontal: false, vertical: true)
+
+            // ── Le piège du Mac qui ne publie rien ───────────────────────────
+            //
+            // La découverte liste TOUS les Macs du tailnet : elle dit qu'ils
+            // sont en ligne, pas qu'ils publient DSH. En choisir un qui ne
+            // publie rien donne `-1004`, et le propriétaire cherche alors la
+            // panne du côté de son jeton — observé en vrai.
+            //
+            // LE MESSAGE NE DIT QUE CE QUI A ÉTÉ MESURÉ. « Aucun service
+            // n'écoute sur son port 80 » est un FAIT vérifiable ; « ce Mac ne
+            // publie pas DSH » serait une conclusion — et elle a été tirée à
+            // tort une fois, sur un Mac où DSH tournait bel et bien. Ce qui
+            // manquait, c'était `tailscale serve`, pas DSH.
+            if modele.serveurSansDsh {
+              VStack(alignment: .leading, spacing: 6) {
+                Label(
+                  "Aucun service ne répond sur le port 80 de ce Mac. Le tailnet, lui, fonctionne : la machine répond.",
+                  systemImage: "network.slash")
+                  .font(.footnote)
+                  .foregroundStyle(.orange)
+                  .fixedSize(horizontal: false, vertical: true)
+                Text(
+                  "Sur ce Mac-là, publiez l'instance DSH :\n\n    tailscale serve --bg 80 http://127.0.0.1:3080\n\nVérifiez ensuite avec :\n\n    tailscale serve status\n\nLe jeton n'est pas en cause : rien n'a pu être joint."
+                )
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+              }
+              .padding(10)
+              .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+            }
+
             // Un `401` propose l'action qui RÉPARE, à portée de pouce : le
             // jeton est recopié dans Réglages, et l'utilisateur n'a pas à
             // deviner où. Le bouton n'apparaît que pour cette cause-là : une
@@ -214,6 +263,19 @@ struct VueListeSessions: View {
       .listStyle(.insetGrouped)
     #else
       .listStyle(.inset)
+      // LARGEUR MINIMALE DE LA COLONNE, ET C'EST UN DÉFAUT MESURÉ.
+      //
+      // Sur macOS, `NavigationSplitView` laisse la colonne latérale se réduire
+      // jusqu'à une centaine de points : la carte Tailscale, le carrousel de
+      // serveurs et le titre des workspaces y sont alors ILLISIBLES — le
+      // propriétaire a vu la colonne réduite à une bande vide, avec la seule
+      // pastille verte de la carte qui dépassait. Aucune vue de ce contenu ne
+      // tient sous 280 points : la colonne ne descend donc plus jusque-là.
+      //
+      // 320 points est la largeur à laquelle la carte, le carrousel à trois
+      // icônes (3 × 68 + marges) et une ligne de session tiennent sans
+      // troncature.
+      .navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 480)
     #endif
     // Titre EN LIGNE, et non grand. Mesuré sur le prototype : le grand titre
     // coûtait 60 points pour répéter le nom de l'application, déjà connu de qui
@@ -236,6 +298,24 @@ struct VueListeSessions: View {
     }
     .sheet(isPresented: $reglagesOuverts) {
       FeuilleReglages(modele: modele)
+    }
+    // LA SONDE PART D'ICI, ET C'EST UNE CORRECTION DE COURSE.
+    //
+    // Elle était lancée par `demarrerDecouverte`, donc AVANT que Tailscale ait
+    // rendu sa liste : le garde-fou la renvoyait faute de candidats, et rien ne
+    // la relançait. Résultat mesuré : toutes les icônes restaient ORANGE, et le
+    // Mac pourtant vert — celui qui sert DSH — n'obtenait jamais son verdict.
+    //
+    // `task(id:)` la relance à chaque changement RÉEL de la liste (l'empreinte
+    // ne dépend pas de l'état en ligne), donc une seule fois à l'arrivée des
+    // serveurs, et de nouveau si le tailnet en gagne ou en perd un.
+    .task(id: modele.empreinteServeurs) {
+      guard !modele.empreinteServeurs.isEmpty else { return }
+      // L'ORDRE COMPTE : on écarte d'abord une machine hors ligne, on sonde
+      // ensuite. Sonder d'abord ferait attendre deux secondes et demie pour un
+      // verdict dont on n'a plus besoin.
+      await modele.ajusterAuParc()
+      await modele.sonderLesServeurs()
     }
     // La recherche ANCRÉE EN BAS, sous le pouce.
     //
@@ -298,15 +378,27 @@ struct CarteTailscale: View {
   var body: some View {
     Button {
       switch etat {
-      case .absent, .installe:
-        // L'action peut échouer — Tailscale désinstallé entre l'affichage et
-        // l'appui. On le DIT, plutôt que de laisser un appui sans effet.
+      case .absent:
+        // Seul cas où l'on ouvre Tailscale : quand il n'est pas INSTALLÉ, le
+        // lien mène à l'App Store, et un appui sans effet serait un mensonge.
         if !modele.ouvrirTailscale() {
           modele.signaler(
-            "Tailscale n'a pas pu être ouvert. Vérifiez qu'il est bien installé, puis rouvrez DSH Remote.")
+            "L'App Store n'a pas pu être ouvert. Cherchez « Tailscale » à la main.")
         }
+      case .installe:
+        // L'APPUI N'OUVRE PAS TAILSCALE, ET C'EST UN DÉFAUT CORRIGÉ.
+        //
+        // `tailscale://` fonctionne — mais son gestionnaire, dans l'application
+        // Tailscale, déclenche un flux d'ENREGISTREMENT D'APPAREIL. Sur l'iPhone
+        // du propriétaire, il a affiché « Could not sign device : unable to
+        // verify deeplink » : notre bouton jetait l'utilisateur dans un
+        // cul-de-sac d'une autre application. L'appui relit donc l'état, et la
+        // carte dit quoi faire.
+        modele.relireEtatTailscale()
+        Task { await modele.synchroniserServeurs() }
       case .connecte:
-        modele.rafraichirServeurs()
+        modele.relireEtatTailscale()
+        Task { await modele.synchroniserServeurs() }
       }
     } label: {
       contenu
@@ -317,10 +409,16 @@ struct CarteTailscale: View {
 
   private var contenu: some View {
     HStack(spacing: 12) {
+      // L'ICÔNE EST CENTRÉE VERTICALEMENT SUR TOUTE LA CARTE, et ce n'est pas
+      // cosmétique : sans le `maxHeight: .infinity`, SwiftUI la centrait sur sa
+      // seule ligne, qui est plus courte que la description — l'icône
+      // descendait donc d'une dizaine de points, et le dessin du bouton
+      // « Rafraîchir » ne tombait plus à la même hauteur que celui des serveurs.
+      // Défaut vu sur deux captures du Mac.
       Image(systemName: symbole)
         .font(.system(size: 28, weight: .semibold))
         .foregroundStyle(teinte)
-        .frame(width: 34)
+        .frame(width: 34, height: 68)
       VStack(alignment: .leading, spacing: 3) {
         Text(titre)
           .font(.headline)
@@ -372,10 +470,20 @@ struct CarteTailscale: View {
       return
         "Touchez pour l'installer : c'est lui qui relie cet appareil au Mac, sans câble ni configuration réseau."
     case .installe:
+      // On dit QUOI FAIRE plutôt que d'ouvrir une autre application de force :
+      // c'est la leçon du deep link qui échouait.
       return
-        "Touchez pour l'ouvrir et vous connecter. Sans connexion au tailnet, aucun Mac n'est joignable."
+        "Ouvrez Tailscale depuis vos apps et connectez-vous : sans le tailnet, aucun Mac n'est joignable. Touchez ici pour relire l'état."
     case .connecte:
+      // L'état « connecté » ne dépend plus d'un serveur en ligne : il vient de
+      // l'adresse de tailnet portée par l'appareil. Il faut donc distinguer le
+      // cas où aucun Mac ne publie DSH — sinon la carte annoncerait « 0 Mac
+      // répond » comme si c'était une panne de Tailscale.
       let enLigne = modele.serveurs.filter(\.enLigne).count
+      if enLigne == 0 {
+        return
+          "Cet appareil est bien sur le tailnet. Touchez pour chercher les Macs qui publient DSH — la liste peut être vide si aucun n'est allumé."
+      }
       return
         "Touchez pour vérifier : \(enLigne) Mac\(enLigne > 1 ? "s" : "") répond\(enLigne > 1 ? "ent" : "") sur le tailnet."
     }
@@ -405,7 +513,10 @@ struct CarrouselServeurs: View {
           Button {
             Task { await modele.choisirEtConnecter(serveur) }
           } label: {
-            IconeServeur(serveur: serveur, choisi: modele.serveurChoisi == serveur)
+            IconeServeur(
+              serveur: serveur,
+              choisi: modele.serveurChoisi == serveur,
+              sertDsh: modele.sertDsh(serveur))
           }
           .buttonStyle(.plain)
           .accessibilityLabel(
@@ -417,31 +528,17 @@ struct CarrouselServeurs: View {
         // sur iPhone par l'hôte une fois qu'un serveur est joint. Ailleurs, le
         // bouton ne produirait ni succès ni erreur — et un bouton sans effet est
         // un mensonge d'interface.
-        if modele.rafraichissementPossible {
-          Button {
-            modele.rafraichirServeurs()
-          } label: {
-            VStack(spacing: 6) {
-              RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(
-                  Color.secondary.opacity(0.45),
-                  style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
-                )
-                .frame(width: 62, height: 62)
-                .overlay {
-                  Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 22))
-                    .foregroundStyle(Color.secondary)
-                }
-              Text("Rafraîchir")
-                .font(.caption2)
-                .foregroundStyle(Color.secondary)
-                .frame(width: 68)
-            }
-            .frame(width: 68, height: 68)
+        // LE BOUTON EN POINTILLÉS CHERCHE, IL NE RAFRAÎCHIT PLUS.
+        //
+        // La liste se rafraîchit toute seule (voir `synchroniserServeurs`), donc
+        // un bouton « Rafraîchir » n'avait plus de raison d'être. En revanche,
+        // « chercher un Mac » en a une, et c'est la seule façon d'en AJOUTER un
+        // sur iPhone : la découverte locale y est impossible, et l'hôte joint ne
+        // republie sa liste que si on le lui demande.
+        if modele.rechercheServeursPossible {
+          BoutonAjouterServeur(enRecherche: modele.synchronisationEnCours) {
+            Task { await modele.synchroniserServeurs() }
           }
-          .buttonStyle(.plain)
-          .accessibilityLabel("Rafraîchir la liste des serveurs")
         }
       }
       .padding(.horizontal, 20)
@@ -455,6 +552,14 @@ struct CarrouselServeurs: View {
 struct IconeServeur: View {
   let serveur: ServeurMac
   let choisi: Bool
+
+  /// Le Mac sert-il DSH ? `nil` = pas encore su.
+  ///
+  /// POURQUOI CE TROISIÈME ÉTAT EXISTE. La découverte liste tous les Macs du
+  /// tailnet, mais seuls ceux qui publient DSH peuvent répondre. Tant que la
+  /// sonde n'a pas rendu son verdict, l'icône ne doit RIEN affirmer : c'est un
+  /// « je ne sais pas », pas un « non ».
+  let sertDsh: Bool?
 
   var body: some View {
     VStack(spacing: 6) {
@@ -487,27 +592,132 @@ struct IconeServeur: View {
       }
       .frame(width: 62, height: 62)
       .overlay(alignment: .bottomTrailing) {
+        // Vert : en ligne ET DSH vérifié. Orange : en ligne, mais la sonde n'a
+        // pas encore répondu. Gris : hors ligne, ou DSH absent — dans les deux
+        // cas, appuyer ne donnera rien.
         Circle()
-          .fill(serveur.enLigne ? Color.green : Color.gray)
+          .fill(couleurPastille)
           .frame(width: 15, height: 15)
           .overlay { Circle().strokeBorder(.background, lineWidth: 2.5) }
           .offset(x: 3, y: 3)
       }
       .frame(width: 68, height: 68)
+      // Une vignette SANS DSH est atténuée : c'est ce qui se voit d'un coup
+      // d'œil, avant même de lire la légende.
+      .opacity(sertDsh == false ? 0.55 : 1)
 
       Text(serveur.premierMot)
         .font(.caption2)
         .lineLimit(1)
         .foregroundStyle(choisi ? Color.primary : Color.secondary)
         .frame(width: 68)
-      // « hôte interrogé » : la seule mention qui vient de l'hôte, et non du nom
-      // de la machine. Réservée en place (`opacity`) pour que les icônes restent
-      // alignées entre elles.
-      Text("hôte")
+      // La légende dit l'état RÉEL : « hôte » pour la machine interrogée, et
+      // « pas de DSH » pour celle dont la sonde a montré qu'elle ne répondra
+      // pas. Réservée en place (`opacity`) pour que les icônes restent alignées.
+      Text(legende)
         .font(.system(size: 9))
         .foregroundStyle(.tertiary)
-        .opacity(serveur.estLocal ? 1 : 0)
+        .frame(width: 68)
+        .opacity(legende.isEmpty ? 0 : 1)
     }
+  }
+
+  /// Le POINT dit si la MACHINE répond ; la LÉGENDE dit si DSH y répond.
+  ///
+  /// POURQUOI LES SÉPARER — c'est une distinction que le propriétaire a
+  /// lui-même formulée : « savoir si le serveur est en ligne est une chose,
+  /// savoir s'il est DSH joignable en est une autre ». La version précédente
+  /// les confondait : le même point GRIS servait à « machine éteinte » et à
+  /// « machine allumée, mais rien n'écoute ». Or les deux n'appellent pas la
+  /// même action — allumer un Mac, ou y publier DSH avec `tailscale serve`.
+  ///
+  /// Le cas qui a rendu le défaut visible : MacMini répond au ping en 7 ms
+  /// (`en ligne`) et ses ports 80, 443 et 3080 sont tous fermés (`pas de DSH`).
+  /// Il affichait pourtant le même point qu'un Mac éteint depuis 206 jours.
+  private var couleurPastille: Color {
+    // Vert : la machine répond. Gris : elle ne répond pas — inutile d'aller
+    // plus loin, et la légende n'ajoutera rien.
+    serveur.enLigne ? .green : .gray
+  }
+
+  /// Légende sous le nom : ce qui RESTE à savoir après l'état de la machine.
+  private var legende: String {
+    guard serveur.enLigne else { return "hors ligne" }
+    switch sertDsh {
+    case true: return serveur.estLocal ? "DSH · hôte" : "DSH"
+    case false: return "pas de DSH"
+    case nil: return "vérification…"
+    }
+  }
+}
+
+/// Le bouton « Ajouter », à la même place qu'une icône de serveur.
+///
+/// POURQUOI « AJOUTER » ET NON « RAFRAÎCHIR ». La liste se rafraîchit
+/// automatiquement toutes les quinze secondes ; un bouton de rafraîchissement
+/// manuel ferait donc double emploi. Mais sur iPhone, la découverte locale est
+/// IMPOSSIBLE : la seule façon de faire apparaître un Mac que l'hôte ne
+/// connaissait pas encore est de le lui demander. C'est cela que ce bouton fait,
+/// et son libellé le dit.
+///
+/// POURQUOI IL EST UNE VUE À PART, ET POURQUOI L'ALIGNEMENT EST EXPLICITE. Deux
+/// captures du Mac ont montré le bouton DÉCALÉ VERS LE BAS par rapport aux
+/// serveurs, pour des raisons cumulées :
+///
+///   1. son cadre faisait 68 points de haut, alors qu'une icône de serveur en
+///      fait 68 **plus** son nom **plus** la ligne « hôte » ;
+///   2. son icône était centrée dans le carré en pointillés, quand l'icône de
+///      châssis d'un serveur est centrée dans SA vignette — les deux dessins ne
+///      tombaient donc pas à la même hauteur ;
+///   3. et surtout : un `HStack` aligne ses éléments sur leur LIGNE DE BASE, pas
+///      sur leur haut. Le bloc « vignette + nom » d'un serveur a sa ligne de base
+///      SOUS le nom, celui du bouton l'a sous « Rafraîchir » : les hauteurs
+///      égales ne suffisaient pas, il fallait aligner les SOMMETS.
+///
+/// La vue reprend donc la structure exacte d'`IconeServeur` — même vignette de
+/// 62 points, même cadre de 68, mêmes espacements, même ligne de légende — et le
+/// carrousel est aligné en haut.
+struct BoutonAjouterServeur: View {
+  /// Vrai pendant une recherche : le carré en pointillés se remplit d'un
+  /// indicateur, pour qu'un appui ne reste jamais sans réponse visible.
+  let enRecherche: Bool
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      VStack(spacing: 6) {
+        RoundedRectangle(cornerRadius: 15, style: .continuous)
+          .strokeBorder(
+            Color.secondary.opacity(0.45),
+            style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+          )
+          .frame(width: 62, height: 62)
+          .overlay {
+            if enRecherche {
+              ProgressView().controlSize(.small)
+            } else {
+              Image(systemName: "plus")
+                .font(.system(size: 24, weight: .light))
+                .foregroundStyle(Color.secondary)
+            }
+          }
+          // Le cadre de 68 points, comme la vignette d'un serveur : c'est lui
+          // qui place les deux dessins à la même hauteur.
+          .frame(width: 68, height: 68)
+
+        Text("Ajouter")
+          .font(.caption2)
+          .foregroundStyle(Color.secondary)
+          .frame(width: 68)
+        // La même ligne que « hôte », laissée vide : c'est elle qui donne aux
+        // deux blocs la même hauteur totale.
+        Text(" ")
+          .font(.system(size: 9))
+      }
+    }
+    .buttonStyle(.plain)
+    .disabled(enRecherche)
+    .accessibilityLabel("Chercher un Mac qui publie DSH")
   }
 }
 
@@ -533,10 +743,11 @@ struct ServeursVides: View {
         // Le bouton n'apparaît que là où il peut agir : sur iPhone, la
         // découverte locale est impossible, et un bouton sans effet est un
         // mensonge d'interface.
-        if modele.rafraichissementPossible {
-          Button("Rafraîchir") { modele.rafraichirServeurs() }
+        if modele.rechercheServeursPossible {
+          Button("Chercher un Mac") { Task { await modele.synchroniserServeurs() } }
             .font(.callout)
             .buttonStyle(.bordered)
+            .disabled(modele.synchronisationEnCours)
         }
       }
     }

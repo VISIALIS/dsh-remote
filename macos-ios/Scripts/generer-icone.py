@@ -96,7 +96,55 @@ FISH_LOGO_PATH = (
 FOND_HAUT = (255, 255, 255)
 FOND_BAS = (236, 239, 248)
 BLEU_LOGO = (77, 107, 254)  # #4D6BFE — le bleu de la marque
-BLEU_SANGLE = (32, 52, 150)  # la sangle : plus sombre, pour se voir sur le bleu
+
+# LES TROIS APPARENCES, ET POURQUOI ELLES SONT GÉNÉRÉES ICI.
+#
+# Depuis iOS 18, l'écran d'accueil peut teinter les icônes (mode sombre, mode
+# teinté), et Xcode attend alors un jeu de trois images. Mesuré sur le
+# simulateur : sans variante sombre, iOS assombrit lui-même l'icône claire — le
+# fond clair devient gris ardoise et l'icône perd sa couleur de marque. Mieux
+# vaut décider de ce que chaque apparence montre.
+APPARENCES = {
+    "claire": {
+        "fond_haut": FOND_HAUT,
+        "fond_bas": FOND_BAS,
+        "logo": (77, 107, 254, 255),
+        "sangle": (26, 42, 122, 255),
+        "cerne": (255, 255, 255, 255),
+    },
+    "sombre": {
+        # Fond bleu profond, baleine au bleu de la marque : lisible sur un fond
+        # sombre sans devenir un aplat noir.
+        "fond_haut": (26, 34, 62),
+        "fond_bas": (12, 16, 34),
+        "logo": (108, 134, 255, 255),
+        "sangle": (240, 243, 255, 255),
+        "cerne": (12, 16, 34, 255),
+    },
+    "teintee": {
+        # Le gabarit de teinte : iOS n'utilise que la FORME et applique sa propre
+        # couleur. Un fond transparent, un dessin noir, et les sangles en blanc
+        # pour rester visibles une fois la teinte appliquée.
+        "fond_haut": (0, 0, 0, 0),
+        "fond_bas": (0, 0, 0, 0),
+        "logo": (0, 0, 0, 255),
+        "sangle": (255, 255, 255, 255),
+        "cerne": (0, 0, 0, 255),
+    },
+}
+# LA SANGLE EST EN CUIR SOMBRE, ET SON CERNE EST CLAIR.
+#
+# Deux versions ont été écartées, chacune mesurée à l'écran :
+#
+#   - sangle blanche : elle CADRAIT la baleine comme une grue, et à 40 px
+#     l'icône ne se lisait plus comme un animal ;
+#   - sangle bleu sombre sans cerne : elle se lisait comme un TROU dans le
+#     corps, la baleine paraissait fendue en deux.
+#
+# Le cuir sombre CERNÉ de clair est la seule combinaison qui se détache du corps
+# bleu ET du fond clair, sans masquer la silhouette.
+SANGLE = (26, 42, 122)       # cuir sombre
+CERNE = (255, 255, 255)      # cerne clair
 BLANC = (255, 255, 255)
 
 # Marge autour du logo, en fraction du côté de l'icône.
@@ -194,7 +242,10 @@ def masque_logo(cote: int) -> Image.Image:
     exactement ce que fait un moteur SVG, et Pillow ne le fait pas seul.
     """
     largeur, hauteur = FISH_LOGO_VIEWBOX
-    echelle = (cote * (1 - 2 * MARGE)) / largeur
+    # L'échelle est prise sur la PLUS GRANDE dimension. La prendre sur la largeur
+    # — première version — donnait un logo plus haut que le cadre : la baleine
+    # débordait par le bas, et l'icône n'en montrait que le dos.
+    echelle = (cote * (1 - 2 * MARGE)) / max(largeur, hauteur)
     decalage_x = (cote - largeur * echelle) / 2
     decalage_y = (cote - hauteur * echelle) / 2
 
@@ -218,114 +269,157 @@ def masque_logo(cote: int) -> Image.Image:
 #
 # Coordonnées exprimées dans le repère du LOGO (23,16 × 17,04), et non dans
 # celui de l'icône : le harnais est ainsi posé « sur l'animal », et suit
-# automatiquement tout changement de marge ou de taille. Les valeurs sont
-# mesurées sur le tracé réel — le dos passe par y ≈ 6,1 vers x = 11,5, le ventre
-# par y ≈ 11,6 — et non estimées à l'œil.
-COLLIER_HAUT = (11.9, 5.05)
-COLLIER_BAS = (11.9, 12.35)
-BOUCLE = (11.9, 9.6)
-ANNEAU = (12.35, 4.62)
-RENE_FIN = (15.6, 3.55)
+# automatiquement tout changement de marge ou de taille.
+#
+# LES VALEURS SONT MESURÉES, PAS ESTIMÉES. Deux tentatives à l'estime ont échoué,
+# et la mesure dit pourquoi : le relevé des BANDES OPAQUES de chaque colonne
+# montre où le corps est continu et où la queue s'en détache.
+#
+#     x = 9,5   bandes : (0,86 → 9,62) et (13,24 → 17,00)   ← corps continu
+#     x = 13,5  bandes : (3,86 → 6,97), (9,48 → 14,6), (15,11 → 15,87)
+#
+# À x = 13,5 la colonne est DISCONTINUE : c'est là que la queue se sépare du dos.
+# Un collier posé là traversait les fanons — exactement ce que la capture a
+# montré.
+#
+# POURQUOI UN HARNAIS DE TÊTE ET NON UN COLLIER DE POITRAIL. Un collier qui fait
+# le tour du corps a été essayé : à 40 px — la taille où une icône se voit
+# vraiment — il se lit comme un TRAIT QUI COUPE L'ANIMAL en deux. Le harnais
+# retenu est donc celui d'une tête : un montant en arrière du museau, une
+# muselière sur le museau, une têtière qui rejoint le montant, et la rêne avec
+# son anneau. C'est le licol du cheval, et il habille la baleine sans la trancher.
+#
+# La baleine va vers la GAUCHE : museau à x ≈ 0,15, œil à (12,4 ; 8,2) —
+# l'œil est un TROU du tracé, mesuré à x [12,0 .. 15,3], y [6,8 .. 9,9].
+#
+# POURQUOI UN BRIDE EN « V », ET NON UN LICOL RECTANGULAIRE. Cinq tentatives ont
+# échoué avant celle-ci, et la raison est structurelle : un licol tracé avec des
+# segments orthogonaux — deux montants verticaux réunis par une couronne — se lit
+# comme un CADRE posé sur l'animal. À l'écran, cela a donné successivement une
+# grue, un but de football, puis une cage. Un mors de bride, lui, est un point de
+# CONVERGENCE : la têtière et la muselière y descendent en V depuis le haut de la
+# tête. C'est cette convergence qui se reconnaît, même à 40 px.
+#
+# Les points sont mesurés sur le contour réel : le dessus de la tête passe par
+# y ≈ 1,06 entre x = 6 et x = 9, et le museau descend jusqu'à y ≈ 16,8.
+MORS = (4.6, 7.4)         # le point de convergence, sur le museau
 
-EPISSEUR_COLLIER = 0.024  # en fraction de la largeur du logo
+TETIERE = [               # du sommet du crâne au mors
+    (9.6, 1.5),
+    (8.4, 3.4), (6.6, 5.2), (4.6, 7.4),
+]
+
+MUSELIERE = [             # du mors au dessous du museau
+    (4.6, 7.4),
+    (4.9, 10.4), (5.6, 13.4), (6.9, 15.6),
+]
+
+# La rêne : elle repart du mors, COURTEMENT — une longe qui traverse l'icône se
+# lit comme une canne à pêche.
+RENE = [
+    (4.6, 7.4),
+    (7.0, 6.6), (9.4, 6.2), (11.6, 6.4),
+]
+
+# L'anneau du mors : c'est lui qui réunit les trois sangles et dit « bride ».
+ANNEAU = (4.6, 7.4)
+
+EPISSEUR_SANGLE = 0.019  # en fraction de la largeur du logo
 
 
-def dessiner_harnais(dessin: ImageDraw.ImageDraw, cote: int) -> None:
+def dessiner_harnais(dessin: ImageDraw.ImageDraw, cote: int,
+                     sangle=(26, 42, 122, 255),
+                     couleur_cerne=(255, 255, 255, 255)) -> None:
     """Pose le harnais sur le logo déjà rendu.
 
-    POURQUOI CES QUATRE PIÈCES. Un simple collier se lirait comme une ceinture,
-    et une sangle sans anneau comme une rayure. C'est l'ENSEMBLE qui dit
-    « harnais » : le collier qui fait le tour, la boucle qui le règle, la rêne
-    qui en repart et l'anneau où l'on attache. Les mêmes pièces que sur un
-    cheval, à l'échelle d'une baleine.
+    POURQUOI CES PIÈCES. Une sangle seule se lirait comme une rayure, et un
+    anneau sans rêne comme un bouton. C'est l'ENSEMBLE qui dit « harnais » : le
+    montant et la muselière qui entourent la tête, la têtière qui relie le
+    montant à la joue, la rêne qui repart et l'anneau où l'on attache. Les mêmes
+    pièces que sur un licol de cheval, à l'échelle d'une baleine.
 
-    POURQUOI LA RÊNE EST COURTE. Une longe qui traverse l'icône se lit comme une
-    canne à pêche : c'est ce que la première version donnait à l'écran. La rêne
-    s'arrête donc au-dessus du dos.
+    POURQUOI LA SANGLE EST CLAIRE ET CERNÉE DE SOMBRE. Une sangle bleu sombre sur
+    un corps bleu se lit comme un TROU dans l'animal — mesuré sur une capture,
+    où la baleine paraissait fendue en deux. Claire, elle se lit comme une
+    sangle ; le cerne sombre la détache du corps ET du fond clair.
     """
     largeur, hauteur = FISH_LOGO_VIEWBOX
-    echelle = (cote * (1 - 2 * MARGE)) / largeur
+    echelle = (cote * (1 - 2 * MARGE)) / max(largeur, hauteur)
     decalage_x = (cote - largeur * echelle) / 2
     decalage_y = (cote - hauteur * echelle) / 2
 
     def point(p):
         return (decalage_x + p[0] * echelle, decalage_y + p[1] * echelle)
 
-    epaisseur = max(2, round(EPISSEUR_COLLIER * largeur * echelle))
-    lisere = max(1, round(epaisseur * 0.28))
+    epaisseur = max(2, round(EPISSEUR_SANGLE * largeur * echelle))
+    epaisseur_cerne = max(1, round(epaisseur * 0.34))
 
-    # Le collier : une sangle qui fait le tour du corps. Elle est posée en deux
-    # temps — un liseré clair, puis la sangle sombre — pour rester lisible
-    # aussi bien sur le corps bleu que sur le fond clair, aux deux extrémités.
-    for couleur, largeur in ((FOND_BAS, epaisseur + 2 * lisere), (BLEU_SANGLE, epaisseur)):
-        dessin.line([point(COLLIER_HAUT), point(COLLIER_BAS)], fill=couleur, width=largeur)
+    def bande(points, facteur=1.0):
+        """Trace une sangle : cerne clair dessous, cuir sombre dessus.
 
-    # La boucle, sur le flanc.
-    centre = point(BOUCLE)
-    cote_boucle = epaisseur * 1.35
-    dessin.rectangle(
-        [centre[0] - cote_boucle - lisere, centre[1] - cote_boucle - lisere,
-         centre[0] + cote_boucle + lisere, centre[1] + cote_boucle + lisere],
-        fill=FOND_BAS,
-    )
-    dessin.rectangle(
-        [centre[0] - cote_boucle, centre[1] - cote_boucle,
-         centre[0] + cote_boucle, centre[1] + cote_boucle],
-        fill=BLEU_SANGLE,
-    )
-    dessin.line(
-        [(centre[0], centre[1] - cote_boucle), (centre[0], centre[1] + cote_boucle)],
-        fill=FOND_BAS,
-        width=max(1, round(cote_boucle * 0.30)),
-    )
+        Le cerne est ce qui détache la sangle du corps bleu ET du fond clair ;
+        sans lui, la sangle se lit comme un trou dans l'animal — mesuré.
+        """
+        sommets = [point(p) for p in points]
+        dessin.line(sommets, fill=couleur_cerne,
+                    width=round(epaisseur * facteur) + 2 * epaisseur_cerne, joint="curve")
+        dessin.line(sommets, fill=sangle, width=round(epaisseur * facteur), joint="curve")
 
-    # La rêne : du haut du collier vers l'arrière, en suivant le dos.
-    depart = point(COLLIER_HAUT)
-    fin = point(RENE_FIN)
-    for couleur, largeur in ((FOND_BAS, epaisseur + lisere), (BLEU_SANGLE, round(epaisseur * 0.72))):
-        dessin.line([depart, fin], fill=couleur, width=largeur)
+    # La bride : trois sangles qui CONVERGENT vers le mors, plus l'anneau.
+    bande(TETIERE)
+    bande(MUSELIERE)
+    bande(RENE, facteur=0.85)
 
-    # L'anneau, au bout de la rêne : un CERNE, et non un rond plein — un rond
-    # plein ferait un point, un anneau se lit comme « on y attache ».
     centre = point(ANNEAU)
-    externe = epaisseur * 1.15
-    interne = epaisseur * 0.52
-    dessin.ellipse(
-        [centre[0] - externe - lisere, centre[1] - externe - lisere,
-         centre[0] + externe + lisere, centre[1] + externe + lisere],
-        fill=FOND_BAS,
-    )
-    dessin.ellipse(
-        [centre[0] - externe, centre[1] - externe, centre[0] + externe, centre[1] + externe],
-        fill=BLEU_SANGLE,
-    )
-    dessin.ellipse(
-        [centre[0] - interne, centre[1] - interne, centre[0] + interne, centre[1] + interne],
-        fill=FOND_BAS,
-    )
+    externe = epaisseur * 1.25
+    interne = epaisseur * 0.55
+    for rayon, couleur in ((externe + epaisseur_cerne, couleur_cerne),
+                           (externe, sangle),
+                           (interne, couleur_cerne)):
+        dessin.ellipse(
+            [centre[0] - rayon, centre[1] - rayon, centre[0] + rayon, centre[1] + rayon],
+            fill=couleur,
+        )
 
 
-def dessiner(rendu: int) -> Image.Image:
-    """Rend l'icône complète au côté demandé, en pixels."""
+def dessiner(rendu: int, apparence: str = "claire") -> Image.Image:
+    """Rend l'icône complète au côté demandé, pour l'apparence demandée."""
     # Suréchantillonnage : on dessine 4× plus grand puis on réduit. C'est ce qui
     # donne des bords lisses sans dépendre d'un moteur vectoriel.
     facteur = 4
     grand = rendu * facteur
 
+    reglages = APPARENCES[apparence]
+
     # Fond : dégradé vertical très doux, pour que l'icône ne soit pas un aplat.
-    fond = Image.new("RGB", (grand, grand), FOND_BAS)
+    # En mode teinté, il est TRANSPARENT : iOS n'utilise alors que la forme.
+    if len(reglages["fond_haut"]) == 4:
+        fond = Image.new("RGBA", (grand, grand), (0, 0, 0, 0))
+    else:
+        fond = Image.new("RGB", (grand, grand), reglages["fond_bas"])
     pinceau = ImageDraw.Draw(fond)
     for ligne in range(grand):
         t = ligne / max(1, grand - 1)
-        pinceau.line(
-            [(0, ligne), (grand, ligne)],
-            fill=tuple(round(FOND_HAUT[i] + (FOND_BAS[i] - FOND_HAUT[i]) * t) for i in range(3)),
-        )
+        haut, bas = reglages["fond_haut"], reglages["fond_bas"]
+        couleur = tuple(round(haut[i] + (bas[i] - haut[i]) * t) for i in range(len(haut)))
+        pinceau.line([(0, ligne), (grand, ligne)], fill=couleur)
 
-    logo = Image.new("RGB", (grand, grand), BLEU_LOGO)
-    fond.paste(logo, (0, 0), masque_logo(grand))
+    masque = masque_logo(grand)
+    logo = Image.new("RGBA", (grand, grand), tuple(reglages["logo"]))
+    fond.paste(logo, (0, 0), masque)
 
-    dessiner_harnais(ImageDraw.Draw(fond), grand)
+    # LE HARNAIS EST DÉCOUPÉ SUR LA SILHOUETTE, ET C'EST INDISPENSABLE.
+    # Tracé librement, il dépassait du dos et du museau : des sangles qui
+    # flottent dans le vide ne se lisent pas comme du harnais PORTÉ, mais comme
+    # un objet posé à côté de l'animal — constaté sur capture. On le rend donc
+    # sur un calque, que l'on découpe avec le masque du corps avant de le
+    # composer. Les sangles s'arrêtent ainsi exactement au contour.
+    calque = Image.new("RGBA", (grand, grand), (0, 0, 0, 0))
+    dessiner_harnais(ImageDraw.Draw(calque), grand,
+                     sangle=tuple(reglages["sangle"]), couleur_cerne=tuple(reglages["cerne"]))
+    fond.paste(calque, (0, 0), Image.composite(
+        calque.getchannel("A"), Image.new("L", (grand, grand), 0), masque))
+
     return fond.resize((rendu, rendu), Image.LANCZOS)
 
 
@@ -334,6 +428,8 @@ def main() -> int:
     analyseur.add_argument("--apercu", action="store_true",
                            help="écrit en plus une planche de contrôle")
     analyseur.add_argument("--sortie", default=None, help="dossier du catalogue d'assets")
+    analyseur.add_argument("--icns", default=None,
+                           help="écrit aussi une icône macOS (.icns) à ce chemin")
     options = analyseur.parse_args()
 
     racine = pathlib.Path(__file__).resolve().parent.parent
@@ -342,13 +438,21 @@ def main() -> int:
     )
     catalogue.mkdir(parents=True, exist_ok=True)
 
-    # iOS n'exige qu'UNE image de 1024 px : le système en dérive toutes les
-    # tailles. Les tailles plus petites sont tout de même écrites, pour que
-    # l'icône puisse être vérifiée à sa taille d'usage (voir --apercu) et
-    # réutilisée ailleurs sans repasser par ce script.
-    maitre = dessiner(1024)
-    maitre.save(catalogue / "icone-1024.png")
+    # iOS n'exige QU'UNE image de 1024 px par apparence : le système en dérive
+    # toutes les tailles. Les tailles plus petites sont tout de même écrites,
+    # pour que l'icône puisse être vérifiée à sa taille d'usage (voir --apercu)
+    # et réutilisée ailleurs sans repasser par ce script.
+    suffixes = {"claire": "", "sombre": "-sombre", "teintee": "-teintee"}
+    maitre = dessiner(1024, "claire")
+    for apparence, suffixe in suffixes.items():
+        image = maitre if apparence == "claire" else dessiner(1024, apparence)
+        image.save(catalogue / f"icone-1024{suffixe}.png")
 
+    # Les tailles intermédiaires ne vont PAS dans le catalogue : Xcode les
+    # signale comme « non assignées » (avertissement de build), parce qu'iOS ne
+    # lit que les images de 1024 px et dérive le reste. Elles sont donc écrites
+    # à part, dans .build/, pour être regardées et réutilisées (README, aperçu)
+    # sans polluer le catalogue.
     tailles = {
         "icone-180.png": 180,  # iPhone, écran d'accueil @3x
         "icone-120.png": 120,  # iPhone, écran d'accueil @2x
@@ -359,33 +463,86 @@ def main() -> int:
         "icone-58.png": 58,    # réglages @2x
         "icone-40.png": 40,    # notification @2x
     }
+    dossier_tailles = racine / ".build" / "icones"
+    dossier_tailles.mkdir(parents=True, exist_ok=True)
     for nom, taille in tailles.items():
-        maitre.resize((taille, taille), Image.LANCZOS).save(catalogue / nom)
+        for apparence, suffixe in suffixes.items():
+            source = maitre if apparence == "claire" else dessiner(1024, apparence)
+            source.resize((taille, taille), Image.LANCZOS).save(
+                dossier_tailles / nom.replace(".png", f"{suffixe}.png"))
 
-    print(f"[icone] {len(tailles) + 1} fichiers écrits dans {catalogue}")
+    print(f"[icone] 3 apparences (1024 px) dans {catalogue}")
+    print(f"[icone] {len(tailles) * 3} tailles d'usage dans {dossier_tailles}")
+
+    # ── L'icône macOS ────────────────────────────────────────────────────────
+    #
+    # POURQUOI ELLE EST ÉCRITE ICI. Le projet Xcode ne produit qu'une
+    # application iOS ; l'application macOS est un exécutable SwiftPM, donc un
+    # binaire NU, sans paquet ni icône — pas d'image dans le Dock, et rien pour
+    # la reconnaître dans la barre des tâches. Le même dessin sert donc aux deux
+    # plateformes : `iconutil` attend un dossier `.iconset` contenant des PNG
+    # aux tailles imposées, que l'on dérive du maître de 1024 px.
+    if options.icns:
+        import subprocess
+        import tempfile
+
+        chemin_icns = pathlib.Path(options.icns)
+        chemin_icns.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory() as temporaire:
+            iconset = pathlib.Path(temporaire) / "DSHRemote.iconset"
+            iconset.mkdir()
+            # Les tailles que `iconutil` exige, avec leur variante @2x.
+            for taille in (16, 32, 128, 256, 512):
+                maitre.resize((taille, taille), Image.LANCZOS).save(
+                    iconset / f"icon_{taille}x{taille}.png")
+                maitre.resize((taille * 2, taille * 2), Image.LANCZOS).save(
+                    iconset / f"icon_{taille}x{taille}@2x.png")
+            subprocess.run(
+                ["iconutil", "-c", "icns", str(iconset), "-o", str(chemin_icns)],
+                check=True,
+            )
+        print(f"[icone] icone macOS : {chemin_icns}")
 
     if options.apercu:
-        planche = racine / ".build" / "icone-apercu.png"
-        planche.parent.mkdir(parents=True, exist_ok=True)
-        fond_planche = Image.new("RGB", (780, 700), (245, 245, 247))
-        x = 24
-        for taille in (180, 120, 60, 40):
-            vignette = maitre.resize((taille, taille), Image.LANCZOS)
-            # Arrondi du masque iOS, pour juger comme à l'écran.
+        chemin_planche = racine / ".build" / "icone-apercu.png"
+        chemin_planche.parent.mkdir(parents=True, exist_ok=True)
+
+        def vignette(source, taille, fond_local):
+            """Arrondit comme iOS, pour juger à la forme réelle."""
+            pave = Image.new("RGB", (taille, taille), fond_local)
+            reduite = source.resize((taille, taille), Image.LANCZOS).convert("RGBA")
             masque = Image.new("L", (taille, taille), 0)
             ImageDraw.Draw(masque).rounded_rectangle(
                 [0, 0, taille - 1, taille - 1], radius=round(taille * 0.2237), fill=255
             )
-            fond_planche.paste(vignette, (x, 30), masque)
-            x += taille + 26
-        # Le maître, réduit : pour juger le dessin lui-même.
-        fond_planche.paste(maitre.resize((460, 460), Image.LANCZOS), (24, 200))
-        # Et sur fond sombre, pour vérifier qu'il ne disparaît pas.
-        sombre = Image.new("RGB", (460, 200), (28, 28, 30))
-        sombre.paste(maitre.resize((160, 160), Image.LANCZOS), (20, 20))
-        fond_planche.paste(sombre, (24, 480))
-        planche.save(planche)
-        print(f"[icone] planche de controle : {planche}")
+            reduite.putalpha(masque)
+            pave.paste(reduite, (0, 0), reduite)
+            return pave
+
+        # LA PLANCHE MONTRE LES TROIS APPARENCES, ET À LEUR TAILLE D'USAGE.
+        # C'est à 40 px qu'une icône se juge : une planche qui ne montrerait que
+        # le maître de 1024 px laisserait passer un dessin illisible là où il
+        # sert vraiment.
+        planche = Image.new("RGB", (900, 300 * len(APPARENCES) + 130), (245, 245, 247))
+        ligne = 30
+        for apparence in APPARENCES:
+            source = maitre if apparence == "claire" else dessiner(1024, apparence)
+            fond_local = (28, 28, 30) if apparence == "sombre" else (245, 245, 247)
+            x = 26
+            for taille in (180, 120, 60, 40):
+                planche.paste(vignette(source, taille, fond_local), (x, ligne + (180 - taille) // 2))
+                x += taille + 24
+            planche.paste(vignette(source, 220, fond_local), (x + 10, ligne - 20))
+            ligne += 300
+
+        # En bas : le maître clair sur fond sombre, pour vérifier qu'il ne
+        # disparaît dans aucun des deux.
+        sombre = Image.new("RGB", (840, 100), (28, 28, 30))
+        for indice, taille in enumerate((80, 60, 40)):
+            sombre.paste(vignette(maitre, taille, (28, 28, 30)), (20 + indice * 100, 10))
+        planche.paste(sombre, (30, ligne))
+        planche.save(chemin_planche)
+        print(f"[icone] planche de controle : {chemin_planche}")
 
     return 0
 

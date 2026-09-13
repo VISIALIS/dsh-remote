@@ -36,36 +36,50 @@ struct FeuilleReglages: View {
     NavigationStack {
       Form {
         Section {
-          LabeledContent("Adresse") {
-            HStack(spacing: 8) {
-              // L'icône dit à quelle machine on parle, d'un coup d'œil.
-              Image(systemName: modele.symboleServeur)
-                .foregroundStyle(modele.adresse.isEmpty ? Color.secondary : Color.accentColor)
-              // Liaison passant par le modèle : l'adresse est mémorisée dès la
-              // frappe, sans attendre une connexion réussie. C'est précisément
-              // quand la connexion échoue qu'on veut retrouver son adresse.
-              TextField(
-                modele.adresseExemple,
-                text: Binding(
-                  get: { modele.adresse },
-                  set: { modele.definirAdresse($0) }
-                )
+          // ── POURQUOI LE LIBELLÉ EST AU-DESSUS, ET NON À GAUCHE ──────────
+          //
+          // La disposition précédente employait `LabeledContent`, qui place le
+          // libellé à gauche et le champ à droite. Sur macOS, cela donnait une
+          // feuille ILLISIBLE : mesuré sur capture, l'URL `http://macmini.tail…`
+          // débordait de la fenêtre, par-dessus le texte voisin — on croyait
+          // voir DEUX adresses superposées, alors qu'il n'y avait qu'un champ
+          // trop étroit pour ce qu'il contient.
+          //
+          // Une adresse de tailnet fait une quarantaine de caractères : elle a
+          // besoin de la largeur entière. Le libellé passe donc au-dessus, et le
+          // champ occupe la ligne — la disposition que macOS emploie lui-même
+          // pour les valeurs longues.
+          Label("Adresse", systemImage: modele.symboleServeur)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          HStack(spacing: 8) {
+            // Liaison passant par le modèle : l'adresse est mémorisée dès la
+            // frappe, sans attendre une connexion réussie. C'est précisément
+            // quand la connexion échoue qu'on veut retrouver son adresse.
+            TextField(
+              modele.adresseExemple,
+              text: Binding(
+                get: { modele.adresse },
+                set: { modele.definirAdresse($0) }
               )
-              .multilineTextAlignment(.trailing)
-              .autocorrectionDisabled()
-              #if os(iOS)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.URL)
-              #endif
-              if !modele.adresse.isEmpty {
-                Button {
-                  modele.oublierServeur()
-                } label: {
-                  Image(systemName: "xmark.circle")
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Oublier ce serveur")
+            )
+            // Police à chasse fixe : une adresse se lit caractère par caractère,
+            // et c'est ce qui permet de repérer une faute de frappe.
+            .font(.callout.monospaced())
+            .lineLimit(1)
+            .autocorrectionDisabled()
+            #if os(iOS)
+              .textInputAutocapitalization(.never)
+              .keyboardType(.URL)
+            #endif
+            if !modele.adresse.isEmpty {
+              Button {
+                modele.oublierServeur()
+              } label: {
+                Image(systemName: "xmark.circle")
               }
+              .buttonStyle(.borderless)
+              .accessibilityLabel("Oublier ce serveur")
             }
           }
           if let nom = modele.nomServeur, !nom.isEmpty {
@@ -82,33 +96,37 @@ struct FeuilleReglages: View {
         }
 
         Section {
-          LabeledContent("Jeton") {
-            HStack(spacing: 8) {
-              SecureField(
-                modele.jetonDisponible ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil",
-                text: $modele.jetonSaisi
-              )
-              .multilineTextAlignment(.trailing)
-              .autocorrectionDisabled()
-              #if os(iOS)
-                .textInputAutocapitalization(.never)
-              #endif
+          // Même disposition que l'adresse, et pour la même raison : un secret
+          // de 43 caractères ne tient pas dans une colonne de droite étroite.
+          Label("Jeton", systemImage: "key")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          HStack(spacing: 8) {
+            SecureField(
+              modele.jetonDisponible ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil",
+              text: $modele.jetonSaisi
+            )
+            .font(.callout.monospaced())
+            .lineLimit(1)
+            .autocorrectionDisabled()
+            #if os(iOS)
+              .textInputAutocapitalization(.never)
+            #endif
+            Button {
+              modele.collerLeJeton()
+            } label: {
+              Image(systemName: "doc.on.clipboard")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Coller le jeton depuis le presse-papier")
+            if modele.jetonDisponible {
               Button {
-                modele.collerLeJeton()
+                modele.effacerJeton()
               } label: {
-                Image(systemName: "doc.on.clipboard")
+                Image(systemName: "xmark.circle")
               }
               .buttonStyle(.borderless)
-              .accessibilityLabel("Coller le jeton depuis le presse-papier")
-              if modele.jetonDisponible {
-                Button {
-                  modele.effacerJeton()
-                } label: {
-                  Image(systemName: "xmark.circle")
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Effacer le jeton")
-              }
+              .accessibilityLabel("Effacer le jeton")
             }
           }
           // L'état du jeton, en clair : un jeton tronqué doit se voir AVANT

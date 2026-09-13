@@ -45,6 +45,123 @@ public final class ModeleApp {
   /// Serveur choisi dans la liste, ou `nil` si l'adresse est saisie à la main.
   public private(set) var serveurChoisi: ServeurMac?
 
+  /// Vrai si l'appareil a ATTEINT le serveur choisi lors de la dernière
+  /// tentative — donc si `sessions` vient bien de lui.
+  ///
+  /// POURQUOI CE DRAPEAU EXISTE. Une connexion peut échouer APRÈS avoir choisi
+  /// un serveur : l'écran garde alors le serveur coché et des données qui ne
+  /// viennent pas de lui. Le drapeau permet à l'interface de dire « voici ce que
+  /// CE serveur a répondu » au lieu de laisser croire que tout va bien.
+  public private(set) var serveurJoint = false
+
+  /// Macs du tailnet qui ont RÉPONDU à la sonde de découverte.
+  ///
+  /// POURQUOI UNE SONDE, ET POURQUOI ELLE EST NÉCESSAIRE. La découverte liste
+  /// tous les Macs du tailnet : elle dit qu'ils sont EN LIGNE, pas qu'ils
+  /// servent DSH. Le propriétaire a donc choisi `macmini` — où DSH tournait —
+  /// et a reçu « rien n'écoute sur cet hôte et ce port », parce que
+  /// `tailscale serve` n'y était pas actif. L'application proposait une machine
+  /// sans savoir si elle pouvait répondre.
+  ///
+  /// Une sonde de santé, courte, le dit. Elle n'est pas gratuite : c'est une
+  /// requête vers chaque Mac de la liste. On la paie parce que l'alternative est
+  /// une liste qui promet ce qu'elle ne peut pas tenir.
+  public private(set) var serveursAvecDsh: Set<String> = []
+  /// Vrai pendant que les sondes sont en vol.
+  public private(set) var sondageEnCours = false
+  /// Vrai dès qu'une sonde est ALLÉE AU BOUT.
+  ///
+  /// POURQUOI CE DRAPEAU EN PLUS DE `serveursAvecDsh`. Un ensemble vide est
+  /// ambigu : il veut dire « aucune sonde n'a encore répondu » ET « les sondes
+  /// ont répondu, aucun Mac ne sert DSH ». Le premier état doit s'afficher en
+  /// orange (on ne sait pas), le second en gris (on sait). Sans ce drapeau, les
+  /// deux se confondaient, et une liste sans aucun serveur DSH restait ORANGE
+  /// indéfiniment — constaté sur capture.
+  public private(set) var sondageEffectue = false
+
+  /// Interroge chaque Mac pour savoir s'il sert DSH.
+  ///
+  /// Les sondes partent ENSEMBLE : une machine éteinte ne doit pas retarder les
+  /// autres. Le délai est court — deux secondes et demie — parce qu'un Mac qui
+  /// publie DSH répond en quelques millisecondes sur le tailnet, et qu'un Mac
+  /// muet ne mérite pas qu'on l'attende.
+  public func sonderLesServeurs() async {
+    let jeton = jetonSaisi.isEmpty ? (Self.jetonLocal() ?? "") : jetonSaisi
+    // POURQUOI DEUX GARDES SÉPARÉS. Un jeton manquant rend la sonde IMPOSSIBLE :
+    // on marque alors l'état comme su, pour que les icônes cessent d'attendre.
+    // Mais une liste VIDE n'est pas un verdict — c'est une course : la sonde est
+    // lancée par `demarrerDecouverte` avant que Tailscale ait rendu sa liste.
+    // La déclarer « effectuée » dans ce cas, c'était empêcher à jamais tout
+    // verdict : mesuré, toutes les icônes restaient ORANGE.
+    guard jeton.count == 43 else {
+      sondageEffectue = true
+      return
+    }
+    guard !serveurs.isEmpty else { return }
+    let candidats = serveurs
+    sondageEnCours = true
+    sondageEffectue = false
+    // Trace TEMPORAIRE de diagnostic : sans elle, on ne peut pas distinguer
+    // « la sonde n'a pas tourné » de « elle a tourné et n'a rien trouvé ».
+    print("[sonde] debut : \(candidats.count) candidat(s), jeton \(jeton.count) caracteres")
+    defer { sondageEnCours = false }
+
+    let trouves = await withTaskGroup(of: (String, Bool).self) { groupe in
+      for serveur in candidats {
+        groupe.addTask {
+          guard let client = try? RemoteClient(adresse: serveur.adresse, jeton: jeton, delai: 2.5)
+          else { return (serveur.id, false) }
+          // `verifierSante` ne rend aucune donnée de session : c'est la poignée
+          // de main. Deux réponses disent que DSH est LÀ : un `200`, et un `401`
+          // — car un jeton refusé prouve que le service a répondu. Toute autre
+          // erreur (délai, connexion refusée, DNS) veut dire « rien au bout ».
+          do {
+            _ = try await client.verifierSante()
+            return (serveur.id, true)
+          } catch ErreurRemote.jetonRefuse {
+            return (serveur.id, true)
+          } catch {
+            return (serveur.id, false)
+          }
+        }
+      }
+      var resultat: Set<String> = []
+      for await (identifiant, repond) in groupe where repond {
+        resultat.insert(identifiant)
+      }
+      return resultat
+    }
+    serveursAvecDsh = trouves
+    sondageEffectue = true
+    print("[sonde] fin : \(trouves.count) serveur(s) DSH sur \(candidats.count)")
+  }
+
+  /// Le Mac sert-il DSH, d'après la dernière sonde ?
+  ///
+  /// `nil` veut dire « pas encore su » — et l'interface ne doit pas transformer
+  /// ce doute en affirmation. C'est la leçon de `macmini`.
+  public func sertDsh(_ serveur: ServeurMac) -> Bool? {
+    // « Pas encore su » : c'est l'ABSENCE de verdict qui compte, pas la
+    // présence d'un résultat. Un ensemble vide après une sonde complète est un
+    // verdict : aucun Mac ne sert DSH.
+    guard sondageEffectue else { return nil }
+    return serveursAvecDsh.contains(serveur.id)
+  }
+
+  /// Empreinte de la liste des serveurs, pour détecter un VRAI changement.
+  ///
+  /// Sert à relancer la sonde quand la liste arrive — et SEULEMENT là. La sonde
+  /// partait jusqu'ici depuis `demarrerDecouverte`, donc quand la liste était
+  /// encore vide : le garde-fou la renvoyait, et rien ne la relançait ensuite.
+  /// Mesuré : toutes les icônes restaient ORANGE, aucun verdict ne tombait.
+  ///
+  /// L'empreinte est un ensemble d'identifiants triés : deux listes qui
+  /// contiennent les mêmes machines ne déclenchent rien, même si leur état en
+  /// ligne a changé — ce qui évite de sonder à chaque rafraîchissement.
+  public var empreinteServeurs: String {
+    serveurs.map(\.id).sorted().joined(separator: "|")
+  }
+
   /// D'où vient la liste affichée.
   ///
   /// Sert à dire la VÉRITÉ sur une liste vide : « l'hôte interrogé ne voit
@@ -62,6 +179,9 @@ public final class ModeleApp {
   private var flux: FluxSession?
   private var tacheFlux: Task<Void, Never>?
   private var tacheSuivi: Task<Void, Never>?
+  /// Boucle de synchronisation de la LISTE DES SERVEURS, distincte de celle des
+  /// sessions : l'une relit des statuts, l'autre découvre des machines.
+  private var tacheServeurs: Task<Void, Never>?
 
   /// Suivi automatique de la liste : rafraîchit les statuts en continu.
   ///
@@ -167,9 +287,23 @@ public final class ModeleApp {
   /// Dernier `seq` reçu par le flux, à repasser en `depuisSeq` si l'on rouvre.
   public private(set) var dernierSeqVu: Int?
 
+  /// Serveur et adresse MÉMORISÉS au lancement, avant tout ajustement.
+  ///
+  /// POURQUOI LES RETENIR. Au démarrage, l'application se connecte au serveur
+  /// mémorisé — même s'il est HORS LIGNE. Mesuré : au lancement sur ce Mac,
+  /// elle visait `macbook-pro-de-clotilde`, éteint depuis 206 jours, et
+  /// affichait un échec de transport avant même que l'utilisateur ait touché à
+  /// quoi que ce soit. Comparer ces valeurs à celles d'après `ajusterAuParc`
+  /// permet de savoir si l'on a changé le choix de l'utilisateur — et donc de
+  /// le LUI DIRE.
+  private var serveurMemorise: String?
+  private var adresseMemorisee: String?
+
   public init() {
     chargerConfiguration()
     chargerPreference()
+    serveurMemorise = nomServeur
+    adresseMemorisee = adresse
   }
 
   /// Mémorise l'adresse et le nom du serveur choisis, entre deux lancements.
@@ -244,6 +378,22 @@ public final class ModeleApp {
   ///
   /// Sur iPhone, il n'y a rien à lancer : voir `chargerServeursDeLhote()`, qui
   /// interroge le serveur déjà joint — la seule voie possible depuis iOS.
+  /// Découverte locale, ATTENDABLE.
+  ///
+  /// `demarrerDecouverte` lance une tâche détachée : c'est ce qu'il faut pour
+  /// l'affichage, pas pour un démarrage qui doit connaître la liste avant de se
+  /// connecter. Ici, on attend le résultat.
+  public func chargerServeursLocaux() async {
+    guard decouverteLocalePossible else { return }
+    let trouvees = await Task.detached { DecouverteServeurs.macsDuTailnet() }.value
+    let raison = DecouverteServeurs.diagnostic
+    guard sourceServeurs != .hote else { return }
+    serveurs = trouvees
+    diagnosticServeurs = raison
+    sourceServeurs = .tailscaleLocal
+    relireEtatTailscale()
+  }
+
   public func demarrerDecouverte() {
     guard decouverteLocalePossible else { return }
     Task.detached { [weak self] in
@@ -260,6 +410,10 @@ public final class ModeleApp {
         // La liste vient d'arriver : c'est le moment de dire si le tailnet
         // fonctionne, et non seulement si Tailscale est installé.
         self.relireEtatTailscale()
+        // La sonde ne part PAS d'ici : à cet instant la liste vient d'être
+        // posée, mais la vue n'a pas encore été réévaluée. C'est
+        // `task(id: modele.empreinteServeurs)` qui s'en charge, et lui seul —
+        // un appel ici ne ferait que doubler la sonde.
       }
     }
   }
@@ -275,18 +429,128 @@ public final class ModeleApp {
     diagnosticServeurs = liste.diagnostic
     sourceServeurs = .hote
     relireEtatTailscale()
+    // On demande à chaque Mac s'il sert DSH, plutôt que de le supposer.
+    await sonderLesServeurs()
   }
 
   /// Choisit un serveur et met l'adresse en conséquence.
   ///
   /// L'adresse n'est plus un champ que l'on remplit : elle DÉCOULE du choix.
   /// Le champ reste modifiable pour les cas que la découverte ne couvre pas.
+  ///
+  /// CHANGER DE SERVEUR VIDE CE QUI VIENT DU PRÉCÉDENT, et c'est un défaut
+  /// mesuré : le propriétaire a choisi MacMini, la connexion a échoué, et la
+  /// liste a continué d'afficher les 11 sessions de `macbook-air` — avec la
+  /// coche sur MacMini. L'écran affirmait donc une chose fausse : que ces
+  /// sessions venaient du serveur coché. Une liste qui ne se vide pas quand sa
+  /// source change est pire qu'une liste vide : elle est crédible et fausse.
+  ///
+  /// On vide donc sessions et journal dès que l'adresse visée change vraiment.
+  /// La comparaison porte sur l'ADRESSE, pas sur l'identité du serveur : deux
+  /// entrées de la découverte peuvent mener à la même machine, et re-vider dans
+  /// ce cas ferait clignoter la liste pour rien.
   public func choisir(_ serveur: ServeurMac) {
+    // Un avis de bascule ne survit PAS à un choix de l'utilisateur : il
+    // racontait ce que l'application avait décidé au démarrage, et il restait
+    // affiché ensuite — mesuré : « <adresse> ne répond pas : basculé sur … »
+    // sous une liste chargée, alors que plus rien n'était en cause.
+    choixAjuste = nil
+    let adresseAvant = adresse
     serveurChoisi = serveur
     nomServeur = serveur.nom
     adresse = serveur.adresse
     memoriserPreference()
+    if adresse != adresseAvant { oublierLesDonneesDeLancienServeur() }
     relireEtatTailscale()
+  }
+
+  /// Vide ce qui appartenait au serveur précédent.
+  ///
+  /// Le serveur CHOISI survit : c'est une préférence, pas une donnée. Sans cela,
+  /// l'application oublierait la machine qu'on vient de désigner.
+  private func oublierLesDonneesDeLancienServeur() {
+    arreterSuivi()
+    arreterSuiviServeurs()
+    arreterFlux()
+    client = nil
+    capacites = nil
+    sessions = []
+    journal = []
+    sessionOuverte = nil
+    terminees = []
+    etatAdresse = .inconnu
+    erreur = nil
+    serveurJoint = false
+    serveursAvecDsh = []
+    sondageEffectue = false
+  }
+
+  /// Démarrage : choisir une machine JOIGNABLE, puis se connecter.
+  ///
+  /// POURQUOI CET ORDRE, ET CE QU'IL CORRIGE. La vue appelait `connecter()` des
+  /// l'affichage, sur l'adresse mémorisée — même si la machine était ÉTEINTE.
+  /// L'utilisateur voyait donc un échec de transport au lancement, avant d'avoir
+  /// rien demandé : mesuré sur ce Mac, à propos d'un MacBook Pro hors ligne
+  /// depuis 206 jours. Ajuster APRÈS la connexion ne suffisait pas — l'erreur
+  /// était déjà à l'écran.
+  ///
+  /// On charge donc la liste d'abord, on écarte les machines hors ligne, et on
+  /// ne connecte qu'ensuite. Le repli est la boucle locale : sur le Mac qui
+  /// exécute le harness, elle répond toujours, et elle est la SEULE source
+  /// possible avant qu'un serveur ait été joint (c'est lui qui publie le
+  /// tailnet).
+  public func demarrer() async {
+    if sourceServeurs == .aucune, !decouverteLocalePossible, serveurs.isEmpty {
+      // Aucune liste locale possible (iPhone) : on tente l'adresse mémorisée.
+      await connecter()
+      return
+    }
+    if decouverteLocalePossible { await chargerServeursLocaux() }
+    await ajusterAuParc()
+    if serveurChoisi == nil, let hote = serveurs.first(where: \.enLigne) { choisir(hote) }
+    guard !adresse.isEmpty else { return }
+    await connecter()
+  }
+
+  /// Message affiché quand le serveur mémorisé a été remplacé par un autre.
+  public private(set) var choixAjuste: String?
+
+  /// Préfère un serveur EN LIGNE à celui qui a été mémorisé.
+  ///
+  /// POURQUOI CE N'EST PAS UNE TRAHISON DU CHOIX DE L'UTILISATEUR. L'application
+  /// mémorise la dernière machine utilisée, et s'y connecte au lancement — même
+  /// si elle est ÉTEINTE. Mesuré : au démarrage, un échec de transport
+  /// s'affichait avant toute action, à propos d'un Mac hors ligne depuis 206
+  /// jours. Un écran d'erreur au lancement n'est pas une information : c'est un
+  /// bruit que l'utilisateur n'a pas provoqué.
+  ///
+  /// On ne bascule PAS silencieusement : on le DIT (`choixAjuste`), et on ne
+  /// touche à rien si la machine mémorisée répond. Le choix reste celui de
+  /// l'utilisateur dès qu'elle est joignable.
+  public func ajusterAuParc() async {
+    guard !serveurs.isEmpty else { return }
+    // La machine mémorisée répond-elle ? Si oui, rien à faire.
+    if let choisie = serveurChoisi, serveurs.contains(where: { $0.id == choisie.id && $0.enLigne }) {
+      return
+    }
+    guard let enLigne = serveurs.first(where: \.enLigne) else { return }
+
+    // L'ADRESSE MÉMORISÉE AU LANCEMENT, et rien d'autre.
+    //
+    // Deux corrections ont été nécessaires ici, chacune constatée sur capture :
+    //   1. la première version citait `nomServeur`, qui vaut le nom de la
+    //      machine sur laquelle on venait de basculer — l'avis désignait donc
+    //      l'innocent ;
+    //   2. la seconde citait `adresse`, l'adresse COURANTE. Or `ajusterAuParc`
+    //      s'exécute à chaque changement de liste (toutes les quinze secondes) :
+    //      dès que la machine courante répondait, le garde-fou ne déclenchait
+    //      plus rien, mais si une bascule avait déjà eu lieu, l'avis comparait
+    //      alors la machine SAINE à elle-même — « macbook-air ne répond pas :
+    //      basculé sur MacBook Air de Camille ». Absurde, et mesuré.
+    let ecartee = adresseMemorisee ?? adresse
+    choisir(enLigne)
+    let etiquette = ecartee.isEmpty ? "le serveur mémorisé" : ecartee
+    choixAjuste = "\(etiquette) ne répond pas : basculé sur « \(enLigne.nom) », qui est en ligne."
   }
 
   /// Un appui sur une machine AGIT : il choisit et se connecte, parce que c'est
@@ -295,27 +559,6 @@ public final class ModeleApp {
   public func choisirEtConnecter(_ serveur: ServeurMac) async {
     choisir(serveur)
     await connecter()
-  }
-
-  /// Relit la liste des Macs.
-  ///
-  /// DEUX SOURCES, ET L'ORDRE COMPTE. L'hôte déjà joint passe en premier : sa
-  /// liste est exacte et à jour, et c'est la SEULE source disponible sur iPhone.
-  /// La découverte locale ne sert qu'en l'absence de serveur joignable — au
-  /// premier lancement, sur le Mac.
-  public func rafraichirServeurs() {
-    if client != nil {
-      Task { [weak self] in
-        guard let self else { return }
-        await self.chargerServeursDeLhote()
-        // L'hôte a répondu quelque chose — même une liste vide AVEC sa raison :
-        // c'est une réponse, on ne la remplace pas par une supposition locale.
-        if self.sourceServeurs == .hote { return }
-        self.demarrerDecouverte()
-      }
-      return
-    }
-    demarrerDecouverte()
   }
 
   /// Vrai quand la découverte LOCALE peut rendre des machines (macOS).
@@ -331,6 +574,66 @@ public final class ModeleApp {
     #endif
   }
 
+  // MARK: - Suivi automatique des serveurs
+
+  /// Vrai pendant qu'une synchronisation de la liste est en vol.
+  public private(set) var synchronisationEnCours = false
+
+  /// Vrai quand le bouton « Ajouter » peut réellement chercher quelque chose.
+  ///
+  /// Sur iPhone, la découverte locale est impossible : la recherche passe par
+  /// l'hôte déjà joint, et demande donc une connexion. Sans elle, le bouton
+  /// n'aurait rien à interroger — et un bouton sans effet est un mensonge.
+  public var rechercheServeursPossible: Bool {
+    client != nil || decouverteLocalePossible
+  }
+
+  /// Relit la liste des serveurs SANS intervention de l'utilisateur.
+  ///
+  /// POURQUOI CE N'EST PLUS UN GESTE MANUEL. Un Mac allumé, une session ouverte
+  /// ailleurs, et la liste changeait sans que rien ne le dise : il fallait penser
+  /// à rafraîchir. Le geste disparaît donc, comme il a disparu pour les sessions
+  /// — la liste se remet à jour toute seule, et la sonde qui dit quels Macs
+  /// servent DSH repasse avec elle.
+  ///
+  /// `synchronisationEnCours` sert de verrou : une synchronisation lente ne doit
+  /// pas en empiler une autre toutes les quinze secondes.
+  public func synchroniserServeurs() async {
+    guard !synchronisationEnCours else { return }
+    synchronisationEnCours = true
+    defer { synchronisationEnCours = false }
+
+    if client != nil {
+      await chargerServeursDeLhote()
+      // L'hôte a répondu — même une liste vide AVEC sa raison : c'est une
+      // réponse, on ne la remplace pas par une supposition locale.
+      if sourceServeurs == .hote { return }
+    }
+    await chargerServeursLocaux()
+  }
+
+  /// Démarre la boucle de synchronisation de la liste des serveurs.
+  ///
+  /// Quinze secondes : un tailnet ne change pas d'une seconde à l'autre, et
+  /// l'interrogation de l'hôte est locale — c'est `tailscale status` d'un côté,
+  /// une route JSON de l'autre.
+  public func demarrerSuiviServeurs() {
+    arreterSuiviServeurs()
+    tacheServeurs = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: 15_000_000_000)
+        guard !Task.isCancelled, let self else { return }
+        await self.synchroniserServeurs()
+      }
+    }
+  }
+
+  /// Arrête la boucle de synchronisation.
+  public func arreterSuiviServeurs() {
+    tacheServeurs?.cancel()
+    tacheServeurs = nil
+  }
+
   // MARK: - Tailscale
 
   /// État de Tailscale, relu à la demande et jamais deviné.
@@ -338,20 +641,27 @@ public final class ModeleApp {
 
   /// Relit l'état de Tailscale.
   ///
-  /// DEUX SOURCES, ET ELLES NE DISENT PAS LA MÊME CHOSE :
+  /// TROIS SOURCES, ET ELLES NE DISENT PAS LA MÊME CHOSE :
   ///
   ///   1. l'application Tailscale répond-elle à son schéma d'URL ? C'est le
   ///      seul test d'installation possible sur iOS, qui ne publie pas la liste
   ///      des applications installées ;
-  ///   2. au moins un serveur est-il EN LIGNE ? C'est ce qui distingue
-  ///      « installé » de « connecté », et cela ne se lit nulle part ailleurs.
-  ///
-  /// Le second critère est volontairement restrictif : un Tailscale installé
-  /// mais déconnecté, ou dont le Mac est éteint, doit proposer « Ouvrir » — pas
-  /// afficher un état connecté que rien ne confirme.
+  ///   2. CET APPAREIL porte-t-il une adresse `100.64.0.0/10` ? C'est la plage
+  ///      des adresses de tailnet : sa présence prouve que Tailscale est
+  ///      CONNECTÉ, sans rien ouvrir et sans dépendre d'un serveur. Ce test
+  ///      remplace l'ancien critère « un serveur répond », qui laissait la carte
+  ///      proposer « Ouvrir » — et ce bouton déclenchait le flux
+  ///      d'enregistrement d'appareil de Tailscale, qui échouait ;
+  ///   3. au moins un serveur est-il en ligne ? C'est ce qui se voit dans la
+  ///      liste, mais cela ne dit rien de l'état de Tailscale : le Mac peut être
+  ///      éteint alors que le tailnet fonctionne.
   public func relireEtatTailscale() {
     guard DetectionTailscale.applicationInstallee() else {
       etatTailscale = .absent
+      return
+    }
+    if DetectionTailscale.adresseDeTailnetPresente() {
+      etatTailscale = .connecte
       return
     }
     etatTailscale = serveurs.contains(where: \.enLigne) ? .connecte : .installe
@@ -375,6 +685,15 @@ public final class ModeleApp {
     erreur = message
   }
 
+  /// Retient qu'une tentative de connexion au serveur choisi a échoué.
+  ///
+  /// Appelé par les chemins qui lancent une connexion, pour que l'interface
+  /// sache que `sessions` ne vient PAS du serveur coché. Sans cela, l'écran
+  /// gardait des données de l'ancien serveur sous la coche du nouveau.
+  private func marquerConnexionEchouee() {
+    serveurJoint = false
+  }
+
   /// L'adresse a répondu, mais le jeton a été refusé.
   ///
   /// Sert à proposer l'action qui répare VRAIMENT : rouvrir les réglages pour
@@ -386,16 +705,20 @@ public final class ModeleApp {
     return message.contains("401") || message.contains("jeton d'appareil")
   }
 
-  /// Vrai quand appuyer sur « Rafraîchir la liste » peut réellement changer
-  /// quelque chose.
+  /// Le serveur choisi est joignable, mais RIEN n'y écoute.
   ///
-  /// Sert à n'afficher le bouton que là où il agit. Un bouton sans effet est un
-  /// mensonge d'interface : c'est ce qui a été observé sur iPhone, où la
-  /// découverte locale est impossible et où le bouton ne produisait donc ni
-  /// succès, ni erreur, ni changement. Depuis qu'un hôte publie la liste, le
-  /// bouton a de nouveau un effet dès qu'un serveur est joint.
-  public var rafraichissementPossible: Bool {
-    client != nil || decouverteLocalePossible
+  /// POURQUOI CE CAS MÉRITE SON PROPRE MESSAGE. C'est le piège le plus coûteux
+  /// de cette application, et il a été observé en vrai : la découverte liste
+  /// TOUS les Macs du tailnet — elle dit qu'ils sont en ligne, pas qu'ils
+  /// publient DSH — et en choisir un qui ne publie rien donne `-1004`, « rien
+  /// n'écoute sur cet hôte et ce port ». Le propriétaire a alors soupçonné son
+  /// jeton, qui n'y était pour rien.
+  ///
+  /// Le code `-1004` de `NSURLErrorDomain` veut dire exactement cela : le nom
+  /// se résout, la machine répond, mais aucun service n'écoute sur le port.
+  public var serveurSansDsh: Bool {
+    guard let message = erreur else { return false }
+    return message.contains("-1004")
   }
 
   /// Message affiché quand la liste des Macs est vide.
@@ -738,6 +1061,8 @@ public final class ModeleApp {
       self.capacites = sante.capacites
       let liste = try await client.listerSessions(limite: 200)
       self.sessions = liste.sessions
+      // Le serveur choisi a RÉPONDU : les sessions viennent bien de lui.
+      self.serveurJoint = true
       // Première observation : elle ne fait que retenir qui travaille. Une
       // session déjà au repos au chargement ne doit PAS produire de pastille
       // verte — sinon l'application s'ouvrirait sur une liste de faux rappels.
@@ -745,6 +1070,7 @@ public final class ModeleApp {
     }
     if erreur == nil {
       demarrerSuivi()
+      demarrerSuiviServeurs()
       // Une connexion réussie est le moment où la liste des Macs devient
       // disponible sur iPhone : l'hôte joint, lui, sait voir le tailnet.
       if capacites?.decouverte == true { await chargerServeursDeLhote() }
@@ -784,7 +1110,10 @@ public final class ModeleApp {
     if let precedent = flux { await precedent.fermer() }
     flux = nil
     enDirect = true
-    guard let client else { return }
+    // Simple test d'existence : le client n'est pas utilisé ici, seulement
+    // l'adresse et le jeton, relus juste après. `guard let` liait une variable
+    // inutile, ce que le compilateur signalait à juste titre.
+    guard client != nil else { return }
     let jeton = jetonSaisi
     let adresse = self.adresse
     guard
@@ -986,6 +1315,9 @@ public final class ModeleApp {
     do {
       try await travail()
     } catch {
+      // L'échec est centralisé ici, donc le drapeau aussi : une seule règle,
+      // un seul endroit.
+      marquerConnexionEchouee()
       let message = String(describing: error)
       self.erreur = message
       journaliserDiagnostic(adresse: adresse, message: message)
