@@ -106,6 +106,21 @@ func erreurSansCause() {
   #expect(etat(etapes, 4) == .inconnue)
 }
 
+@Test("Tant qu'on n'a pas MESURÉ, la première étape est inconnue — pas « à faire »")
+func reseauNonMesure() {
+  // Défaut corrigé : `false` par défaut affichait « à faire » pour une étape que
+  // personne n'avait constatée. Une capture l'a montré — l'ancre de vérification
+  // court-circuite le démarrage, donc rien n'était mesuré, et le parcours
+  // affirmait que Tailscale n'était pas connecté alors que le Mac l'était.
+  let etapes = EtapesServeur.etapes(
+    tailnetDeLAppareil: nil, enLigne: true, sertDsh: true, cause: nil)
+  #expect(etat(etapes, 1) == .inconnue)
+  #expect(EtapesServeur.premiereAEtapesFranchir(etapes) == 1)
+
+  let ajout = EtapesServeur.etapesDAjout(tailnetDeLAppareil: nil)
+  #expect(ajout[0].etat == .inconnue)
+}
+
 @Test("Les étapes sont numérotées dans l'ordre où elles se franchissent")
 func ordreDesEtapes() {
   let etapes = EtapesServeur.etapes(
@@ -114,4 +129,21 @@ func ordreDesEtapes() {
   #expect(etapes.allSatisfy { !$0.titre.isEmpty && !$0.explication.isEmpty })
   // Et la première parle bien de l'appareil, pas du Mac visé.
   #expect(etapes[0].titre.contains("cet appareil"))
+}
+
+@Test("La liste d'ajout : seule la première étape se constate d'ici")
+func etapesDAjout() {
+  // Il n'y a pas encore de machine : les étapes 2 à 4 sont une LISTE de travail,
+  // pas un verdict. Seule la première — Tailscale sur cet appareil — se constate.
+  let sansTailscale = EtapesServeur.etapesDAjout(tailnetDeLAppareil: false)
+  #expect(sansTailscale.map(\.numero) == [1, 2, 3, 4])
+  #expect(sansTailscale[0].etat == .aFaire)
+  #expect(sansTailscale.dropFirst().allSatisfy { $0.etat == .aFaire })
+  #expect(EtapesServeur.premiereAEtapesFranchir(sansTailscale) == 1)
+
+  let avecTailscale = EtapesServeur.etapesDAjout(tailnetDeLAppareil: true)
+  #expect(avecTailscale[0].etat == .franchie)
+  #expect(EtapesServeur.premiereAEtapesFranchir(avecTailscale) == 2)
+  // Les étapes parlent du Mac À AJOUTER, pas d'une machine connue.
+  #expect(avecTailscale[1].titre.contains("à ajouter"))
 }

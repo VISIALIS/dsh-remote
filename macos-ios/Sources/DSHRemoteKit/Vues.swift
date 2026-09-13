@@ -17,6 +17,9 @@ public struct VuePrincipale: View {
   /// couvre pas. Elle n'est plus dans les réglages — une adresse est celle d'UNE
   /// machine, pas un réglage de l'application.
   @State private var adresseOuverte = ProcessInfo.processInfo.arguments.contains("--adresse")
+  /// La page « Ajouter un serveur » est-elle ouverte ? C'est une page de
+  /// NAVIGATION, pas une machine : elle n'a donc rien à faire dans le modèle.
+  @State private var ajoutOuvert = ProcessInfo.processInfo.arguments.contains("--ajout")
 
   public init() {}
 
@@ -86,7 +89,19 @@ public struct VuePrincipale: View {
 
   public var body: some View {
     Group {
-      if pageSeuleParArgument, let serveur = machineDeLaPageSeule {
+      if pageSeuleParArgument, ajoutOuvert {
+        // `--page-seule` court-circuite le démarrage : la tâche du panneau
+        // latéral ne s'exécute pas, donc rien n'est mesuré — et la capture
+        // montrait un parcours qui affirmait sans avoir constaté. On mesure ici.
+        let _ = modele.relireEtatTailscale()
+        // `--ajout --page-seule` : la page d'ajout, seule. Sans cette branche,
+        // l'ancre affichait la page de la machine visée et la page d'ajout
+        // n'était pas capturable — constaté sur la première capture.
+        NavigationStack {
+          VueAjoutServeur(modele: modele) { adresseOuverte = true }
+        }
+      } else if pageSeuleParArgument, let serveur = machineDeLaPageSeule {
+        let _ = modele.relireEtatTailscale()
         // Ancre de vérification : la page seule, pour la capturer.
         NavigationStack {
           VueServeur(modele: modele, serveur: serveur) { reglagesOuverts = true }
@@ -104,16 +119,26 @@ public struct VuePrincipale: View {
         selection: $sessionSelectionnee,
         reglagesOuverts: $reglagesOuverts,
         adresseOuverte: $adresseOuverte,
+        // Choisir « Ajouter » QUITTE la page d'une machine : sans cela, la page
+        // d'ajout serait remplacée par celle du serveur resté ouvert.
+        surAjout: {
+          sessionSelectionnee = nil
+          modele.fermerPage()
+          ajoutOuvert = true
+        },
         // Toucher une machine ouvre SA page : c'est là que vivent son état
         // détaillé, ses actions et les remèdes. La sélection de session est
         // effacée, sans quoi le journal resterait affiché par-dessus.
         surSelectionServeur: { serveur in
           sessionSelectionnee = nil
+          ajoutOuvert = false
           modele.ouvrirPage(serveur)
         })
     } detail: {
       if let session = sessionSelectionnee {
         VueJournal(modele: modele, session: session)
+      } else if ajoutOuvert {
+        VueAjoutServeur(modele: modele) { adresseOuverte = true }
       } else if let serveur = serveurDeLaPage ?? serveurDUneErreur {
         VueServeur(modele: modele, serveur: serveur) { reglagesOuverts = true }
       } else {
@@ -181,6 +206,8 @@ struct VueListeSessions: View {
   @Binding var reglagesOuverts: Bool
   /// La saisie manuelle d'une adresse, tenue par `VuePrincipale`.
   @Binding var adresseOuverte: Bool
+  /// Touché « Ajouter » : ouvre la page qui dit comment faire naître un serveur.
+  var surAjout: () -> Void
   /// Appelé quand une machine est touchée : la page de droite devient la sienne.
   var surSelectionServeur: (ServeurMac) -> Void
 
@@ -257,7 +284,8 @@ struct VueListeSessions: View {
           ServeursVides(modele: modele) { adresseOuverte = true }
             .sansSeparateurMac()
         } else {
-          CarrouselServeurs(modele: modele, surSelectionServeur: surSelectionServeur)
+          CarrouselServeurs(
+            modele: modele, surSelectionServeur: surSelectionServeur, surAjout: surAjout)
             .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 6, trailing: 0))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
@@ -403,6 +431,9 @@ struct VueListeSessions: View {
       // l'affiche : sur iPhone elle s'empile, sur iPad elle remplit le détail.
       .navigationDestination(for: ServeurMac.self) { serveur in
         VueServeur(modele: modele, serveur: serveur) { reglagesOuverts = true }
+      }
+      .navigationDestination(for: PageAjoutServeur.self) { _ in
+        VueAjoutServeur(modele: modele) { adresseOuverte = true }
       }
     #endif
     .toolbar {
@@ -623,6 +654,8 @@ struct CarrouselServeurs: View {
   @Bindable var modele: ModeleApp
   /// Touché une machine : la page de droite devient la sienne.
   var surSelectionServeur: (ServeurMac) -> Void
+  /// Touché « Ajouter » : la page qui dit comment faire naître un serveur.
+  var surAjout: () -> Void
 
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
@@ -696,9 +729,24 @@ struct CarrouselServeurs: View {
         // sur iPhone : la découverte locale y est impossible, et l'hôte joint ne
         // republie sa liste que si on le lui demande.
         if modele.rechercheServeursPossible {
-          BoutonAjouterServeur(enRecherche: modele.synchronisationEnCours) {
-            Task { await modele.synchroniserServeurs() }
-          }
+          // LA VIGNETTE MÈNE À LA PAGE, elle ne lance plus une recherche. Sur un
+          // iPhone où rien n'est encore installé, une recherche ne peut rien
+          // trouver et n'apprend rien : ni ce qui manque, ni sur quelle machine,
+          // ni dans quel ordre. La recherche reste offerte DANS la page.
+          #if os(iOS)
+            NavigationLink(value: PageAjoutServeur()) {
+              ContenuAjouter(enRecherche: modele.synchronisationEnCours)
+            }
+            .buttonStyle(.plain)
+            .simultaneousGesture(TapGesture().onEnded { surAjout() })
+          #else
+            Button {
+              surAjout()
+            } label: {
+              ContenuAjouter(enRecherche: modele.synchronisationEnCours)
+            }
+            .buttonStyle(.plain)
+          #endif
         }
       }
       .padding(.horizontal, 20)
@@ -844,49 +892,52 @@ struct IconeServeur: View {
 /// La vue reprend donc la structure exacte d'`IconeServeur` — même vignette de
 /// 62 points, même cadre de 68, mêmes espacements, même ligne de légende — et le
 /// carrousel est aligné en haut.
-struct BoutonAjouterServeur: View {
+/// Le CONTENU de la vignette « Ajouter » : un carré en pointillés, et sa légende.
+///
+/// POURQUOI LE CONTENU EST SÉPARÉ DU GESTE. Sur iPhone, la vignette est un
+/// `NavigationLink` (elle EMPILE la page) ; sur macOS, un `Button` (la page
+/// remplace le contenu de droite). Le dessin est le même — c'est la façon de
+/// naviguer qui diffère, et elle seule.
+struct ContenuAjouter: View {
   /// Vrai pendant une recherche : le carré en pointillés se remplit d'un
   /// indicateur, pour qu'un appui ne reste jamais sans réponse visible.
   let enRecherche: Bool
-  let action: () -> Void
 
   var body: some View {
-    Button(action: action) {
-      VStack(spacing: 6) {
-        RoundedRectangle(cornerRadius: 15, style: .continuous)
-          .strokeBorder(
-            Color.secondary.opacity(0.45),
-            style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
-          )
-          .frame(width: 62, height: 62)
-          .overlay {
-            if enRecherche {
-              ProgressView().controlSize(.small)
-            } else {
-              Image(systemName: "plus")
-                .font(.system(size: 24, weight: .light))
-                .foregroundStyle(Color.secondary)
-            }
+    VStack(spacing: 6) {
+      RoundedRectangle(cornerRadius: 15, style: .continuous)
+        .strokeBorder(
+          Color.secondary.opacity(0.45),
+          style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+        )
+        .frame(width: 62, height: 62)
+        .overlay {
+          if enRecherche {
+            ProgressView().controlSize(.small)
+          } else {
+            Image(systemName: "plus")
+              .font(.system(size: 24, weight: .light))
+              .foregroundStyle(Color.secondary)
           }
-          // Le cadre de 68 points, comme la vignette d'un serveur : c'est lui
-          // qui place les deux dessins à la même hauteur.
-          .frame(width: 68, height: 68)
+        }
+        // Le cadre de 68 points, comme la vignette d'un serveur : c'est lui qui
+        // place les deux dessins à la même hauteur.
+        .frame(width: 68, height: 68)
 
-        Text("Ajouter")
-          .font(.caption2)
-          .foregroundStyle(Color.secondary)
-          .frame(width: 68)
-        // La même ligne que « hôte », laissée vide : c'est elle qui donne aux
-        // deux blocs la même hauteur totale.
-        Text(" ")
-          .font(.system(size: 9))
-      }
+      Text("Ajouter")
+        .font(.caption2)
+        .foregroundStyle(Color.secondary)
+        .frame(width: 68)
     }
-    .buttonStyle(.plain)
-    .disabled(enRecherche)
-    .accessibilityLabel("Chercher un Mac qui publie DSH")
   }
 }
+
+/// Une valeur de NAVIGATION pour la page « Ajouter un serveur ».
+///
+/// Elle ne porte rien : la page n'a pas besoin de savoir d'où l'on vient. Elle
+/// existe pour que le `NavigationLink` d'iOS ait une destination à empiler,
+/// distincte de celle d'une machine.
+struct PageAjoutServeur: Hashable {}
 
 /// Ce qu'on voit quand aucun Mac n'a été trouvé : la cause ET l'action.
 struct ServeursVides: View {

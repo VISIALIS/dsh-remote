@@ -342,6 +342,42 @@ liste arrivée en retard n'écrase pas la nouvelle. Écrits, ils ont d'ailleurs 
 erreur de ma part : le résumé d'une session est **aplati** dans l'objet par le plugin, et ma
 fixture l'imbriquait — l'identifiant décodé était « (inconnu) ».
 
+#### La page « Ajouter un serveur » : le même parcours, pour un Mac qu'on n'a pas encore
+
+La vignette **« Ajouter »** du carrousel menait à une **recherche**. Sur un iPhone
+où rien n'est encore installé, elle ne pouvait donc rien trouver et n'apprenait
+rien : ni ce qui manque, ni sur quelle machine, ni dans quel ordre. Le
+propriétaire a demandé qu'elle mène à la page de détail, « pour leur dire les goals
+à réaliser ».
+
+Elle ouvre donc une page qui liste le travail à faire pour qu'un Mac devienne un
+serveur — **le même parcours que la page d'un serveur**, à une différence près :
+là-bas on JUGE une machine connue, ici on liste le travail pour un Mac qu'on n'a
+pas encore.
+
+| Étape | Ce qu'elle dit |
+|---|---|
+| 1. Tailscale est connecté sur cet appareil | **constaté** : c'est la seule des quatre qu'on puisse mesurer d'ici |
+| 2. Le Mac à ajouter est sur le tailnet | sur ce Mac-là : installer Tailscale, le connecter, `tailscale status` |
+| 3. Le port de DSH y est ouvert | sur ce Mac-là : `tailscale serve --bg --http=80 http://127.0.0.1:3080` |
+| 4. Le plugin `dsh-remote` y est installé | la même démarche que la page d'un serveur |
+
+Les commandes disent **sur quelle machine les taper** — l'étape 1 concerne cet
+appareil, les autres le Mac à ajouter. La recherche reste offerte DANS la page
+(c'est la seule façon de redemander sa liste à l'hôte, sur iPhone), ainsi que la
+saisie manuelle d'une adresse.
+
+**DEUX PROCÉDURES PARTAGÉES.** « Publier le port » et « installer le plugin »
+vivent maintenant dans `Demarches.swift`, utilisées par les deux pages : le travail
+à faire sur le Mac est identique, et deux copies auraient divergé — l'utilisateur
+les compare.
+
+**UN DÉFAUT CORRIGÉ EN CAPTURANT.** `tailnetDeLAppareil` valait `false` par défaut,
+donc « pas encore mesuré » s'affichait comme « à faire » : le parcours affirmait que
+Tailscale n'était pas connecté alors que le Mac l'était. L'état est devenu
+**tri-état** (`Bool?`), et l'ancre de vérification mesure avant d'afficher — elle
+court-circuite le démarrage, donc rien n'était constaté.
+
 #### Le parcours d'un serveur : trois étapes, et la méthode pour chacune
 
 Demande du propriétaire : « une ligne de goal à franchir », avec, pour chaque
@@ -1509,6 +1545,7 @@ inactive.
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
 | **La page dit que le plugin manque, et donne la démarche** | capture iPhone de la page de MacMini (alors que l'app vise une autre machine) : constat nommé, 3 étapes, bloc `cordis.patch.yml` copiable, vérification `curl` |
+| **La page « Ajouter un serveur »** | capture iPhone (`--ajout --page-seule`) : étape 1 constatée, étapes 2-4 à faire avec leurs commandes, chacune disant sur quelle machine |
 | **Le parcours d'un serveur, en trois étapes** | captures iPhone : MacMini (étapes 1-3 vertes, 4 à faire + méthode) et un Mac hors ligne (étapes 2 à faire, suivantes « à vérifier ») ; 8 tests |
 | **Le diagnostic appartient à la machine** | `404` observé par la sonde → procédure d'installation ; `-1004` → procédure de publication ; vérifié par capture sur une machine NON visée |
 | **Une réponse en vol n'écrit pas dans une autre cible** | 2 tests : la bascule invalide le vol, une liste en retard est refusée ; 87 tests au total |

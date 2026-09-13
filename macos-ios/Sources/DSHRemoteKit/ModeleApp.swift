@@ -292,6 +292,14 @@ public final class ModeleApp {
     serveurOuvert = serveur.id
   }
 
+  /// Referme la page d'une machine.
+  ///
+  /// Sert quand on va AILLEURS — la page « Ajouter un serveur », par exemple :
+  /// sans cela, elle serait aussitôt remplacée par celle du serveur resté ouvert.
+  public func fermerPage() {
+    serveurOuvert = nil
+  }
+
 
   // MARK: - Les seuls écrivains des collections
 
@@ -1098,7 +1106,12 @@ public final class ModeleApp {
   /// d'un serveur en ligne comme preuve indirecte — et un serveur en ligne peut
   /// venir de la liste publiée par un AUTRE hôte, qui ne dit rien de cet
   /// appareil-ci. La première étape du parcours mérite la mesure directe.
-  public private(set) var tailnetDeLAppareil = false
+  /// `nil` TANT QU'ON N'A PAS MESURÉ, et ce n'est pas un détail : un `false` par
+  /// défaut affichait « à faire » pour une étape que personne n'avait constatée.
+  /// Constaté sur une capture, où l'ancre `--page-seule` court-circuite le
+  /// démarrage : le parcours affirmait que Tailscale n'était pas connecté alors
+  /// que le Mac l'était.
+  public private(set) var tailnetDeLAppareil: Bool?
 
   /// L'application Tailscale est-elle présente sur cet appareil ?
   ///
@@ -1132,7 +1145,7 @@ public final class ModeleApp {
       etatTailscale = .absent
       return
     }
-    if tailnetDeLAppareil {
+    if tailnetDeLAppareil == true {
       etatTailscale = .connecte
       return
     }

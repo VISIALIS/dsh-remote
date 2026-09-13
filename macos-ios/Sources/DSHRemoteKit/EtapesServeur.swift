@@ -70,20 +70,25 @@ public enum EtapesServeur {
   ///   - sertDsh: le verdict de la sonde — `nil` = pas encore su.
   ///   - cause: POURQUOI elle ne sert pas DSH, quand on le sait.
   public static func etapes(
-    tailnetDeLAppareil: Bool, enLigne: Bool, sertDsh: Bool?, cause: CauseSansDsh?
+    tailnetDeLAppareil: Bool?, enLigne: Bool, sertDsh: Bool?, cause: CauseSansDsh?
   ) -> [Etape] {
+    // « PAS ENCORE MESURÉ » N'EST PAS « NON ». Tant qu'on n'a pas constaté
+    // l'adresse de tailnet de cet appareil, l'étape 1 est INCONNUE — et les
+    // suivantes aussi, puisqu'on ne peut rien conclure d'un appareil dont on ne
+    // sait pas s'il est sur le réseau.
+    let etatDuReseau: Etat = tailnetDeLAppareil == nil ? .inconnue : (tailnetDeLAppareil! ? .franchie : .aFaire)
     // SANS TAILSCALE SUR CET APPAREIL, RIEN EN AVAL NE SE CONCLUT. Une liste de
     // machines peut dater d'avant la coupure ; une sonde peut avoir répondu il y
     // a une minute. Affirmer quoi que ce soit des étapes suivantes depuis un
     // appareil qui ne peut plus rien joindre serait parler du passé.
-    guard tailnetDeLAppareil else {
+    guard tailnetDeLAppareil == true else {
       return [
         Etape(
           numero: 1,
           titre: "Tailscale est connecté sur cet appareil",
           explication:
             "Sans cela, aucun Mac du tailnet n'est joignable — ni celui-ci, ni un autre.",
-          etat: .aFaire),
+          etat: etatDuReseau),
         Etape(
           numero: 2, titre: "Ce Mac est visible",
           explication: "Il est en ligne sur le tailnet, donc la découverte le propose.",
@@ -166,6 +171,42 @@ public enum EtapesServeur {
         titre: "Le plugin `dsh-remote` est installé",
         explication: "DSH Remote y répond : la machine peut servir l'application.",
         etat: plugin),
+    ]
+  }
+
+  /// LES ÉTAPES POUR AJOUTER UN SERVEUR — quand aucune machine n'est choisie.
+  ///
+  /// POURQUOI CE N'EST PAS `etapes(...)`. Là, on ne juge pas une machine : on
+  /// liste le travail à faire pour qu'un Mac DEVIENNE un serveur. Seule la
+  /// première étape se constate depuis ici (Tailscale sur cet appareil) ; les
+  /// autres s'adressent au Mac qu'on veut ajouter, et sont donc « à faire » —
+  /// c'est une LISTE, pas un verdict. Un verdict demanderait de connaître la
+  /// machine, et il n'y en a pas encore.
+  public static func etapesDAjout(tailnetDeLAppareil: Bool?) -> [Etape] {
+    [
+      Etape(
+        numero: 1,
+        titre: "Tailscale est connecté sur cet appareil",
+        explication:
+          "Sans cela, aucun Mac du tailnet n'est joignable — ni celui-ci, ni un autre.",
+        etat: tailnetDeLAppareil == nil ? .inconnue : (tailnetDeLAppareil! ? .franchie : .aFaire)),
+      Etape(
+        numero: 2,
+        titre: "Le Mac à ajouter est sur le tailnet",
+        explication:
+          "Il doit avoir Tailscale installé et connecté : c'est ce qui le rend visible depuis cet appareil.",
+        etat: .aFaire),
+      Etape(
+        numero: 3,
+        titre: "Le port de DSH y est ouvert",
+        explication:
+          "Son port 80 doit être publié par `tailscale serve` — sans quoi rien ne répond à son adresse.",
+        etat: .aFaire),
+      Etape(
+        numero: 4,
+        titre: "Le plugin `dsh-remote` y est installé",
+        explication: "DSH Remote doit y répondre : publier DSH ne suffit pas.",
+        etat: .aFaire),
     ]
   }
 
