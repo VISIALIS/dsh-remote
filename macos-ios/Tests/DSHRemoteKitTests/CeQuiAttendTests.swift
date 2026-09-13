@@ -108,3 +108,50 @@ func urgenceAvantInformation() {
   #expect(etatAttente == .attendReponse)
   #expect(etatFinie == .terminee)
 }
+
+// MARK: - À QUEL SERVEUR APPARTIENT LA LISTE
+
+@MainActor
+@Test("L'en-tête nomme le serveur dont on montre les espaces")
+func nomDuServeurAffiche() {
+  // POURQUOI CE NOM EXISTE. Les espaces de travail listés sont ceux du serveur
+  // JOINT : ils changent quand on change de machine. Le nom doit donc être dit,
+  // et il ne doit pas être deviné — la vignette du carrousel n'affiche que le
+  // premier mot du nom, que deux Macs peuvent partager.
+  let modele = ModeleApp()
+  let machine = ServeurMac(
+    nom: "Portable Deux", nomDNS: "portable-deux.exemple.ts.net", enLigne: true)
+  modele.remplacerServeursPourEssai([machine])
+  modele.definirAdresse(machine.adresse)
+  modele.appliquerSessions(
+    try! JSONDecoder().decode(
+      ListeSessions.self,
+      from: """
+        {"protocole":1,"total":1,"sessions":[
+          {"projet":"--x--","dossier":"/d","fichier":"/f","octets":1,"modifieLe":1,"vivante":true,
+           "id":"s1","creeLe":1,"preset":"standard","profondeurDelegation":0,
+           "seme":false,"titre":"T","dernierEvenementLe":1,"dernierSeq":1,"nbEnregistrements":1,
+           "tronque":false,"statut":"inactif"}]}
+        """.data(using: .utf8)!),
+    vu: modele.generationDuDepart())
+
+  #expect(modele.nomDuServeurAffiche == "Portable Deux")
+
+  // Adresse saisie à la main, machine inconnue de la liste : on dit l'hôte — un
+  // fait — plutôt que rien.
+  modele.definirAdresse("http://mac-mini.exemple.ts.net")
+  #expect(modele.nomDuServeurAffiche == "mac-mini.exemple.ts.net")
+}
+
+@MainActor
+@Test("Une liste vide n'appartient à personne")
+func pasDeNomSansListe() {
+  // Nommer un serveur au-dessus d'une liste vide laisserait croire qu'il a
+  // répondu : c'est exactement ce qu'un état vide ne doit pas faire.
+  let modele = ModeleApp()
+  let machine = ServeurMac(
+    nom: "Portable Deux", nomDNS: "portable-deux.exemple.ts.net", enLigne: true)
+  modele.remplacerServeursPourEssai([machine])
+  modele.definirAdresse(machine.adresse)
+  #expect(modele.nomDuServeurAffiche == nil)
+}

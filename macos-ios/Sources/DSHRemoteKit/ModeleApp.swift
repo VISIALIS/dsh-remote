@@ -353,6 +353,14 @@ public final class ModeleApp {
   /// Sessions affichées — données d'UN serveur, donc protégées par la génération.
   func appliquerSessions(_ liste: ListeSessions, vu generationVue: Int) {
     guard reponseEncoreValable(generationVue) else { return }
+    // LE COMPTE SE TRACE, avec celui des vivantes ET l'état du filtre : « 0
+    // session » à l'écran a trois causes très différentes — le serveur n'en rend
+    // aucune, la réponse a été refusée (401), ou le filtre « chargées en mémoire
+    // seulement » les écarte toutes. Une ligne les distingue, et l'écrivain
+    // unique est le seul endroit qui les voie toutes.
+    Trace.siActive(
+      "[liste] \(liste.sessions.count) session(s), \(liste.sessions.filter { $0.vivante == true }.count) vivante(s), filtre=\(filtresActifs)"
+    )
     sessions = liste.sessions
   }
 
@@ -2220,6 +2228,27 @@ public final class ModeleApp {
       if let preset = session.resume.preset, preset.lowercased().contains(terme) { return true }
       return false
     }
+  }
+
+  /// LE SERVEUR DONT ON MONTRE LES ESPACES DE TRAVAIL — son nom, jamais deviné.
+  ///
+  /// POURQUOI IL EXISTE. Les espaces listés ne sont pas un ensemble global : ce
+  /// sont ceux du serveur JOINT, et ils changent quand on change de machine. Or
+  /// le nom de ce serveur n'est visible nulle part quand une session est ouverte
+  /// — la vignette du carrousel n'affiche que le premier mot du nom, et deux
+  /// Macs peuvent le partager (« Portable Un », « Portable Deux »). L'en-tête de
+  /// la section le dit donc, à l'endroit où le lecteur se pose la question.
+  ///
+  /// `nil` quand il n'y a RIEN à attribuer : une liste vide n'appartient à
+  /// personne, et nommer un serveur au-dessus de rien laisserait croire qu'il a
+  /// répondu.
+  public var nomDuServeurAffiche: String? {
+    guard !sessions.isEmpty || !espacesHote.isEmpty else { return nil }
+    if let nom = serveurChoisi?.nom, !nom.isEmpty { return nom }
+    if let nom = nomServeur, !nom.isEmpty { return nom }
+    // Adresse saisie à la main, machine inconnue de la liste : on dit l'hôte,
+    // qui est un fait, plutôt que rien.
+    return ExceptionATS.hote(adresse)
   }
 
   /// Sessions regroupées par espace de travail, comme dans l'interface web.

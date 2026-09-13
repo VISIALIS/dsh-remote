@@ -451,9 +451,15 @@ struct VueListeSessions: View {
         //
         // Le protocole, lui, garde son nom : `/v1/espaces` est déjà français, et
         // `workspaceRegistry` reste l'API du harness.
+        // LES ESPACES DE TRAVAIL SONT CEUX D'UN SERVEUR, pas une liste globale :
+        // ils changent quand on change de machine. Le nom du serveur est dit
+        // ICI, parce que c'est le seul endroit qui reste visible quand une
+        // session est ouverte — la vignette du carrousel, elle, n'affiche que le
+        // premier mot du nom, et deux Macs peuvent le partager.
         EnteteSection(
           "Espaces de travail",
-          detail: "\(modele.sessionsFiltrees.count) session\(modele.sessionsFiltrees.count > 1 ? "s" : "")")
+          detail: "\(modele.sessionsFiltrees.count) session\(modele.sessionsFiltrees.count > 1 ? "s" : "")",
+          surtitre: modele.nomDuServeurAffiche)
       }
     }
     // `insetGrouped` est INDISPONIBLE sur macOS — la compilation le refuse, et
@@ -539,21 +545,38 @@ struct VueListeSessions: View {
 }
 
 /// En-tête de section : la graisse des en-têtes natifs, avec une valeur à droite.
+///
+/// LE SURTITRE DIT À QUOI LA SECTION APPARTIENT. Une section dont le contenu
+/// dépend d'un choix — les espaces de travail d'UN serveur, par exemple — doit
+/// pouvoir le nommer : sans cela, rien ne distingue une liste globale d'une liste
+/// liée à la machine qu'on regarde. Le nom est petit et discret AU-DESSUS du
+/// titre, pour ne pas concurrencer ce que la section contient.
 struct EnteteSection: View {
   let titre: String
   var detail: String?
+  var surtitre: String?
 
-  init(_ titre: String, detail: String? = nil) {
+  init(_ titre: String, detail: String? = nil, surtitre: String? = nil) {
     self.titre = titre
     self.detail = detail
+    self.surtitre = surtitre
   }
 
   var body: some View {
-    HStack {
-      Text(titre)
-      Spacer()
-      if let detail {
-        Text(detail).foregroundStyle(.secondary)
+    VStack(alignment: .leading, spacing: 2) {
+      if let surtitre {
+        Text(surtitre)
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+      HStack {
+        Text(titre)
+        Spacer()
+        if let detail {
+          Text(detail).foregroundStyle(.secondary)
+        }
       }
     }
   }
