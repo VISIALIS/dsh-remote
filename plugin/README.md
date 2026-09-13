@@ -6,8 +6,8 @@ remplace pas l'interface web : il expose à un programme ce que l'interface web
 ne sait dire qu'à un navigateur.
 
 Compagnon Swift : [`packages/dsh-remote-swift`](../dsh-remote-swift/) — client
-`DSHRemoteKit`, tool de validation `dsh-remote-ctl`, application SwiftUI (jalon 2,
-pas encore écrite).
+`DSHRemoteKit`, tool de validation `dsh-remote-ctl`, application SwiftUI **livrée**
+(macOS et iOS ; voir la feuille de route en fin de document).
 
 ---
 

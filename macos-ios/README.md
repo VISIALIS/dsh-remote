@@ -588,8 +588,13 @@ et l'écran ne peut plus mentir sur son contenu.
   plus produit par ce projet — la formulation précédente, « le projet couvre iOS et
   macOS », était trop large. Une destination « My Mac (Designed for iPad) » existe,
   mais la construction échoue faute de profil de provisionnement pour ce Mac.
-- **Tout essai sur iPhone réel** : voir le point 3 ci-dessus, qui est un préalable
-  administratif et non technique.
+- **Tout essai sur iPhone réel** : ~~voir le point 3 ci-dessus~~ **fait depuis** —
+  l'application est installée et signée sur l'appareil du propriétaire, et la section
+  « Installé sur l'iPhone » plus haut en donne les commandes et les mesures. Cette
+  ligne est conservée barrée parce qu'elle a dit le contraire pendant plusieurs
+  commits, alors que ce même fichier affirmait déjà l'installation : deux
+  affirmations incompatibles dans un document dont l'argument EST le tableau des
+  preuves, c'est précisément ce que la RÈGLE #5 interdit.
 - **Les questions de l'agent et les approbations.** Le composeur envoie un message,
   il ne répond pas à un `ask_user` ni à une demande de permission : ces surfaces ne
   sont pas exposées par le plugin, pour la raison documentée dans son README.
