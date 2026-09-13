@@ -89,8 +89,25 @@ public struct EvenementAffiche: Sendable, Identifiable {
   }
 
   /// Vrai si l'enregistrement porte du contenu long, donc repliable.
+  ///
+  /// POURQUOI CE N'EST PLUS UN SEUIL DE CARACTÈRES. La ligne montre QUATRE lignes
+  /// de texte (`lineLimit(4)`) et n'offrait le bouton « Développer » qu'au-delà de
+  /// 120 caractères : un message de six lignes COURTES — quatre-vingt-dix
+  /// caractères — était donc tronqué à l'écran sans aucun moyen de lire la suite.
+  /// Un texte caché ET rien pour l'ouvrir est le pire des deux mondes.
+  ///
+  /// Le compte des lignes est un fait du texte ; le nombre de caractères n'en est
+  /// qu'une approximation. Comme la largeur de la vue n'est pas connue ici, une
+  /// ligne longue est estimée à quarante caractères — la mesure d'un iPhone
+  /// étroit, donc du cas qui tronque le plus tôt : mieux vaut offrir le bouton
+  /// pour rien que de cacher un texte.
   public var estVolumineux: Bool {
-    resume.count > 120 || (donnees?.arguments?.count ?? 0) > 120
+    if (donnees?.arguments?.count ?? 0) > 120 { return true }
+    let lignes = resume.split(separator: "\n", omittingEmptySubsequences: false)
+    let estimees = lignes.reduce(0) { total, ligne in
+      total + max(1, (ligne.count + 39) / 40)
+    }
+    return estimees > 4
   }
 
   private func blocs(de typeCherche: String) -> [String] {

@@ -7,91 +7,273 @@ import SwiftUI
 /// un tableau de correspondance exhaustif : un type que cette version ne connaît
 /// pas s'affiche quand même, avec son nom. Le harness ajoute des types d'événements
 /// régulièrement, et une interface qui casse à chaque ajout serait inutilisable.
+///
+/// TROIS RÈGLES TENUES ICI, chacune née d'un défaut vu à l'écran :
+///
+///   1. **le journal appartient à SA session.** Un échec de lecture laissait
+///      l'ancien journal sous le titre de la nouvelle session — les événements
+///      d'une conversation affichés sous le nom d'une autre, sans rien pour le
+///      dire. Tout ce qui est montré est donc filtré par `journalPour` ;
+///   2. **un échec se dit, et se réessaie.** La connexion peut très bien aller
+///      bien : c'est la lecture de CE journal qui a échoué. Le taire ferait
+///      chercher une panne ailleurs ;
+///   3. **le journal suit sa fin.** Il s'ouvre sur le dernier événement et y reste
+///      tant qu'on ne remonte pas lire ; quand on remonte, un compteur dit ce qui
+///      est arrivé pendant ce temps, et ramène en bas d'un appui.
 struct VueJournal: View {
   let modele: ModeleApp
   let session: SessionListee
 
+  /// L'ancre du défilement : une ligne invisible, en fin de liste.
+  private static let ancreDeFin = "fin-du-journal"
+
+  /// L'utilisateur est-il AU BAS du journal ? (Voir `SuiviDuBas` pour le repli.)
+  @State private var auBas = true
+  /// Combien d'événements sont arrivés depuis qu'il en est parti ?
+  @State private var arrivesDepuis = 0
+
+  /// LE RÉSUMÉ DE **CETTE** SESSION — jamais celui d'une autre.
+  ///
+  /// POURQUOI LA GARDE. `sessionOuverte` décrit la dernière session Chargée ; si
+  /// elle n'est pas celle qu'on regarde, son titre et son chemin ne doivent pas
+  /// s'afficher ici. C'est exactement le défaut réparé, à l'endroit où il se
+  /// voyait.
+  private var resume: ResumeSession? {
+    modele.sessionOuverte?.id == session.id ? modele.sessionOuverte : nil
+  }
+
+  /// LES ÉVÉNEMENTS DE **CETTE** SESSION — vides s'ils appartiennent à une autre.
+  ///
+  /// POURQUOI LA GARDE EST ICI AUSSI. `ouvrir` remet le journal à zéro avant de
+  /// demander, mais entre l'apparition de la vue et l'exécution de sa tâche, un
+  /// rendu peut avoir lieu : sans ce filtre, l'espace d'une image, les
+  /// événements de la session précédente s'afficheraient sous le nouveau titre.
+  private var evenements: [EvenementAffiche] {
+    modele.journalPour == session.id ? modele.journal : []
+  }
+
+  private var erreurDeLecture: String? { modele.erreurJournal(pour: session.id) }
+  private var enLecture: Bool { modele.journalEnLecture(pour: session.id) }
+
   var body: some View {
-    List {
-      if let titre = modele.sessionOuverte?.titre ?? session.resume.titre {
-        Section {
-          VStack(alignment: .leading, spacing: 4) {
-            Text(titre).font(.headline)
-            if let cwd = modele.sessionOuverte?.cwd {
-              Text(cwd).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+    ScrollViewReader { proxy in
+      List {
+        enTete
+        sectionJournal
+      }
+      .navigationTitle(session.titreAffiche)
+      #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+      #endif
+      // LE JOURNAL S'OUVRE SUR SA FIN, et y reste quand le contenu grandit :
+      // c'est ce que fait `defaultScrollAnchor(.bottom)`, et c'est le seul
+      // réglage qui donne le comportement attendu d'un journal.
+      .defaultScrollAnchor(.bottom)
+      .modifier(SuiviDuBas(auBas: $auBas))
+      .onChange(of: modele.journal.count) { ancien, nouveau in
+        suivreLaFin(proxy, ancien: ancien, nouveau: nouveau)
+      }
+      .onChange(of: session.id) { _, _ in
+        // Changer de session remet le compteur à zéro : il comptait pour une
+        // autre conversation.
+        arrivesDepuis = 0
+        auBas = true
+      }
+      .toolbar {
+        ToolbarItem(placement: .primaryAction) {
+          // Le suivi en direct se voit et se commande : un flux silencieux qui
+          // s'arrête sans le dire laisserait croire que la session est inactive.
+          Button {
+            if modele.enDirect {
+              modele.arreterFlux()
+            } else {
+              Task { await modele.demarrerFlux(session.id) }
             }
-            HStack(spacing: 10) {
-              if let preset = modele.sessionOuverte?.preset {
-                Label(preset, systemImage: "slider.horizontal.3")
-              }
-              if let total = modele.sessionOuverte?.nbEnregistrements {
-                Label("\(total) évts", systemImage: "list.bullet")
-              }
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+          } label: {
+            Label(
+              modele.enDirect ? "En direct" : "Suivi arrêté",
+              systemImage: modele.enDirect ? "dot.radiowaves.left.and.right" : "pause.circle")
+              .foregroundStyle(modele.enDirect ? Color.green : Color.secondary)
           }
+        }
+      }
+      // Charger le journal est ce qui DONNE son contenu à cette vue.
+      //
+      // POURQUOI CE `.task` EST INDISPENSABLE. La sélection d'une session fait bien
+      // apparaître cet écran — titre, chemin, preset — mais l'en-tête seul ne lit
+      // rien : sans cet appel, le journal affichait « 0 affichés » pour une session
+      // qui en comptait 48. Un écran qui a l'air fonctionnel et qui ne montre rien
+      // est plus trompeur qu'une erreur. Le défaut a été trouvé en REGARDANT le
+      // simulateur, pas en compilant.
+      //
+      // `.task(id:)` et non `.task` : changer de session doit relire le journal,
+      // sans quoi la seconde session ouvrirait le journal de la première.
+      .task(id: session.id) {
+        await modele.ouvrir(session)
+      }
+      // Quitter le journal, c'est cesser de REGARDER la session : son rappel de fin
+      // pourra de nouveau s'armer. Le journal chargé et le flux restent en place.
+      .onDisappear {
+        modele.quitterJournal(session.id)
+      }
+      // Le composeur n'apparaît que si l'HÔTE a annoncé savoir écrire : une barre
+      // de saisie qui ne peut rien envoyer est pire que pas de barre du tout.
+      .safeAreaInset(edge: .bottom, spacing: 0) {
+        VStack(spacing: 8) {
+          if !auBas, arrivesDepuis > 0 { boutonRevenirEnBas(proxy) }
+          if modele.ecriturePossible {
+            ComposeurEcriture(modele: modele, session: session)
+          }
+        }
+      }
+    }
+  }
+
+  // MARK: - L'en-tête
+
+  @ViewBuilder
+  private var enTete: some View {
+    if let resume {
+      Section {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(resume.titre ?? session.titreAffiche).font(.headline)
+          if let cwd = resume.cwd {
+            Text(cwd).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+          }
+          HStack(spacing: 10) {
+            if let preset = resume.preset {
+              Label(preset, systemImage: "slider.horizontal.3")
+            }
+            if let total = resume.nbEnregistrements {
+              Label("\(total) évts", systemImage: "list.bullet")
+            }
+          }
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+        }
+      }
+    }
+  }
+
+  // MARK: - Le journal, et ses trois états
+
+  @ViewBuilder
+  private var sectionJournal: some View {
+    Section("Journal (\(evenements.count) affichés)") {
+      ForEach(evenements) { evenement in
+        LigneEvenement(evenement: evenement)
+      }
+      // L'ANCRE DE FIN. Une ligne vide, haute d'un point, qui donne au
+      // défilement un point d'arrivée stable — et qui sert aussi de cible au
+      // bouton « aller à la fin ».
+      Color.clear
+        .frame(height: 1)
+        .id(Self.ancreDeFin)
+        .listRowSeparator(.hidden)
+        .sansSeparateurMac()
+
+      // ON LIT : c'est un état, et il se voit. Il était conditionné à
+      // `journal.isEmpty` — donc jamais montré quand un ancien journal
+      // traînait, ce qui était précisément le cas où l'écran mentait.
+      if enLecture {
+        HStack(spacing: 8) {
+          ProgressView().controlSize(.small)
+          Text("Lecture du journal…").font(.callout).foregroundStyle(.secondary)
         }
       }
 
-      Section("Journal (\(modele.journal.count) affichés)") {
-        ForEach(modele.journal) { evenement in
-          LigneEvenement(evenement: evenement)
-        }
-      }
-    }
-    .navigationTitle(session.titreAffiche)
-    #if os(iOS)
-      .navigationBarTitleDisplayMode(.inline)
-    #endif
-    .toolbar {
-      ToolbarItem(placement: .primaryAction) {
-        // Le suivi en direct se voit et se commande : un flux silencieux qui
-        // s'arrête sans le dire laisserait croire que la session est inactive.
-        Button {
-          if modele.enDirect {
-            modele.arreterFlux()
-          } else {
-            Task { await modele.demarrerFlux(session.id) }
+      // ON A ÉCHOUÉ : on le dit, et on offre de recommencer.
+      if let erreurDeLecture {
+        VStack(alignment: .leading, spacing: 8) {
+          Label("Le journal n'a pas pu être lu.", systemImage: "exclamationmark.triangle")
+            .font(.callout)
+            .foregroundStyle(.orange)
+          Text(erreurDeLecture)
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+          Button("Réessayer") {
+            Task { await modele.ouvrir(session) }
           }
-        } label: {
-          Label(
-            modele.enDirect ? "En direct" : "Suivi arrêté",
-            systemImage: modele.enDirect ? "dot.radiowaves.left.and.right" : "pause.circle")
-            .foregroundStyle(modele.enDirect ? Color.green : Color.secondary)
+          .buttonStyle(.bordered)
         }
       }
-    }
-    .overlay {
-      if modele.enChargement, modele.journal.isEmpty {
-        ProgressView("Lecture du journal…")
+
+      // ON A LU, ET IL N'Y A RIEN : un état vide se dit, il ne se devine pas.
+      if evenements.isEmpty, !enLecture, erreurDeLecture == nil {
+        ContentUnavailableView(
+          "Aucun événement",
+          systemImage: "text.page.slash",
+          description: Text("Cette session n'a encore rien écrit.")
+        )
       }
     }
-    // Charger le journal est ce qui DONNE son contenu à cette vue.
-    //
-    // POURQUOI CE `.task` EST INDISPENSABLE. La sélection d'une session fait bien
-    // apparaître cet écran — titre, chemin, preset — mais l'en-tête seul ne lit
-    // rien : sans cet appel, le journal affichait « 0 affichés » pour une session
-    // qui en comptait 48. Un écran qui a l'air fonctionnel et qui ne montre rien
-    // est plus trompeur qu'une erreur. Le défaut a été trouvé en REGARDANT le
-    // simulateur, pas en compilant.
-    //
-    // `.task(id:)` et non `.task` : changer de session doit relire le journal,
-    // sans quoi la seconde session ouvrirait le journal de la première.
-    .task(id: session.id) {
-      await modele.ouvrir(session)
-    }
-    // Quitter le journal, c'est cesser de REGARDER la session : son rappel de fin
-    // pourra de nouveau s'armer. Le journal chargé et le flux restent en place.
-    .onDisappear {
-      modele.quitterJournal(session.id)
-    }
-    // Le composeur n'apparaît que si l'HÔTE a annoncé savoir écrire : une barre
-    // de saisie qui ne peut rien envoyer est pire que pas de barre du tout.
-    .safeAreaInset(edge: .bottom) {
-      if modele.ecriturePossible {
-        ComposeurEcriture(modele: modele, session: session)
+  }
+
+  // MARK: - Suivre la fin
+
+  /// Ramène en bas quand de nouveaux événements arrivent — SI on y était déjà.
+  private func suivreLaFin(_ proxy: ScrollViewProxy, ancien: Int, nouveau: Int) {
+    guard nouveau != ancien else { return }
+    if auBas {
+      withAnimation(.easeOut(duration: 0.2)) {
+        proxy.scrollTo(Self.ancreDeFin, anchor: .bottom)
       }
+    } else if nouveau > ancien {
+      // ON REMONTE POUR LIRE : on ne tire pas l'utilisateur par la manche, on
+      // lui DIT ce qui est arrivé et on lui laisse le geste.
+      arrivesDepuis += nouveau - ancien
+    }
+  }
+
+  /// Le bouton qui ramène à la fin, avec ce qui attend.
+  private func boutonRevenirEnBas(_ proxy: ScrollViewProxy) -> some View {
+    Button {
+      arrivesDepuis = 0
+      auBas = true
+      withAnimation(.easeOut(duration: 0.2)) {
+        proxy.scrollTo(Self.ancreDeFin, anchor: .bottom)
+      }
+    } label: {
+      Label(
+        arrivesDepuis > 1
+          ? "\(arrivesDepuis) nouveaux événements" : "1 nouvel événement",
+        systemImage: "arrow.down.circle.fill")
+        .font(.caption)
+    }
+    .buttonStyle(.borderedProminent)
+    .buttonBorderShape(.capsule)
+    .padding(.bottom, 4)
+    .accessibilityLabel(
+      arrivesDepuis > 1
+        ? "\(arrivesDepuis) nouveaux événements — aller à la fin du journal"
+        : "Un nouvel événement — aller à la fin du journal")
+  }
+}
+
+/// « SUIS-JE AU BAS DU JOURNAL ? » — mesuré, quand la plateforme sait le dire.
+///
+/// POURQUOI CE MODIFICATEUR SÉPARÉ. `onScrollGeometryChange` demande iOS 18 /
+/// macOS 15, alors que l'application vise iOS 17 / macOS 14 : l'appeler
+/// directement ne compilerait plus pour sa cible. Le repli ne prétend pas
+/// savoir — il répond « oui, je suis en bas », donc le journal suit sa fin. C'est
+/// le comportement d'un journal qu'on vient d'ouvrir, et le moins surprenant
+/// quand on ne peut pas mesurer.
+struct SuiviDuBas: ViewModifier {
+  @Binding var auBas: Bool
+
+  func body(content: Content) -> some View {
+    if #available(iOS 18.0, macOS 15.0, *) {
+      content.onScrollGeometryChange(for: Bool.self) { geometrie in
+        // 24 points de tolérance : le bas exact dépend du rebond élastique, et
+        // exiger l'égalité ferait clignoter le bouton.
+        geometrie.contentOffset.y + geometrie.containerSize.height
+          >= geometrie.contentSize.height - 24
+      } action: { _, nouveau in
+        auBas = nouveau
+      }
+    } else {
+      content
     }
   }
 }
@@ -122,11 +304,17 @@ struct LigneEvenement: View {
         .lineLimit(deplie ? nil : 4)
         .textSelection(.enabled)
 
+      // LE BOUTON DIT CE QU'IL CACHE. Il n'apparaissait qu'au-delà de 120
+      // caractères, alors que la ligne en montre QUATRE : un message de six
+      // lignes courtes — quatre-vingt-dix caractères — était tronqué sans aucun
+      // moyen de lire la suite. Le seuil suit maintenant la troncature réelle
+      // (`Evenements.estVolumineux`).
       if evenement.estVolumineux {
         Button(deplie ? "Réduire" : "Développer") { deplie.toggle() }
           .buttonStyle(.plain)
           .font(.caption)
           .foregroundStyle(.tint)
+          .cibleTactile()
       }
     }
     .padding(.vertical, 2)
