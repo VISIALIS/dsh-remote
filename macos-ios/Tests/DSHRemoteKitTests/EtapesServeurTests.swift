@@ -43,6 +43,56 @@ func macHorsLigne() {
   #expect(EtapesServeur.premiereAEtapesFranchir(etapes) == 2)
 }
 
+@Test("L'explication de l'étape 2 SUIT son état — hors ligne ne se dit pas « en ligne »")
+func explicationDeLaVisibilite() {
+  // Défaut constaté sur capture, sur un Mac éteint : l'étape 2 était déclarée
+  // « à faire » et s'expliquait pourtant par « Il est en ligne sur le tailnet,
+  // donc la découverte le propose ». Une explication qui contredit son propre
+  // titre fait douter du diagnostic entier, et envoie chercher au mauvais
+  // endroit : ici, l'utilisateur croyait la machine joignable.
+  let horsLigne = EtapesServeur.etapes(
+    tailnetDeLAppareil: true, enLigne: false, sertDsh: nil, cause: nil)
+  let visibilite = horsLigne.first { $0.numero == 2 }
+  #expect(visibilite?.etat == .aFaire)
+  #expect(visibilite?.explication.contains("hors ligne") == true)
+  // La phrase de l'étape franchie ne doit plus pouvoir s'afficher ici.
+  #expect(visibilite?.explication.contains("est en ligne") == false)
+
+  // Le cas symétrique reste dit comme avant.
+  let enLigne = EtapesServeur.etapes(
+    tailnetDeLAppareil: true, enLigne: true, sertDsh: nil, cause: nil)
+  #expect(enLigne.first { $0.numero == 2 }?.explication.contains("en ligne") == true)
+
+  // Et depuis un appareil hors tailnet, on ne peut RIEN dire de la visibilité de
+  // ce Mac-là : l'explication le dit, au lieu d'affirmer qu'il est en ligne.
+  // C'était le second endroit où la phrase de l'étape franchie s'affichait pour
+  // une étape inconnue.
+  let dAilleurs = EtapesServeur.etapes(
+    tailnetDeLAppareil: false, enLigne: true, sertDsh: true, cause: nil)
+  let inconnue = dAilleurs.first { $0.numero == 2 }
+  #expect(inconnue?.etat == .inconnue)
+  #expect(inconnue?.explication.contains("est en ligne") == false)
+}
+
+@Test("Aucune explication n'affirme l'inverse de son état")
+func explicationsCoherentesAvecLEtat() {
+  // Même règle pour les deux étapes que la sonde juge : une étape « à faire »
+  // décrit ce qui EST constaté, pas ce que l'étape franchie voulait dire.
+  let portFerme = EtapesServeur.etapes(
+    tailnetDeLAppareil: true, enLigne: true, sertDsh: false, cause: .rienNEcoute)
+  let port = portFerme.first { $0.numero == 3 }
+  #expect(port?.etat == .aFaire)
+  #expect(port?.explication.contains("ne le publie pas") == true)
+  #expect(port?.explication.contains("est publié") == false)
+
+  let sansPlugin = EtapesServeur.etapes(
+    tailnetDeLAppareil: true, enLigne: true, sertDsh: false, cause: .pluginAbsent)
+  let plugin = sansPlugin.first { $0.numero == 4 }
+  #expect(plugin?.etat == .aFaire)
+  #expect(plugin?.explication.contains("n'y répond pas") == true)
+  #expect(plugin?.explication.contains("y répond :") == false)
+}
+
 @Test("Port fermé : on n'accuse PAS le plugin, qui est peut-être installé")
 func portFerme() {
   // `-1004` : la machine répond, mais rien n'écoute sur son port 80.

@@ -83,25 +83,10 @@ public enum EtapesServeur {
     // appareil qui ne peut plus rien joindre serait parler du passé.
     guard tailnetDeLAppareil == true else {
       return [
-        Etape(
-          numero: 1,
-          titre: "Tailscale est connecté sur cet appareil",
-          explication:
-            "Sans cela, aucun Mac du tailnet n'est joignable — ni celui-ci, ni un autre.",
-          etat: etatDuReseau),
-        Etape(
-          numero: 2, titre: "Ce Mac est visible",
-          explication: "Il est en ligne sur le tailnet, donc la découverte le propose.",
-          etat: .inconnue),
-        Etape(
-          numero: 3, titre: "Le port de DSH est ouvert",
-          explication:
-            "Son port 80 est publié par `tailscale serve`, donc quelque chose répond à son adresse.",
-          etat: .inconnue),
-        Etape(
-          numero: 4, titre: "Le plugin `dsh-remote` est installé",
-          explication: "DSH Remote y répond : la machine peut servir l'application.",
-          etat: .inconnue),
+        etape(1, etatDuReseau),
+        etape(2, .inconnue),
+        etape(3, .inconnue),
+        etape(4, .inconnue),
       ]
     }
 
@@ -149,29 +134,71 @@ public enum EtapesServeur {
     }
 
     return [
-      Etape(
-        numero: 1,
-        titre: "Tailscale est connecté sur cet appareil",
-        explication:
-          "Sans cela, aucun Mac du tailnet n'est joignable — ni celui-ci, ni un autre.",
-        etat: .franchie),
-      Etape(
-        numero: 2,
-        titre: "Ce Mac est visible",
-        explication: "Il est en ligne sur le tailnet, donc la découverte le propose.",
-        etat: visibilite),
-      Etape(
-        numero: 3,
-        titre: "Le port de DSH est ouvert",
-        explication:
-          "Son port 80 est publié par `tailscale serve`, donc quelque chose répond à son adresse.",
-        etat: port),
-      Etape(
-        numero: 4,
-        titre: "Le plugin `dsh-remote` est installé",
-        explication: "DSH Remote y répond : la machine peut servir l'application.",
-        etat: plugin),
+      etape(1, .franchie),
+      etape(2, visibilite),
+      etape(3, port),
+      etape(4, plugin),
     ]
+  }
+
+  /// UNE ÉTAPE, DITE DANS LES MOTS DE SON ÉTAT.
+  ///
+  /// POURQUOI LES TEXTES SONT ICI, ET NON AUX DEUX POINTS DE CONSTRUCTION. Les
+  /// quatre étapes étaient écrites DEUX FOIS — pour l'appareil hors tailnet, puis
+  /// pour la machine jugée — et les deux copies décrivaient l'étape FRANCHIE quel
+  /// que soit l'état. Constaté sur capture, sur un Mac éteint : l'étape 2,
+  /// déclarée « à faire », s'expliquait par « Il est en ligne sur le tailnet, donc
+  /// la découverte le propose ». Une explication qui contredit son propre titre
+  /// fait douter du diagnostic entier — et envoie chercher au mauvais endroit.
+  ///
+  /// TROIS FORMES, une par état :
+  ///
+  /// - `franchie` : ce que l'état EST, constaté ;
+  /// - `aFaire` : le constat INVERSE. La marche à suivre n'est pas répétée ici :
+  ///   la méthode s'affiche juste en dessous, et l'écrire deux fois dilue celle
+  ///   qui compte ;
+  /// - `inconnue` : ce que l'étape DEMANDE, puisqu'on ne peut rien constater.
+  private static func etape(_ numero: Int, _ etat: Etat) -> Etape {
+    let titre: String
+    let explication: String
+    switch numero {
+    case 1:
+      titre = "Tailscale est connecté sur cet appareil"
+      explication = "Sans cela, aucun Mac du tailnet n'est joignable — ni celui-ci, ni un autre."
+    case 2:
+      titre = "Ce Mac est visible"
+      switch etat {
+      case .franchie:
+        explication = "Il est en ligne sur le tailnet, donc la découverte le propose."
+      case .aFaire:
+        explication = "Il est hors ligne sur le tailnet : la découverte ne le propose donc pas."
+      case .inconnue:
+        explication = "On ne peut pas le savoir d'ici : Tailscale n'est pas connecté sur cet appareil."
+      }
+    case 3:
+      titre = "Le port de DSH est ouvert"
+      switch etat {
+      case .franchie:
+        explication =
+          "Son port 80 est publié par `tailscale serve`, donc quelque chose répond à son adresse."
+      case .aFaire:
+        explication = "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas."
+      case .inconnue:
+        explication =
+          "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse."
+      }
+    default:
+      titre = "Le plugin `dsh-remote` est installé"
+      switch etat {
+      case .franchie:
+        explication = "DSH Remote y répond : la machine peut servir l'application."
+      case .aFaire:
+        explication = "DSH Remote n'y répond pas : la machine ne peut pas servir l'application."
+      case .inconnue:
+        explication = "DSH Remote doit y répondre pour que la machine serve l'application."
+      }
+    }
+    return Etape(numero: numero, titre: titre, explication: explication, etat: etat)
   }
 
   /// LES ÉTAPES POUR AJOUTER UN SERVEUR — quand aucune machine n'est choisie.

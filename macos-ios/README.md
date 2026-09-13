@@ -458,6 +458,23 @@ ne fait pas conclure que le port est fermé.
 commande : elles noieraient celle qui bloque. Chaque étape non franchie porte sa
 méthode, avec les commandes qui se copient d'un appui.
 
+**UNE EXPLICATION SUIT SON ÉTAT.** Les quatre explications étaient écrites au présent de
+l'étape FRANCHIE, et les deux copies de la liste — appareil hors tailnet, machine jugée —
+les répétaient telles quelles. Sur un Mac éteint, la page lisait donc, sous un titre
+déclarant l'étape « à faire » : « Il est en ligne sur le tailnet, donc la découverte le
+propose ». Constaté sur capture, et signalé par le propriétaire : « l'étape 2 si le serveur
+est off-line, le message doit le prendre en compte ». Une explication qui contredit son
+propre état fait douter du diagnostic entier, et envoie chercher au mauvais endroit.
+
+Les textes vivent maintenant dans une **fabrique unique** (`EtapesServeur.etape(_:_:)`), que
+les deux sorties de `etapes(...)` partagent — c'était la duplication qui avait laissé la
+phrase fausse à deux endroits. Trois formes, une par état : pour une étape **franchie**, ce
+que l'état EST ; pour une étape **à faire**, le constat INVERSE, sans la marche à suivre (la
+méthode s'affiche juste en dessous, et l'écrire deux fois dilue celle qui compte) ; pour une
+étape **inconnue**, ce que l'étape DEMANDE, puisqu'on ne peut rien constater. Deux tests
+l'éprouvent : sur l'étape 2 hors ligne, sur l'appareil hors tailnet, et sur les étapes 3 et
+4 quand c'est le port ou le plugin qui manque.
+
 Vérifié par capture, sur les deux cas qui comptent : MacMini (port ouvert, plugin
 absent → étapes 1 et 2 vertes, étape 3 à faire avec le bloc `cordis.patch.yml` à
 copier) et un Mac hors ligne (étape 1 à faire avec `tailscale status` / `tailscale
