@@ -21,6 +21,40 @@ import Foundation
 public final class ModeleApp {
   public var jetonSaisi: String = ""
 
+  /// Où les jetons sont gardés — un par hôte.
+  private let gardien: GardienDeJetons
+
+  /// Délai de la QUESTION COURTE : « y a-t-il un DSH en face ? »
+  ///
+  /// `sante` répond en MILLISECONDES — mesuré trois fois : 4,1 ms, 3,2 ms,
+  /// 1,6 ms. Cinq secondes laissent mille fois la marge nécessaire, et refusent
+  /// d'attendre une machine qui ne répond rien : c'est la question dont la
+  /// réponse doit être rapide, parce que c'est elle qui décide si l'on attend.
+  public static let delaiSante: TimeInterval = 5
+
+  /// Délai de la LISTE des sessions — une lecture LOURDE, donc patiente.
+  ///
+  /// POURQUOI ELLE A SON PROPRE PLAFOND, ET POURQUOI IL EST LONG. Mesuré sur un
+  /// harness occupé : **4,06 s à froid** (200 sessions à relire), puis 15 à
+  /// 27 ms une fois son cache chaud. Un plafond court ne protège de rien : il
+  /// transforme une machine occupée en machine en panne. C'est exactement ce qui
+  /// est arrivé avec un plafond unique de huit secondes — une connexion
+  /// parfaitement valide a été refusée après **8055 ms**, et l'application a
+  /// annoncé un échec pour un serveur qui répondait.
+  public static let delaiListe: TimeInterval = 30
+
+  /// Délai des routes qui font travailler l'HÔTE (`/v1/serveurs`).
+  ///
+  /// POURQUOI PLUS LONG QUE LA CONNEXION : chez lui, la route borne son appel à
+  /// `tailscale status` à huit secondes. Un client qui coupe à huit secondes
+  /// couperait EXACTEMENT ce que l'hôte s'autorise — une course perdue d'avance
+  /// les jours où le CLI est lent.
+  public static let delaiHote: TimeInterval = 14
+
+  /// La clé du dernier jeton CHARGÉ, pour ne pas relire le trousseau à chaque
+  /// frappe dans le champ d'adresse (une lecture par caractère, sinon).
+  private var cleJetonChargee: String?
+
   public private(set) var sessions: [SessionListee] = []
   public private(set) var journal: [EvenementAffiche] = []
   public private(set) var sessionOuverte: ResumeSession?
@@ -100,8 +134,40 @@ public final class ModeleApp {
   public private(set) var cible = Cible(adresse: ModeleApp.adresseParDefaut)
 
   /// LE SEUL endroit qui remplace la cible.
+  ///
+  /// Ellecharge aussi le jeton QUI VA AVEC : puisque chaque hôte a le sien
+  /// (mesuré), changer de machine sans changer de jeton enverrait à l'une le
+  /// secret de l'autre.
   private func viser(_ nouvelle: Cible) {
     cible = nouvelle
+    chargerJetonDeLaCible()
+  }
+
+  /// Charge, depuis le gardien, le jeton gardé POUR CETTE machine.
+  ///
+  /// Ne relit que si la clé d'hôte a changé : le champ d'adresse déclenche une
+  /// transition par frappe, et une lecture de trousseau par caractère serait un
+  /// gaspillage — sans compter les invites système qu'elle peut provoquer.
+  private func chargerJetonDeLaCible() {
+    let cle = ModeleApp.cleServeur(cible.adresse)
+    guard cle != cleJetonChargee else { return }
+    cleJetonChargee = cle
+    jetonSaisi = gardien.lire(pour: cle) ?? ""
+  }
+
+  /// Le jeton À UTILISER pour la cible : celui gardé POUR ELLE, sinon — et
+  /// seulement si la cible EST cette machine — celui du coffre local.
+  ///
+  /// POURQUOI LE COFFRE N'EST CONSULTÉ QU'ICI. `~/.dsh/.credentials.yaml`
+  /// contient le jeton émis par l'hôte LOCAL, et rien d'autre. Le proposer pour
+  /// une autre machine, c'était lui envoyer le secret d'une autre — et un refus
+  /// qui ne dit pas son nom. Quand on ne sait pas, on ne devine pas : le champ
+  /// de jeton est sur la page, à portée.
+  public func jetonDeLaCible() -> String {
+    let cle = ModeleApp.cleServeur(cible.adresse)
+    if let garde = gardien.lire(pour: cle), !garde.isEmpty { return garde }
+    guard serveurVise?.estLocal == true else { return "" }
+    return Self.jetonLocal() ?? ""
   }
 
   // Les noms historiques restent : les vues les lisent, et rien n'oblige à les
@@ -289,7 +355,7 @@ public final class ModeleApp {
   /// publie DSH répond en quelques millisecondes sur le tailnet, et qu'un Mac
   /// muet ne mérite pas qu'on l'attende.
   public func sonderLesServeurs() async {
-    let jeton = jetonSaisi.isEmpty ? (Self.jetonLocal() ?? "") : jetonSaisi
+    let jeton = jetonDeLaCible()
     // POURQUOI DEUX GARDES SÉPARÉS. Un jeton manquant rend la sonde IMPOSSIBLE :
     // on marque alors l'état comme su, pour que les icônes cessent d'attendre.
     // Mais une liste VIDE n'est pas un verdict — c'est une course : la sonde est
@@ -543,7 +609,8 @@ public final class ModeleApp {
   /// Dernier `seq` reçu par le flux, à repasser en `depuisSeq` si l'on rouvre.
   public private(set) var dernierSeqVu: Int?
 
-  public init() {
+  public init(gardien: GardienDeJetons = GardienParDefaut.faire()) {
+    self.gardien = gardien
     chargerConfiguration()
     chargerPreference()
     chargerPreferencesServeurs()
@@ -661,12 +728,23 @@ public final class ModeleApp {
     }
   }
 
+  /// Un client pour les routes qui font travailler l'HÔTE, au délai plus long.
+  ///
+  /// POURQUOI UN CLIENT À PART. Ces routes interrogent le CLI Tailscale de
+  /// l'hôte, qui borne son propre appel à huit secondes. Le client de connexion
+  /// coupe à huit : il couperait exactement ce que l'hôte s'autorise. On ne parle
+  /// à l'hôte que si on l'a déjà joint — `client` en est la preuve.
+  private func clientPourLhote() -> RemoteClient? {
+    guard client != nil, !adresse.isEmpty else { return nil }
+    return try? RemoteClient(adresse: adresse, jeton: jetonDeLaCible(), delai: ModeleApp.delaiHote)
+  }
+
   /// Demande la liste à l'hôte déjà joint — la voie qui fonctionne sur iPhone.
   ///
   /// Sans bruit en cas d'échec : l'utilisateur n'a rien demandé, et une liste
   /// qui ne vient pas ne doit pas effacer celle qu'il a sous les yeux.
   private func chargerServeursDeLhote() async {
-    guard let client else { return }
+    guard let client = clientPourLhote() else { return }
     guard let liste = try? await client.listerServeurs() else {
       print("[demarrage] liste des serveurs : ECHEC")
       return
@@ -1148,7 +1226,7 @@ public final class ModeleApp {
     connexion = .enCours
     defer { enChargement = false }
     enChargement = true
-    let jeton = jetonSaisi.isEmpty ? (Self.jetonLocal() ?? "") : jetonSaisi
+    let jeton = jetonDeLaCible()
     guard !jeton.isEmpty else {
       connexion = .incomplete("aucun jeton : collez-le d'abord")
       return
@@ -1158,10 +1236,11 @@ public final class ModeleApp {
       return
     }
     do {
-      let client = try RemoteClient(adresse: adresse, jeton: jeton)
+      let client = try RemoteClient(adresse: adresse, jeton: jeton, delai: ModeleApp.delaiSante)
       let sante = try await client.verifierSante()
-      self.client = client
-      let liste = try await client.listerSessions(limite: 200)
+      let patient = try RemoteClient(adresse: adresse, jeton: jeton, delai: ModeleApp.delaiListe)
+      self.client = patient
+      let liste = try await patient.listerSessions(limite: 200)
       sessions = liste.sessions
       connexion = .jointe(sante, reponses: liste.total ?? liste.sessions.count)
       // Le test d'adresse est aussi une connexion : si l'hôte sait publier la
@@ -1311,7 +1390,10 @@ public final class ModeleApp {
     {
       return valeur
     }
-    return Trousseau.lire()
+    // Plus de repli sur le trousseau ICI : le coffre local parle de la machine
+    // LOCALE, et c'est tout. Le jeton d'un hôte distant se lit par la clé de cet
+    // hôte (`jetonDeLaCible`), pas en dernier recours.
+    return nil
   }
 
   /// Extrait le jeton d'appareil du coffre, en ciblant SA clé.
@@ -1396,12 +1478,21 @@ public final class ModeleApp {
     defaults.removeObject(forKey: Self.cleNomServeur)
   }
 
-  /// Efface le jeton saisi, en mémoire et au trousseau.
+  /// Le jeton saisi pour l'hôte VISÉ, gardé DÈS LA FRAPPE.
+  ///
+  /// POURQUOI PAS SEULEMENT À LA CONNEXION : on colle un jeton, on change d'avis
+  /// ou de machine, et le secret serait perdu — alors qu'il vient d'être
+  /// laborieusement recopié. Même raisonnement que l'adresse, mémorisée dès la
+  /// frappe. Le jeton, lui, ne va JAMAIS dans les préférences : il va là où un
+  /// secret doit vivre (voir `enregistrerJeton`).
+  public func definirJeton(_ valeur: String) {
+    enregistrerJeton(valeur)
+  }
+
+  /// Efface le jeton de L'HÔTE VISÉ : en mémoire, et là où il était gardé.
   public func effacerJeton() {
     jetonSaisi = ""
-    #if !os(macOS)
-      Trousseau.effacer()
-    #endif
+    gardien.effacer(pour: ModeleApp.cleServeur(cible.adresse))
   }
 
   /// Enregistre le jeton saisi : au trousseau sur iOS, en mémoire sur macOS.
@@ -1411,9 +1502,23 @@ public final class ModeleApp {
   /// croire à un jeton disponible alors que la saisie n'était pas terminée.
   public func enregistrerJeton(_ valeur: String) {
     jetonSaisi = valeur.trimmingCharacters(in: .whitespacesAndNewlines)
-    #if !os(macOS)
-      if !jetonSaisi.isEmpty { Trousseau.ecrire(jetonSaisi) }
-    #endif
+    let cle = ModeleApp.cleServeur(cible.adresse)
+    cleJetonChargee = cle
+
+    // LE JETON DE L'HÔTE LOCAL N'EST PAS RECOPIÉ ICI. Il est dans le coffre du
+    // harness, qui est sa source ; en garder une seconde copie multiplierait les
+    // endroits où un secret peut fuir sans rien apporter.
+    guard serveurVise?.estLocal != true, !cible.adresse.isEmpty else { return }
+
+    // C'est le GARDIEN qui sait s'il peut garder durablement — le modèle n'a pas
+    // à connaître la plateforme (il le faisait, et c'était une erreur de
+    // conception : deux `#if` dans la logique métier, pour une question de
+    // stockage).
+    if jetonSaisi.isEmpty {
+      gardien.effacer(pour: cle)
+    } else {
+      gardien.ecrire(jetonSaisi, pour: cle)
+    }
   }
 
   // MARK: - Connexion
@@ -1477,7 +1582,7 @@ public final class ModeleApp {
       consigner(EchecCible(adresse: adresse, raison: .horsLigne))
       return
     }
-    let jeton = jetonSaisi.isEmpty ? (Self.jetonLocal() ?? "") : jetonSaisi
+    let jeton = jetonDeLaCible()
     guard !jeton.isEmpty else {
       connexion = .incomplete(
         "Aucun jeton d'appareil. Récupérez-le dans la sortie du harness sur le Mac, au premier chargement du plugin.")
@@ -1495,10 +1600,15 @@ public final class ModeleApp {
     // Le jeton n'est confié au trousseau qu'ici, une fois la saisie terminée.
     enregistrerJeton(jeton)
     await executer {
-      let client = try RemoteClient(adresse: self.adresse, jeton: jeton)
+      // DEUX DÉLAIS POUR DEUX QUESTIONS. La première est brève et doit échouer
+      // vite ; la seconde est une lecture lourde, et mérite qu'on l'attende.
+      let client = try RemoteClient(
+        adresse: self.adresse, jeton: jeton, delai: ModeleApp.delaiSante)
       let sante = try await client.verifierSante()
-      self.client = client
-      let liste = try await client.listerSessions(limite: 200)
+      let patient = try RemoteClient(
+        adresse: self.adresse, jeton: jeton, delai: ModeleApp.delaiListe)
+      self.client = patient
+      let liste = try await patient.listerSessions(limite: 200)
       self.sessions = liste.sessions
       // LE serveur a répondu ET accepté le jeton : une seule valeur le dit —
       // capacités, nombre de sessions rendues, et « joint » en découlent.
@@ -1776,7 +1886,7 @@ public final class ModeleApp {
   /// Demande ses espaces à l'hôte. Sans bruit : un échec laisse l'arbre tel
   /// qu'il était, plutôt que de le vider sous les yeux de l'utilisateur.
   public func chargerEspacesDeLhote() async {
-    guard let client else { return }
+    guard let client = clientPourLhote() else { return }
     guard let liste = try? await client.listerEspaces() else { return }
     espacesHote = liste.espaces
   }
@@ -1833,18 +1943,95 @@ public final class ModeleApp {
   }
 }
 
-/// Trousseau iOS : le jeton ne doit jamais atterrir dans les préférences, où il
-/// serait lisible par une sauvegarde ou un autre composant.
-enum Trousseau {
-  private static let service = "org.example.dsh-remote"
-  private static let compte = "jeton-appareil"
+/// OÙ LES JETONS SONT GARDÉS — un par hôte.
+///
+/// POURQUOI UN PROTOCOLE. Deux raisons, et la seconde est la vraie :
+///
+/// 1. les tests ne doivent pas écrire dans le trousseau de la machine qui les
+///    exécute — un test qui touche un secret réel est un test qu'on n'ose plus
+///    lancer ;
+/// 2. le stockage peut changer (trousseau, coffre, mémoire) sans que le modèle
+///    le sache.
+public protocol GardienDeJetons: Sendable {
+  func lire(pour hote: String) -> String?
+  func ecrire(_ valeur: String, pour hote: String)
+  func effacer(pour hote: String)
+}
 
-  static func lire() -> String? {
+/// Le trousseau de la machine : le jeton ne doit JAMAIS atterrir dans les
+/// préférences, où il serait lisible par une sauvegarde ou un autre composant.
+///
+/// CHAQUE HÔTE A SA PROPRE ENTRÉE. Ce n'est pas une commodité : le jeton est tiré
+/// par chaque hôte (mesuré), donc deux machines ont deux secrets distincts. Un
+/// compte unique — c'était le cas — obligeait à recopier le jeton à chaque
+/// bascule, et faisait envoyer à une machine le secret d'une autre quand on
+/// oubliait.
+/// Le gardien PAR DÉFAUT de la plateforme.
+///
+/// SUR macOS, LES JETONS VIVENT LE TEMPS DE L'APPLICATION. Ce n'est pas une
+/// paresse : l'application est construite en **ad-hoc** par
+/// `Scripts/empaqueter-app-macos.sh`, et un élément de trousseau est lié à la
+/// signature. Une reconstruction changerait l'identité, donc l'accès : au mieux
+/// une invite système à chaque lancement, au pire un secret perdu. On préfère
+/// une limite DITE à une invite qui surprend.
+///
+/// CONSÉQUENCE, ÉCRITE POUR ÊTRE VUE : sur le Mac, le jeton d'un hôte DISTANT
+/// est à recoller après un redémarrage de l'application. Celui de l'hôte local
+/// n'a jamais à l'être — il vient du coffre du harness. Sur iPhone, le trousseau
+/// garde tout, et rien n'est à recoller.
+public enum GardienParDefaut {
+  public static func faire() -> GardienDeJetons {
+    #if os(macOS)
+      return GardienEnMemoire()
+    #else
+      return TrousseauDeLaMachine()
+    #endif
+  }
+}
+
+/// Garde les jetons en mémoire, PAR HÔTE, le temps de l'application.
+///
+/// Sert de gardien par défaut sur macOS (voir ci-dessus) et de doublure dans les
+/// tests — un test ne doit jamais écrire dans un secret réel.
+public final class GardienEnMemoire: GardienDeJetons, @unchecked Sendable {
+  private var jetons: [String: String] = [:]
+  private let verrou = NSLock()
+
+  public init() {}
+
+  public func lire(pour hote: String) -> String? {
+    verrou.lock()
+    defer { verrou.unlock() }
+    return jetons[hote]
+  }
+
+  public func ecrire(_ valeur: String, pour hote: String) {
+    verrou.lock()
+    defer { verrou.unlock() }
+    jetons[hote] = valeur
+  }
+
+  public func effacer(pour hote: String) {
+    verrou.lock()
+    defer { verrou.unlock() }
+    jetons[hote] = nil
+  }
+}
+
+public struct TrousseauDeLaMachine: GardienDeJetons {
+  private static let service = "org.example.dsh-remote"
+
+  /// Le compte PORTE l'hôte : c'est ce qui rend les entrées distinctes.
+  private static func compte(pour hote: String) -> String { "jeton-appareil.\(hote)" }
+
+  public init() {}
+
+  public func lire(pour hote: String) -> String? {
     #if canImport(Security)
       let requete: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service,
-        kSecAttrAccount as String: compte,
+        kSecAttrService as String: Self.service,
+        kSecAttrAccount as String: Self.compte(pour: hote),
         kSecReturnData as String: true,
         kSecMatchLimit as String: kSecMatchLimitOne,
       ]
@@ -1858,23 +2045,12 @@ enum Trousseau {
     #endif
   }
 
-  static func effacer() {
+  public func ecrire(_ valeur: String, pour hote: String) {
     #if canImport(Security)
       let requete: [String: Any] = [
         kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service,
-        kSecAttrAccount as String: compte,
-      ]
-      SecItemDelete(requete as CFDictionary)
-    #endif
-  }
-
-  static func ecrire(_ valeur: String) {
-    #if canImport(Security)
-      let requete: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service,
-        kSecAttrAccount as String: compte,
+        kSecAttrService as String: Self.service,
+        kSecAttrAccount as String: Self.compte(pour: hote),
       ]
       SecItemDelete(requete as CFDictionary)
       guard !valeur.isEmpty, let donnees = valeur.data(using: .utf8) else { return }
@@ -1882,6 +2058,17 @@ enum Trousseau {
       ajout[kSecValueData as String] = donnees
       ajout[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
       SecItemAdd(ajout as CFDictionary, nil)
+    #endif
+  }
+
+  public func effacer(pour hote: String) {
+    #if canImport(Security)
+      let requete: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: Self.service,
+        kSecAttrAccount as String: Self.compte(pour: hote),
+      ]
+      SecItemDelete(requete as CFDictionary)
     #endif
   }
 }

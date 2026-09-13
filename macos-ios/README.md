@@ -275,6 +275,47 @@ La classification ne cherche plus un code dans un texte d'erreur : l'erreur est 
 en type** (`erreurType`), parce que la recherche textuelle avait précisément raté ce
 `404`. Les deux cas montrent les mêmes commandes copiables.
 
+#### Le jeton est gardé PAR HÔTE — et le coffre local ne parle que de la machine locale
+
+Le jeton d'appareil est tiré par **chaque** hôte (mesuré). Le client n'en gardait pourtant
+qu'un, sous un compte de trousseau unique : il fallait donc le recoller à chaque bascule, et
+l'oublier revenait à envoyer à une machine le secret d'une autre.
+
+Désormais la clé de stockage **est l'adresse de l'hôte**, et le modèle parle à un
+`GardienDeJetons` :
+
+| Plateforme | Où le jeton vit | Pourquoi |
+|---|---|---|
+| iPhone | **trousseau**, une entrée par hôte | c'est fait pour ça, et cela survit au redémarrage |
+| macOS | **mémoire**, par hôte | l'app est signée **ad-hoc** : un élément de trousseau est lié à la signature, donc une reconstruction changerait l'accès — au mieux une invite à chaque lancement, au pire un secret perdu |
+
+**CONSÉQUENCE, DITE POUR ÊTRE VUE** : sur le Mac, le jeton d'un hôte **distant** est à recoller
+après un redémarrage de l'application. Celui de l'hôte local n'a jamais à l'être — il vient du
+coffre du harness, qui est sa source, et l'application **ne le recopie pas** : une seconde
+copie d'un secret est une occasion de fuite de plus.
+
+Et le coffre (`~/.dsh/.credentials.yaml`) n'est consulté **que si la cible est cette machine**.
+Il contenait le jeton de l'hôte local, et rien d'autre : le proposer pour une autre machine,
+c'était lui envoyer un secret qui ne lui était pas destiné.
+
+#### Deux délais pour deux questions — et un plafond unique qui a menti
+
+Un seul plafond de connexion existait (vingt secondes, la valeur par défaut d'`URLSession`).
+Mesuré :
+
+| Question | Durée réelle | Plafond retenu |
+|---|---|---|
+| « y a-t-il un DSH en face ? » (`sante`) | **4,1 / 3,2 / 1,6 ms** | 5 s |
+| la liste des sessions | **4,06 s à froid**, puis 15 à 27 ms | 30 s |
+| routes qui font travailler l'hôte (`/v1/serveurs`) | le CLI Tailscale y est borné à 8 s | 14 s |
+
+**L'ERREUR QUE LA MESURE A ATTRAPÉE** : un plafond unique de huit secondes a été essayé
+d'abord — et une connexion **parfaitement valide** a été refusée après **8055 ms**, parce que
+la liste à froid prend 4 s et que le harness était occupé. L'application a annoncé un échec
+pour un serveur qui répondait. Un plafond court ne protège de rien : il transforme une machine
+occupée en machine en panne. Les deux questions ont donc deux délais, et après séparation la
+même connexion réussit en **4269 ms**.
+
 #### L'état du modèle : deux valeurs au lieu de huit champs
 
 Le propriétaire a dit : « j'ai l'impression que le projet gère mal le state management ». Il a
@@ -1300,6 +1341,8 @@ inactive.
 | **Les Réglages ne contiennent plus rien d'une machine** | capture iPhone : une phrase qui l'explique, puis les deux interrupteurs de sessions (préférences d'affichage, communes à toutes les machines) |
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
+| **Le jeton est par hôte** | 3 tests : chaque hôte rappelle le sien, celui de l'hôte local n'est pas recopié, effacer n'efface que le sien |
+| **Deux délais, mesurés** | `sante` 1,6-4,1 ms → plafond 5 s ; liste 4,06 s à froid → plafond 30 s ; un plafond unique de 8 s avait refusé une connexion valide à 8055 ms |
 | **La cible se remplace en un point** | une seule ligne écrit `cible` ; 5 transitions nommées, 5 tests sans réseau ; en vrai, plus d'oscillation d'adresse au démarrage |
 | **Les états corrélés sont remplacés par deux valeurs** | 5 tests d'invariants verts (77 au total) ; en vrai, verdict posé en 0,4 s après le remaniement |
 | **Le compte de la section ne compte que l'utilisable** | capture iPhone : « Serveur DeepSeek Harness — 1 joignable », alors que deux machines sont en ligne (l'une n'a pas DSH) et que les trois sont affichées |

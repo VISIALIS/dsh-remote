@@ -172,7 +172,9 @@ struct VueServeur: View {
       HStack(spacing: 8) {
         SecureField(
           modele.jetonDisponible ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil",
-          text: $modele.jetonSaisi
+          // Guardé dès la frappe POUR CET HÔTE : un jeton collé puis abandonné
+          // serait perdu, alors qu'il vient d'être recopié.
+          text: Binding(get: { modele.jetonSaisi }, set: { modele.definirJeton($0) })
         )
         .font(.callout.monospaced())
         .lineLimit(1)
