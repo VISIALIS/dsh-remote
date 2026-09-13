@@ -8,20 +8,30 @@ import Foundation
 /// DSH » sans savoir s'il lui manquait un port, un plugin, ou simplement un Mac
 /// allumé.
 ///
-/// Les trois étapes sont celles de la mise en service, dans l'ordre où elles se
+/// Les QUATRE étapes sont celles de la mise en service, dans l'ordre où elles se
 /// franchissent — chacune suppose la précédente :
 ///
-///   1. le Mac est VISIBLE : il est en ligne sur le tailnet, donc la découverte le
+///   1. TAILSCALE EST CONNECTÉ SUR CET APPAREIL : il porte une adresse de
+///      tailnet. Sans elle, aucune des étapes suivantes n'est atteignable — et
+///      c'est la seule qui se constate localement, sans rien demander à personne ;
+///   2. le Mac est VISIBLE : il est en ligne sur le tailnet, donc la découverte le
 ///      propose ;
-///   2. le PORT est OUVERT : quelque chose répond sur son port 80, publié par
+///   3. le PORT est OUVERT : quelque chose répond sur son port 80, publié par
 ///      `tailscale serve` ;
-///   3. le PLUGIN est INSTALLÉ : DSH Remote y répond.
+///   4. le PLUGIN est INSTALLÉ : DSH Remote y répond.
 ///
-/// CHAQUE ÉTAT VIENT D'UNE MESURE, JAMAIS D'UNE DÉDUCTION. « En ligne » vient de
-/// Tailscale, les deux autres de la sonde : une machine qui répond autre chose
-/// qu'un `404` (`-1004`, délai, DNS) a son port fermé ; une machine qui répond
-/// `404` a son port ouvert mais pas le plugin. Quand on ne sait pas encore, on
-/// dit « à vérifier » — un parcours qui affirme à tort est pire qu'un parcours
+/// LA PREMIÈRE A ÉTÉ AJOUTÉE APRÈS COUP, à la demande du propriétaire : « j'ai
+/// oublié un goal avant, le fait que Tailscale est connecté ». Elle manquait
+/// effectivement — sur un iPhone où Tailscale n'est pas installé, les trois autres
+/// étapes ne peuvent pas être franchies, et le parcours commençait pourtant par
+/// elles.
+///
+/// CHAQUE ÉTAT VIENT D'UNE MESURE, JAMAIS D'UNE DÉDUCTION. L'adresse de tailnet
+/// se lit sur les interfaces de l'appareil ; « en ligne » vient de Tailscale ;
+/// les deux dernières de la sonde : une machine qui répond autre chose qu'un
+/// `404` (`-1004`, délai, DNS) a son port fermé ; une machine qui répond `404` a
+/// son port ouvert mais pas le plugin. Quand on ne sait pas encore, on dit
+/// « à vérifier » — un parcours qui affirme à tort est pire qu'un parcours
 /// incomplet, parce qu'il envoie chercher au mauvais endroit.
 public enum EtapesServeur {
 
@@ -50,14 +60,46 @@ public enum EtapesServeur {
     }
   }
 
-  /// Les trois étapes, dans l'ordre, pour une machine donnée.
+  /// Les quatre étapes, dans l'ordre, pour une machine donnée.
   ///
   /// - Parameters:
-  ///   - enLigne: ce que Tailscale dit de la machine (un fait, pas une mesure de
-  ///     l'application).
+  ///   - tailnetDeLAppareil: CET appareil porte-t-il une adresse de tailnet ?
+  ///     Une constatation locale (`getifaddrs`), pas une déduction.
+  ///   - enLigne: ce que Tailscale dit de la machine VISÉE (un fait, pas une
+  ///     mesure de l'application).
   ///   - sertDsh: le verdict de la sonde — `nil` = pas encore su.
   ///   - cause: POURQUOI elle ne sert pas DSH, quand on le sait.
-  public static func etapes(enLigne: Bool, sertDsh: Bool?, cause: CauseSansDsh?) -> [Etape] {
+  public static func etapes(
+    tailnetDeLAppareil: Bool, enLigne: Bool, sertDsh: Bool?, cause: CauseSansDsh?
+  ) -> [Etape] {
+    // SANS TAILSCALE SUR CET APPAREIL, RIEN EN AVAL NE SE CONCLUT. Une liste de
+    // machines peut dater d'avant la coupure ; une sonde peut avoir répondu il y
+    // a une minute. Affirmer quoi que ce soit des étapes suivantes depuis un
+    // appareil qui ne peut plus rien joindre serait parler du passé.
+    guard tailnetDeLAppareil else {
+      return [
+        Etape(
+          numero: 1,
+          titre: "Tailscale est connecté sur cet appareil",
+          explication:
+            "Sans cela, aucun Mac du tailnet n'est joignable — ni celui-ci, ni un autre.",
+          etat: .aFaire),
+        Etape(
+          numero: 2, titre: "Ce Mac est visible",
+          explication: "Il est en ligne sur le tailnet, donc la découverte le propose.",
+          etat: .inconnue),
+        Etape(
+          numero: 3, titre: "Le port de DSH est ouvert",
+          explication:
+            "Son port 80 est publié par `tailscale serve`, donc quelque chose répond à son adresse.",
+          etat: .inconnue),
+        Etape(
+          numero: 4, titre: "Le plugin `dsh-remote` est installé",
+          explication: "DSH Remote y répond : la machine peut servir l'application.",
+          etat: .inconnue),
+      ]
+    }
+
     let visibilite: Etat = enLigne ? .franchie : .aFaire
 
     // Le port : on ne le sait que si la machine est joignable. Une machine hors
@@ -84,13 +126,19 @@ public enum EtapesServeur {
       }
     }
 
+    // LE PLUGIN N'EST ACCUSÉ QUE SI QUELQU'UN A RÉPONDU. Un `404` prouve que le
+    // port est ouvert, donc que ce qui manque est le plugin. Quand le port est
+    // fermé — ou quand l'échec ne s'explique pas —, le plugin est peut-être
+    // installé : on ne sait pas, et on le dit. (La version précédente le
+    // déclarait « à faire » dans tous les cas, ce qui envoyait installer un
+    // plugin derrière un port fermé.)
     let plugin: Etat
     if !enLigne {
       plugin = .inconnue
     } else {
       switch sertDsh {
       case true: plugin = .franchie
-      case false: plugin = .aFaire
+      case false: plugin = (cause == .pluginAbsent) ? .aFaire : .inconnue
       case nil: plugin = .inconnue
       }
     }
@@ -98,17 +146,23 @@ public enum EtapesServeur {
     return [
       Etape(
         numero: 1,
+        titre: "Tailscale est connecté sur cet appareil",
+        explication:
+          "Sans cela, aucun Mac du tailnet n'est joignable — ni celui-ci, ni un autre.",
+        etat: .franchie),
+      Etape(
+        numero: 2,
         titre: "Ce Mac est visible",
         explication: "Il est en ligne sur le tailnet, donc la découverte le propose.",
         etat: visibilite),
       Etape(
-        numero: 2,
+        numero: 3,
         titre: "Le port de DSH est ouvert",
         explication:
           "Son port 80 est publié par `tailscale serve`, donc quelque chose répond à son adresse.",
         etat: port),
       Etape(
-        numero: 3,
+        numero: 4,
         titre: "Le plugin `dsh-remote` est installé",
         explication: "DSH Remote y répond : la machine peut servir l'application.",
         etat: plugin),

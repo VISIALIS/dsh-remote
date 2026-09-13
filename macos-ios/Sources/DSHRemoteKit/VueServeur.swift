@@ -267,7 +267,10 @@ struct VueServeur: View {
   /// fermé. Le calcul des états vit dans `EtapesServeur`, où il est éprouvé.
   private var parcours: some View {
     let etapes = EtapesServeur.etapes(
-      enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur), cause: cause)
+      tailnetDeLAppareil: modele.tailnetDeLAppareil,
+      enLigne: serveur.enLigne,
+      sertDsh: modele.sertDsh(serveur),
+      cause: cause)
 
     return VStack(alignment: .leading, spacing: 14) {
       ForEach(etapes, id: \.numero) { etape in
@@ -332,8 +335,41 @@ struct VueServeur: View {
   private func methodologie(pour numero: Int, connue: Bool) -> some View {
     switch numero {
     case 1:
+      // TAILSCALE SUR CET APPAREIL. Il n'y a pas de commande à copier sur un
+      // iPhone : on dit quoi faire, et le bouton fait ce que la carte fait déjà
+      // — ouvrir l'application, ou son magasin si elle manque.
+      Text(
+        modele.tailscaleInstalle
+          ? "Ouvrez Tailscale sur cet appareil, et connectez-le au tailnet."
+          : "Installez Tailscale sur cet appareil, puis connectez-le au tailnet."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+      Button {
+        if !modele.ouvrirTailscale() {
+          modele.signaler("Tailscale n'a pas pu être ouvert sur cet appareil.")
+        }
+      } label: {
+        Label(
+          modele.tailscaleInstalle ? "Ouvrir Tailscale" : "Installer Tailscale",
+          systemImage: "arrow.up.forward.app")
+      }
+      .buttonStyle(.borderless)
+      .font(.caption)
+      #if os(macOS)
+        // SUR macOS, l'appareil qui affiche la page est aussi celui qui a le CLI :
+        // la commande est le moyen le plus direct, et elle se copie.
+        Text("Ou, en ligne de commande :")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        LigneCommande(commande: "tailscale status")
+        LigneCommande(commande: "tailscale up")
+      #endif
+    case 2:
+      // LA MACHINE VISÉE, pas cet appareil-ci : ces commandes se tapent SUR ELLE.
       if connue {
-        Text("Allumez ce Mac, et vérifiez que Tailscale y est connecté :")
+        Text("Allumez ce Mac-là, et vérifiez que Tailscale y est connecté :")
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
@@ -343,13 +379,13 @@ struct VueServeur: View {
           .foregroundStyle(.secondary)
         LigneCommande(commande: "tailscale up")
       } else {
-        Text("Vérifiez l'état du tailnet, sur ce Mac ou sur un autre :")
+        Text("Vérifiez l'état du tailnet, sur ce Mac-là ou sur un autre :")
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
         LigneCommande(commande: "tailscale status")
       }
-    case 2:
+    case 3:
       if connue {
         demarcheDePublication
       } else {

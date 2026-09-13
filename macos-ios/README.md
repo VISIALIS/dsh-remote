@@ -350,9 +350,31 @@ donc un **parcours** — et non plus seulement un diagnostic.
 
 | Étape | Ce qu'elle veut dire | D'où vient son état |
 |---|---|---|
-| 1. Ce Mac est visible | il est en ligne sur le tailnet, donc la découverte le propose | un FAIT de Tailscale (`Online`), lu, jamais mesuré par l'application |
-| 2. Le port de DSH est ouvert | quelque chose répond sur son port 80, publié par `tailscale serve` | la sonde : un `404` prouve que le port est ouvert |
-| 3. Le plugin `dsh-remote` est installé | DSH Remote y répond | la sonde : `200` ou `401` |
+| 1. Tailscale est connecté sur cet appareil | il porte une adresse de tailnet | une CONSTATATION locale : `getifaddrs`, plage `100.64.0.0/10` |
+| 2. Ce Mac est visible | il est en ligne sur le tailnet, donc la découverte le propose | un FAIT de Tailscale (`Online`), lu, jamais mesuré par l'application |
+| 3. Le port de DSH est ouvert | quelque chose répond sur son port 80, publié par `tailscale serve` | la sonde : un `404` prouve que le port est ouvert |
+| 4. Le plugin `dsh-remote` est installé | DSH Remote y répond | la sonde : `200` ou `401` |
+
+**LA PREMIÈRE ÉTAPE A ÉTÉ AJOUTÉE APRÈS COUP**, à la demande du propriétaire :
+« j'ai oublié un goal avant, le fait que Tailscale est connecté ». Elle manquait
+effectivement — sur un iPhone sans Tailscale, les trois autres ne peuvent pas être
+franchies, et le parcours commençait pourtant par elles. Quand elle n'est pas
+franchie, **les suivantes passent à « inconnue »** : une liste de machines peut
+dater d'avant la coupure, et une sonde avoir répondu il y a une minute — affirmer
+quoi que ce soit depuis un appareil qui ne peut plus rien joindre serait parler du
+passé.
+
+**ON N'ACCUSE LE PLUGIN QUE SI QUELQU'UN A RÉPONDU.** Un `404` prouve que le port
+est ouvert, donc que ce qui manque est le plugin. Port fermé, ou échec
+inexpliqué : le plugin est peut-être installé, et on le dit — la version
+précédente le déclarait « à faire » dans tous les cas, ce qui envoyait installer
+un plugin derrière un port fermé.
+
+**ARTEFACT DE SIMULATEUR, ÉCRIT POUR NE PAS TROMPER.** Dans le simulateur iOS,
+l'appareil partage les interfaces du Mac : l'étape 1 y apparaît donc toujours
+franchie, même quand la carte dit « Tailscale n'est pas installé ». Sur un vrai
+iPhone sans Tailscale, elle passe bien à « à franchir » — c'est la logique
+qu'éprouvent les tests, pas la capture.
 
 **CE QU'ON MONTRE QUAND ON NE SAIT PAS.** Trois états par étape : franchie, à
 franchir, ou **inconnue**. Une machine hors ligne ne dit rien de son port : on
@@ -370,7 +392,7 @@ absent → étapes 1 et 2 vertes, étape 3 à faire avec le bloc `cordis.patch.y
 copier) et un Mac hors ligne (étape 1 à faire avec `tailscale status` / `tailscale
 up`, les suivantes « à vérifier »).
 
-7 tests couvrent le calcul des états, dont les trois cas d'ignorance.
+8 tests couvrent le calcul des états, dont les quatre cas d'ignorance.
 
 #### Quand la machine répond mais n'a pas le plugin : le dire, et donner la démarche
 
@@ -1487,7 +1509,7 @@ inactive.
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
 | **La page dit que le plugin manque, et donne la démarche** | capture iPhone de la page de MacMini (alors que l'app vise une autre machine) : constat nommé, 3 étapes, bloc `cordis.patch.yml` copiable, vérification `curl` |
-| **Le parcours d'un serveur, en trois étapes** | captures iPhone : MacMini (étapes 1-2 vertes, 3 à faire + méthode) et un Mac hors ligne (étape 1 à faire, suivantes « à vérifier ») ; 7 tests |
+| **Le parcours d'un serveur, en trois étapes** | captures iPhone : MacMini (étapes 1-3 vertes, 4 à faire + méthode) et un Mac hors ligne (étapes 2 à faire, suivantes « à vérifier ») ; 8 tests |
 | **Le diagnostic appartient à la machine** | `404` observé par la sonde → procédure d'installation ; `-1004` → procédure de publication ; vérifié par capture sur une machine NON visée |
 | **Une réponse en vol n'écrit pas dans une autre cible** | 2 tests : la bascule invalide le vol, une liste en retard est refusée ; 87 tests au total |
 | **Le jeton est par hôte** | 3 tests : chaque hôte rappelle le sien, celui de l'hôte local n'est pas recopié, effacer n'efface que le sien |

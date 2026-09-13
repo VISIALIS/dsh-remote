@@ -1091,6 +1091,20 @@ public final class ModeleApp {
   /// État de Tailscale, relu à la demande et jamais deviné.
   public private(set) var etatTailscale: EtatTailscale = .absent
 
+  /// CET APPAREIL est-il sur le tailnet ? Une CONSTATATION : il porte une adresse
+  /// dans `100.64.0.0/10`.
+  ///
+  /// POURQUOI CE N'EST PAS `etatTailscale == .connecte`. Cet état-là se contente
+  /// d'un serveur en ligne comme preuve indirecte — et un serveur en ligne peut
+  /// venir de la liste publiée par un AUTRE hôte, qui ne dit rien de cet
+  /// appareil-ci. La première étape du parcours mérite la mesure directe.
+  public private(set) var tailnetDeLAppareil = false
+
+  /// L'application Tailscale est-elle présente sur cet appareil ?
+  ///
+  /// Sert à dire QUOI FAIRE : l'installer, ou l'ouvrir pour se connecter.
+  public private(set) var tailscaleInstalle = false
+
   /// Relit l'état de Tailscale.
   ///
   /// TROIS SOURCES, ET ELLES NE DISENT PAS LA MÊME CHOSE :
@@ -1108,11 +1122,17 @@ public final class ModeleApp {
   ///      liste, mais cela ne dit rien de l'état de Tailscale : le Mac peut être
   ///      éteint alors que le tailnet fonctionne.
   public func relireEtatTailscale() {
-    guard DetectionTailscale.applicationInstallee() else {
+    // LES DEUX CONSTATATIONS SONT RETENUES, et pas seulement l'état de la carte :
+    // le parcours d'un serveur a besoin de savoir si CET APPAREIL est sur le
+    // tailnet (première étape) et si l'application y est installée (pour dire
+    // quoi faire). Les recalculer dans la vue les ferait diverger de la carte.
+    tailscaleInstalle = DetectionTailscale.applicationInstallee()
+    tailnetDeLAppareil = DetectionTailscale.adresseDeTailnetPresente()
+    guard tailscaleInstalle else {
       etatTailscale = .absent
       return
     }
-    if DetectionTailscale.adresseDeTailnetPresente() {
+    if tailnetDeLAppareil {
       etatTailscale = .connecte
       return
     }
