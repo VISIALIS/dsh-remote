@@ -77,11 +77,34 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 |---|---|
 | `dynamic/host.js` | le plugin : les routes, le cache, le flux, le jeton |
 | `dynamic/tailscale.js` | la découverte du tailnet — lancement du CLI local et **analyse pure** de sa sortie |
-| `tests/tailscale.test.js` | les règles de cette analyse, éprouvées sans lancer Tailscale |
+| `dynamic/journal.js` | la lecture d'un journal de session : trames zstd concaténées, lignes JSONL, résumé |
+| `tests/tailscale.test.js` | les règles de la découverte, éprouvées sans lancer Tailscale |
+| `tests/journal.test.js` | les règles de lecture du journal, éprouvées avec de vraies trames zstd |
 
 ```bash
-node --test plugins/dsh-remote/tests/     # 10 tests, aucune dépendance
+node --test plugins/dsh-remote/tests/     # 15 tests, aucune dépendance
 ```
+
+POURQUOI LE JOURNAL A DES TESTS, ET CE QU'ILS ONT ATTRAPÉ. Un journal DSH est une
+**concaténation** de trames zstd, une par écriture — et `zstdDecompressSync` n'en
+décode qu'une en s'arrêtant silencieusement. Une erreur de décodage ne lève donc
+pas : elle rend un journal TRONQUÉ, et l'utilisateur croit avoir tout lu. Les
+tests éprouvent cette concaténation, l'ignorance d'une ligne illisible (une
+écriture interrompue n'est pas fatale), le résumé (premier en-tête, DERNIER
+titre, plus grand `seq`) et le caractère **indicatif** du chemin déduit d'un nom
+de dossier — `dsh-plugins` s'y relit `dsh/plugins`, et c'est pourquoi ce champ ne
+sert jamais à lire : `cwd` fait foi.
+
+DEUX CASSES D'EXTRACTION ONT ÉTÉ ATTRAPÉES, ET PAR DEUX MOYENS DIFFÉRENTS :
+
+- `PLAFOND_DECOMPRESSION` était resté dans `host.js` alors que `decoderJournal`
+  s'en sert — c'est le TEST qui l'a vu (`ReferenceError`) ;
+- `cheminIndicatif` manquait à la liste d'import — c'est une INSTANCE NEUVE qui
+  l'a vu : `/v1/sessions` répondait `500 listage impossible`.
+
+Les deux auraient cassé chez l'utilisateur, dans le processus du harness. La
+leçon est écrite dans le code : après une extraction, la liste des symboles
+importés se vérifie **par grep**, pas de mémoire.
 
 POURQUOI `node:test` ET PAS UNE DÉPENDANCE : la RÈGLE #0 fait de chaque
 dépendance une surface d'attaque de plus dans un processus sans bac à sable. Le
