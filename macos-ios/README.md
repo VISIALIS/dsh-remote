@@ -184,7 +184,9 @@ une application macOS (`Sources/DSHRemoteApp`, `swift run DSHRemoteMac`), qui n'
 ### Installé sur l'iPhone — et l'adresse qui marche vraiment
 
 **C'est fait.** Xcode a enregistré l'appareil, créé le profil de provisionnement, et
-l'application est **installée et signée** (équipe `<equipe du proprietaire>`) :
+l'application est **installée et signée** par l'équipe de développement du propriétaire
+(son identifiant n'est **pas** reproduit ici : c'est un identifiant de compte, et
+`scripts/check-secrets.sh` le refuse — à juste titre, il était cité jusqu'ici) :
 
 ```bash
 xcodebuild -project DSHRemote.xcodeproj -scheme DSHRemote \
@@ -828,5 +830,5 @@ inactive.
 | Le simulateur ne lit pas le coffre du Mac | conteneur en bac à sable : l'app affiche « Aucun jeton d'appareil » |
 | L'installation sur l'iPhone exige une action manuelle | `xcodebuild` échoue : appareil non enregistré, aucun profil pour `org.example.DSHRemote` |
 | L'application est INSTALLÉE sur l'iPhone | `devicectl device info apps` liste `DSH Remote — org.example.DSHRemote — 0.1` |
-| Elle est signée par l'équipe du propriétaire | `codesign -dv` : `TeamIdentifier=<equipe du proprietaire>`, `embedded.mobileprovision` présent |
+| Elle est signée par l'équipe du propriétaire | `codesign -dv` : `TeamIdentifier=<équipe du propriétaire>`, `embedded.mobileprovision` présent |
 | L'IP tailnet avec port ne sert RIEN | `http://100.101.102.103:3080` → `000` ; le nom MagicDNS → `200` |
