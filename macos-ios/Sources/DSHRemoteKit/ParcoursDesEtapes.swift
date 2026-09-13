@@ -20,13 +20,11 @@ import SwiftUI
 struct ParcoursDesEtapes<Methode: View>: View {
 
   /// COMMENT LIRE LES ÉTAPES : ce qu'on constate, ou ce qu'il reste à faire.
-  enum Mode {
-    /// Toutes les étapes sont montrées, avec leur méthode si elles ne sont pas
-    /// franchies. Aucune n'est verrouillée : un diagnostic dit tout.
-    case diagnostic
-    /// Une seule frontière : les suivantes sont grisées, sans méthode.
-    case objectifs
-  }
+  ///
+  /// Les cas vivent dans `EtapesServeur` (`Mode`) : ce qu'ils décident — ce qui
+  /// est verrouillé, donc ce qui est atteignable — est une règle, et elle est
+  /// éprouvée là-bas.
+  typealias Mode = EtapesServeur.Mode
 
   let etapes: [EtapesServeur.Etape]
   var mode: Mode = .diagnostic
@@ -67,6 +65,7 @@ struct ParcoursDesEtapes<Methode: View>: View {
     // vit dans `EtapesServeur`, où elle est éprouvée. Il ne s'applique QU'AUX
     // OBJECTIFS : un diagnostic n'a pas de frontière.
     let verrouillee = mode == .objectifs && EtapesServeur.estVerrouillee(etape, dans: etapes)
+    let presentation = EtapesServeur.presentation(etape, dans: etapes, mode: mode)
 
     return VStack(alignment: .leading, spacing: 8) {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -87,14 +86,21 @@ struct ParcoursDesEtapes<Methode: View>: View {
             .foregroundStyle(.secondary)
         }
       }
+      // LA LIGNE SE LIT D'UN BLOC SOUS VOIXOVER : numéro, titre, état. Sans
+      // cela, un lecteur d'écran énumère trois fragments dont aucun ne dit si
+      // l'étape est faite, à faire, ou seulement verrouillée.
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(libelle(etape, verrouillee: verrouillee))
 
-      // ON N'EXPLIQUE ET N'OUTILLE QUE LA FRONTIÈRE. Ni les étapes franchies, ni
-      // les verrouillées n'ont besoin d'un mode d'emploi ici.
-      if etape.etat != .franchie && !verrouillee {
+      // ON N'EXPLIQUE ET N'OUTILLE QUE CE QUI RESTE À FAIRE — mais on l'outille
+      // TOUJOURS. Une étape verrouillée garde son explication et sa méthode,
+      // repliées : le verrou dit l'ORDRE, il ne ferme plus la porte.
+      if presentation != .rien {
         Text(etape.explication)
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
+          .opacity(verrouillee ? 0.7 : 1)
         // LA MÉTHODE DE LA FRONTIÈRE EST OUVERTE ; CELLES DES AUTRES SE DÉPLIENT.
         //
         // POURQUOI. Un diagnostic DIT tout, mais il n'OUTILLE qu'une chose à la
@@ -102,20 +108,35 @@ struct ParcoursDesEtapes<Methode: View>: View {
         // exécutable maintenant, et les deux autres supposent de toute façon la
         // première franchie. Les constats restent donc tous visibles — c'est la
         // règle, et elle ne bouge pas —, seule la marche à suivre se replie.
-        if mode == .diagnostic, etape.numero != EtapesServeur.premiereAEtapesFranchir(etapes) {
+        if presentation == .ouverte {
+          methode(etape)
+        } else {
           DisclosureGroup {
             methode(etape)
               .padding(.top, 6)
           } label: {
-            Text("Méthode")
+            Text(verrouillee ? "Voir la méthode" : "Méthode")
               .font(.caption)
               .foregroundStyle(.secondary)
           }
-        } else {
-          methode(etape)
         }
       }
     }
+  }
+
+  /// CE QU'ANNONCE VOIXOVER POUR UNE LIGNE D'ÉTAPE.
+  ///
+  /// « verrouillée » n'est pas un état de l'étape mais une conséquence de
+  /// l'ordre : on le dit APRÈS l'état, et seulement là où il s'applique.
+  private func libelle(_ etape: EtapesServeur.Etape, verrouillee: Bool) -> String {
+    let etat: String
+    switch etape.etat {
+    case .franchie: etat = "franchie"
+    case .aFaire: etat = "à faire"
+    case .inconnue: etat = "à vérifier"
+    }
+    let ordre = verrouillee ? ", après l'étape \(etape.numero - 1)" : ""
+    return "Étape \(etape.numero), \(etape.titre), \(etat)\(ordre)"
   }
 
   private func symbole(_ etat: EtapesServeur.Etat) -> String {

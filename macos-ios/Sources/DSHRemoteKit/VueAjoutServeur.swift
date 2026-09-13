@@ -58,8 +58,22 @@ struct VueAjoutServeur: View {
     // frontière à la fois, les suivantes grisées.
     // OBJECTIFS : ici, on ne constate pas — on liste un travail à faire, dans
     // l'ordre. C'est la seule des deux pages où le verrou a un sens.
-    ParcoursDesEtapes(etapes: etapes, mode: .objectifs) { etape in
-      methode(pour: etape.numero)
+    VStack(alignment: .leading, spacing: 10) {
+      ParcoursDesEtapes(etapes: etapes, mode: .objectifs) { etape in
+        methode(pour: etape.numero)
+      }
+
+      // LE VERROU DIT L'ORDRE, PAS « INTERDIT DE LIRE ». Et il faut le dire :
+      // les étapes 2 à 4 sont déclarées « à faire » par construction — on ne
+      // juge pas une machine qu'on n'a pas encore —, donc la frontière ne peut
+      // pas avancer toute seule. Sans cette phrase, on croirait que les étapes
+      // grisées sont fermées ; sans le dépliage, elles le seraient pour de bon.
+      Text(
+        "L'ordre est celui du travail : chaque étape suppose la précédente. Les étapes grisées restent lisibles — dépliez « Voir la méthode » si vous les avez déjà faites, ou pour savoir ce qui vous attend."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
     }
   }
 

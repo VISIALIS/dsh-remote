@@ -44,6 +44,60 @@ public enum EtapesServeur {
     case inconnue
   }
 
+  /// COMMENT LIRE LES ÉTAPES : ce qu'on constate, ou ce qu'il reste à faire.
+  ///
+  /// POURQUOI CE TYPE A QUITTÉ LA VUE. Il décide de ce qui est VERROUILLÉ, donc
+  /// de ce qui est ATTEIGNABLE — une règle, pas un dessin. Il vit ici, à côté de
+  /// `estVerrouillee`, pour être éprouvé sans rendre une vue.
+  public enum Mode: Equatable, Sendable {
+    /// Toutes les étapes sont montrées, avec leur méthode si elles ne sont pas
+    /// franchies. Aucune n'est verrouillée : un diagnostic dit tout.
+    case diagnostic
+    /// Une seule frontière : les suivantes sont grisées, sans méthode ouverte.
+    case objectifs
+  }
+
+  /// COMMENT LA MÉTHODE D'UNE ÉTAPE EST MONTRÉE.
+  public enum Presentation: Equatable, Sendable {
+    /// Rien à faire : l'étape est franchie.
+    case rien
+    /// La méthode est OUVERTE : c'est l'étape qui bloque.
+    case ouverte
+    /// La méthode est REPLIÉE derrière un bouton — lisible, mais pas dépliée.
+    case repliee
+  }
+
+  /// LA RÈGLE, EN UNE FONCTION PURE : ouverte, repliée, ou rien.
+  ///
+  /// POURQUOI ELLE EXISTE, ET CE QU'ELLE CORRIGE. Sur la page « Ajouter un
+  /// serveur », les étapes 2 à 4 sont déclarées « à faire » par construction —
+  /// on ne juge pas une machine qu'on n'a pas encore. La frontière ne pouvait
+  /// donc JAMAIS avancer, et les étapes 3 et 4, verrouillées à perpétuité,
+  /// n'affichaient NI leur explication NI leur méthode : « publier le port » et
+  /// « installer le plugin » étaient inatteignables depuis la seule page qui
+  /// existe pour les enseigner.
+  ///
+  /// CE QUI CHANGE, ET CE QUI NE CHANGE PAS. Le verrou reste un REPÈRE D'ORDRE —
+  /// la ligne est grisée, l'icône est un cadenas, « après l'étape N-1 » est
+  /// écrit. Mais la méthode redevient LISIBLE : repliée, donc la page reste
+  /// courte, et atteignable, donc plus personne ne bute sur une porte fermée.
+  /// On ne demande à personne de faire l'étape 4 avant la 2 ; on refuse
+  /// seulement de cacher comment on la fait.
+  public static func presentation(
+    _ etape: Etape, dans etapes: [Etape], mode: Mode
+  ) -> Presentation {
+    guard etape.etat != .franchie else { return .rien }
+    let frontiere = premiereAEtapesFranchir(etapes)
+    switch mode {
+    case .diagnostic:
+      // Un diagnostic DIT tout, mais n'OUTILLE qu'une chose à la fois : trois
+      // jeux de commandes à l'écran noient celle qui est exécutable maintenant.
+      return etape.numero == frontiere ? .ouverte : .repliee
+    case .objectifs:
+      return estVerrouillee(etape, dans: etapes) ? .repliee : .ouverte
+    }
+  }
+
   public struct Etape: Equatable, Sendable {
     public let numero: Int
     public let titre: String
