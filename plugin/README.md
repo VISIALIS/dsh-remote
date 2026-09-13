@@ -78,12 +78,25 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 | `dynamic/host.js` | le plugin : les routes, le cache, le flux, le jeton |
 | `dynamic/tailscale.js` | la découverte du tailnet — lancement du CLI local et **analyse pure** de sa sortie |
 | `dynamic/journal.js` | la lecture d'un journal de session : trames zstd concaténées, lignes JSONL, résumé |
+| `dynamic/trames.js` | le protocole WebSocket écrit à la main (RFC 6455) : texte, ping, pong, fermeture |
 | `tests/tailscale.test.js` | les règles de la découverte, éprouvées sans lancer Tailscale |
 | `tests/journal.test.js` | les règles de lecture du journal, éprouvées avec de vraies trames zstd |
 | `tests/contrat.test.js` | le contrat avec le client : le plugin produit exactement les clés du fixture |
+| `tests/trames.test.js` | le protocole WebSocket, éprouvé octet par octet |
 
 ```bash
-node --test plugins/dsh-remote/tests/     # 20 tests, aucune dépendance
+node --test plugins/dsh-remote/tests/     # 27 tests, aucune dépendance
+
+POURQUOI LES TRAMES ONT DES TESTS. C'est du code **binaire** écrit à la main pour
+ne pas ajouter de dépendance (RÈGLE #0) : une longueur mal encodée, un masque mal
+appliqué, et le flux se tait sans rien dire — le client attend, le serveur croit
+avoir envoyé. Les tests couvrent les trois formes de longueur (deux octets, deux
+octets étendus, huit octets), le masque des trames CLIENTES (la RFC l'impose, et
+le serveur ne masque jamais), une trame incomplète conservée pour le morceau
+suivant, une longueur démesurée REFUSÉE avant d'allouer, et l'acceptation du
+handshake comparée à la valeur de l'exemple de la RFC. Vérifié en plus en vrai :
+un client WebSocket minimal reçoit `101 Switching Protocols` puis une trame
+`base`.
 ```
 
 POURQUOI LE JOURNAL A DES TESTS, ET CE QU'ILS ONT ATTRAPÉ. Un journal DSH est une

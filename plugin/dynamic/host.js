@@ -72,10 +72,19 @@ import { decouvrirMacs } from './tailscale.js'
 // TOUS les symboles encore utilisés ici sont importés — la liste a été VÉRIFIÉE
 // par grep après extraction, et pas de mémoire : un `cheminIndicatif` oublié a
 // fait répondre `500 listage impossible` à `/v1/sessions` sur une instance
-// neuve. `PLAFOND_DECOMPRESSION` est partagé avec la lecture des trames du flux,
-// qui applique le même plafond à ce qu'elle accepte.
+// neuve.
+// LE PROTOCOLE WEBSOCKET vit dans son propre fichier, avec ses tests : c'est du
+// code BINAIRE (RFC 6455), écrit à la main pour ne pas ajouter de dépendance, et
+// rien ne l'éprouvait.
 import {
-  PLAFOND_DECOMPRESSION,
+  accepterWebSocket,
+  lireTrames,
+  trameFermeture,
+  tramePong,
+  trameTexte,
+} from './trames.js'
+
+import {
   analyserLigne,
   cheminIndicatif,
   entreeDeSession,
@@ -116,90 +125,6 @@ const CLE_JETON = 'dsh-remote/device-token'
 // ─────────────────────────────────────────────────────────────────────────────
 // Lecture d'un journal de session
 // ─────────────────────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────────────────────
-// WebSocket minimal (RFC 6455)
-//
-// Écrire une centaine de lignes ici plutôt qu'ajouter une dépendance : la
-// RÈGLE #0 fait de chaque dépendance une surface d'attaque supplémentaire dans
-// un processus sans bac à sable. Seuls le texte, le ping, le pong et la
-// fermeture sont implémentés, ce qui suffit à un flux d'événements serveur vers
-// client.
-// ─────────────────────────────────────────────────────────────────────────────
-
-const CLE_MAGIQUE_WS = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
-
-function trameTexte(texte) {
-  const charge = Buffer.from(texte, 'utf8')
-  const longueur = charge.length
-  let entete
-  if (longueur < 126) {
-    entete = Buffer.alloc(2)
-    entete[1] = longueur
-  } else if (longueur < 65536) {
-    entete = Buffer.alloc(4)
-    entete[1] = 126
-    entete.writeUInt16BE(longueur, 2)
-  } else {
-    entete = Buffer.alloc(10)
-    entete[1] = 127
-    entete.writeBigUInt64BE(BigInt(longueur), 2)
-  }
-  entete[0] = 0x81
-  return Buffer.concat([entete, charge])
-}
-
-function trameFermeture(code = 1000) {
-  const charge = Buffer.alloc(2)
-  charge.writeUInt16BE(code, 0)
-  return Buffer.concat([Buffer.from([0x88, 0x02]), charge])
-}
-
-function tramePong(charge) {
-  if (charge.length >= 126) return Buffer.from([0x8a, 0x00])
-  return Buffer.concat([Buffer.from([0x8a, charge.length]), charge])
-}
-
-/**
- * Décode les trames reçues d'un client. Le client DOIT masquer ses trames.
- * @returns {{restant: Buffer, trames: Array<{fin: boolean, opcode: number, charge: Buffer}>}}
- */
-function lireTrames(restant) {
-  const trames = []
-  let tampon = restant
-  for (;;) {
-    if (tampon.length < 2) break
-    const fin = (tampon[0] & 0x80) !== 0
-    const opcode = tampon[0] & 0x0f
-    const masque = (tampon[1] & 0x80) !== 0
-    let longueur = tampon[1] & 0x7f
-    let curseur = 2
-    if (longueur === 126) {
-      if (tampon.length < 4) break
-      longueur = tampon.readUInt16BE(2)
-      curseur = 4
-    } else if (longueur === 127) {
-      if (tampon.length < 10) break
-      const grand = tampon.readBigUInt64BE(2)
-      if (grand > BigInt(PLAFOND_DECOMPRESSION)) return { restant: Buffer.alloc(0), trames, trop: true }
-      longueur = Number(grand)
-      curseur = 10
-    }
-    const debutMasque = curseur
-    if (masque) curseur += 4
-    if (tampon.length < curseur + longueur) break
-    let charge = tampon.subarray(curseur, curseur + longueur)
-    if (masque) {
-      const cle = tampon.subarray(debutMasque, debutMasque + 4)
-      const clair = Buffer.allocUnsafe(longueur)
-      for (let i = 0; i < longueur; i++) clair[i] = charge[i] ^ cle[i & 3]
-      charge = clair
-    }
-    trames.push({ fin, opcode, charge: Buffer.from(charge) })
-    tampon = tampon.subarray(curseur + longueur)
-  }
-  return { restant: Buffer.from(tampon), trames, trop: false }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Découverte des serveurs — « le Mac découvre, l'iPhone consomme »
@@ -1121,7 +1046,7 @@ export function apply(ctx, config) {
           socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
           return tracer(req, 400)
         }
-        const accept = createHash('sha1').update(cle + CLE_MAGIQUE_WS).digest('base64')
+        const accept = accepterWebSocket(cle)
         socket.write(
           'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' +
             accept +
