@@ -1,0 +1,34 @@
+// Réglages de construction communs — CE FICHIER EST VERSIONNÉ.
+//
+// POURQUOI IL EXISTE. Le projet Xcode portait deux valeurs propres à une seule
+// personne : l'équipe de signature Apple et l'identifiant de paquet. Versionnées
+// telles quelles, elles font deux dégâts :
+//
+//   1. elles font entrer un identifiant de compte dans l'histoire du dépôt,
+//      ce que la RÈGLE #0 interdit ;
+//   2. elles rendent l'application INCONSTRUCTIBLE par quiconque d'autre — Xcode
+//      tenterait de signer avec une équipe à laquelle il n'appartient pas.
+//
+// Les valeurs personnelles vivent donc dans `Local.xcconfig`, gitignoré, que
+// chacun remplit ainsi :
+//
+//   DSH_TEAM = <ton identifiant d'equipe Apple>
+//   DSH_BUNDLE_ID = org.example.DSHRemote
+//
+// Le placeholder ci-dessus est volontairement NON conforme à la forme d'un
+// identifiant d'équipe : `scripts/check-secrets.sh` refuse ces identifiants, et
+// un exemple qui leur ressemble ferait échouer le contrôle sur ce fichier même.
+//
+// `#include?` et non `#include` : un clone neuf n'a pas de `Local.xcconfig`, et
+// il doit continuer de compiler. La construction pour le SIMULATEUR ne signe
+// pas, donc une équipe absente y est un état parfaitement valide ; Xcode ne
+// réclame une équipe que pour un appareil réel.
+
+// Valeurs par défaut, placées AVANT l'inclusion : dans un xcconfig, la dernière
+// affectation l'emporte, donc `Local.xcconfig` peut les surcharger.
+DSH_BUNDLE_ID = org.example.DSHRemote
+
+#include? "Local.xcconfig"
+
+// L'équipe vide reste vide si `Local.xcconfig` est absent : c'est voulu.
+DEVELOPMENT_TEAM = $(DSH_TEAM)

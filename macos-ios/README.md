@@ -13,7 +13,7 @@ MISE À JOUR — jalons 2, 3 et l'écriture livrés : voir [Application](#applic
 ## Application
 
 ```bash
-swift run DSHRemote        # macOS : lit le jeton tout seul, aucune saisie
+swift run DSHRemoteMac     # macOS : lit le jeton tout seul, aucune saisie
 ```
 
 **Observé** dans une fenêtre 1100×720 : Tailscale connecté, les serveurs du tailnet,
@@ -178,7 +178,7 @@ Xcode ne produit qu'une application **iOS**.
 faux — `SDKROOT = iphoneos` — et la suite est instructive : privé de lancement macOS, on
 en vient à exécuter le binaire du simulateur comme un programme du Mac, où dyld le
 refuse (`DYLD_ROOT_PATH not set for simulator program`). Le paquet livre donc de nouveau
-une application macOS (`Sources/DSHRemoteApp`, `swift run DSHRemote`), qui n'ouvre que
+une application macOS (`Sources/DSHRemoteApp`, `swift run DSHRemoteMac`), qui n'ouvre que
 `VuePrincipale` : la même vue que sur iPhone.
 
 ### Installé sur l'iPhone — et l'adresse qui marche vraiment
@@ -613,7 +613,7 @@ cd packages/dsh-remote-swift
 swift build
 swift test
 
-swift run DSHRemote                       # l'application, sur le Mac
+swift run DSHRemoteMac                    # l'application, sur le Mac
 
 ./.build/debug/dsh-remote-ctl http://127.0.0.1:3080 sante
 ./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> sessions 20
@@ -621,6 +621,45 @@ swift run DSHRemote                       # l'application, sur le Mac
 ./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> prompt <identifiant> "ton message"
 ./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> annuler <identifiant>
 ```
+
+### Le projet Xcode est versionné, et il ne porte aucune valeur personnelle
+
+**Le schéma est partagé, donc versionné.** `xcodebuild -scheme DSHRemote` échouait sur
+un clone neuf : Xcode ne crée les schémas qu'à l'ouverture du projet dans l'IDE, et
+`xcodebuild -list` n'en annonçait aucun. Le schéma vit désormais dans
+`DSHRemote.xcodeproj/xcshareddata/xcschemes/`, où git le voit.
+
+**L'équipe de signature et l'identifiant de paquet ne sont plus dans le projet.** Ils
+vivaient dans `project.pbxproj` : un identifiant de compte Apple en clair, et une
+application que personne d'autre que son auteur ne pouvait signer (Xcode aurait tenté
+de signer avec une équipe à laquelle l'utilisateur n'appartient pas). `Config/Base.xcconfig`
+est versionné et porte les défauts ; `Config/Local.xcconfig`, **gitignoré**, porte les
+valeurs personnelles :
+
+```bash
+cat > Config/Local.xcconfig <<'EOF'
+DSH_TEAM = <ton identifiant d'equipe Apple>
+EOF
+```
+
+Ce placeholder est volontairement non conforme à la forme d'un identifiant d'équipe :
+`scripts/check-secrets.sh` refuse ces identifiants, et un exemple qui leur ressemblerait
+ferait échouer le contrôle.
+
+Sans ce fichier, l'application se construit **pour le simulateur** — qui ne signe pas.
+Xcode ne réclame une équipe que pour un appareil réel. `#include?` et non `#include` :
+c'est ce qui rend l'absence du fichier légitime plutôt que fatale.
+
+Le chemin complet, du clone à l'application :
+
+```bash
+Scripts/construire-app-ios.sh --simulateur   # → .build/iphone/…/DSHRemote.app
+Scripts/empaqueter-app-macos.sh              # → .build/macos/DSH Remote.app
+```
+
+Le premier porte l'exception ATS le temps du build et **restaure la source ensuite**,
+même en cas d'échec (trap) : c'est ce qui empêche le nom du tailnet d'entrer dans un
+commit accidentel.
 
 ### NE JAMAIS lancer le binaire du simulateur comme un programme macOS
 
@@ -641,7 +680,7 @@ architectures d'un binaire universel — ce n'est donc pas une question de proce
 |---|---|
 | `open` / double-clic sur le `.app` du conteneur du simulateur | `xcrun simctl launch <appareil> org.example.DSHRemote` |
 | exécuter `.build/…/Debug-iphonesimulator/DSHRemote.app/DSHRemote` | Xcode ▸ Run avec une destination **simulateur** |
-| viser « My Mac » avec cet exécutable | `swift run DSHRemote` — l'application macOS, décrite ci-dessous |
+| viser « My Mac » avec cet exécutable | `swift run DSHRemoteMac` — l'application macOS, décrite ci-dessous |
 
 L'application macOS existe donc **dans ce paquet**, et c'est elle qu'il faut lancer sur
 le Mac : `Sources/DSHRemoteApp` ouvre `VuePrincipale`, la même vue que l'application iOS.
@@ -694,7 +733,7 @@ Sources/
 │   └── VueReglages.swift  # réglages (adresse, jeton, suivi)
 ├── DSHRemoteCtl/          # tool de validation (macOS)
 │   └── main.swift
-└── DSHRemoteApp/          # application macOS : `swift run DSHRemote`
+└── DSHRemoteApp/          # application macOS : `swift run DSHRemoteMac`
     └── main.swift
 Tests/
 └── DSHRemoteKitTests/     # décodage des charges utiles réelles, écriture, rappels de fin
@@ -778,7 +817,7 @@ inactive.
 | La liste vide dit pourquoi | `/v1/serveurs` rend `diagnostic` quand la liste est vide ; 5 tests couvrent les charges utiles de l'hôte |
 | Chaque icône rendue EXISTE | test « Chaque icône rendue est un symbole SF qui existe vraiment » — il a mis en évidence que `macbook.air`, `macbook.pro` et `imac` n'existent pas |
 | Les refus sont respectés | `401` sans jeton, `403` avec `Origin`, `404` sur identifiant inconnu |
-| **L'application macOS existe et fonctionne** | `swift run DSHRemote` : fenêtre 1100×720 **à l'écran** (`isOnScreen=true`), Tailscale connecté, serveurs listés, **11 sessions** groupées en 4 espaces |
+| **L'application macOS existe et fonctionne** | `swift run DSHRemoteMac` : fenêtre 1100×720 **à l'écran** (`isOnScreen=true`), Tailscale connecté, serveurs listés, **11 sessions** groupées en 4 espaces |
 | **La fenêtre reste derrière sans activation explicite** | mesuré : fenêtre créée mais `isOnScreen=false` ; `setActivationPolicy(.regular)` + `activate` la fait apparaître |
 | **Le binaire du simulateur lancé sur macOS est refusé par dyld** | reproduit : `DYLD_ROOT_PATH not set for simulator program`, sur les deux architectures, aucun cadre de `DSHRemote` |
 | L'application fonctionne sur iOS | simulateur iPhone 17 Pro : liste des sessions connectée à la vraie instance |
