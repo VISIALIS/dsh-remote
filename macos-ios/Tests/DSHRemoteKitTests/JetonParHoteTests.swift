@@ -104,3 +104,92 @@ func leJetonDuChampCompte() {
 
   #expect(modele.jetonDeLaCible() == jetonUn)
 }
+
+// MARK: - La page d'une machine montre LE JETON DE CETTE MACHINE
+
+@MainActor
+@Test("Le champ d'une page lit le jeton de la machine AFFICHÉE, pas celui de la cible")
+func jetonDeLaMachineAffichee() {
+  // LE DÉFAUT. La page d'un serveur peut être ouverte sur un hôte auquel on
+  // n'est PAS connecté. Le champ annonçait « jeton de cet hôte » et lisait
+  // pourtant `jetonSaisi`, qui ne décrit que la cible — le jeton d'une machine
+  // s'affichait donc sous le nom d'une autre.
+  let gardien = GardienEnMemoire()
+  let modele = ModeleApp(gardien: gardien)
+  modele.remplacerServeursPourEssai([distant, autreDistant])
+
+  modele.choisir(distant)
+  modele.definirJeton(jetonUn)  // le jeton de la CIBLE
+
+  // La page de l'AUTRE machine ne doit pas montrer ce secret.
+  #expect(modele.jeton(pour: autreDistant.adresse).isEmpty)
+  #expect(!modele.jetonDisponible(pour: autreDistant.adresse))
+
+  // Et la page de la cible, elle, le montre — c'est bien le même secret.
+  #expect(modele.jeton(pour: distant.adresse) == jetonUn)
+}
+
+@MainActor
+@Test("Écrire le jeton d'une autre machine ne touche pas le champ de la cible")
+func ecrirePourUneAutreMachine() {
+  // LE SECOND VISAGE DU MÊME DÉFAUT : coller un jeton sur la fiche d'un Mac
+  // l'envoyait vers `cible.adresse`. Le jeton doit aller à la machine dont on
+  // voit la page, et à elle seule.
+  let gardien = GardienEnMemoire()
+  let modele = ModeleApp(gardien: gardien)
+  modele.remplacerServeursPourEssai([distant, autreDistant])
+
+  modele.choisir(distant)
+  modele.definirJeton(jetonUn)
+  modele.definirJeton(jetonDeux, pour: autreDistant.adresse)
+
+  #expect(gardien.lire(pour: IdentiteHote.cle(autreDistant.adresse)) == jetonDeux)
+  // Le champ en mémoire décrit la CIBLE : il n'a pas bougé.
+  #expect(modele.jetonSaisi == jetonUn)
+  #expect(modele.jetonDeLaCible() == jetonUn)
+}
+
+@MainActor
+@Test("Effacer le jeton d'une autre machine ne vide pas le champ de la cible")
+func effacerPourUneAutreMachine() {
+  let gardien = GardienEnMemoire()
+  let modele = ModeleApp(gardien: gardien)
+  modele.remplacerServeursPourEssai([distant, autreDistant])
+
+  modele.choisir(distant)
+  modele.definirJeton(jetonUn)
+  modele.definirJeton(jetonDeux, pour: autreDistant.adresse)
+
+  modele.effacerJeton(pour: autreDistant.adresse)
+
+  #expect(gardien.lire(pour: IdentiteHote.cle(autreDistant.adresse)) == nil)
+  #expect(modele.jeton(pour: distant.adresse) == jetonUn, "le champ de la cible reste")
+  #expect(modele.jetonSaisi == jetonUn)
+}
+
+@MainActor
+@Test("Le jeton de l'hôte local n'est jamais recopié, même écrit par son adresse")
+func localJamaisRecopieParAdresse() {
+  // La règle existait pour la cible ; elle doit tenir pour une écriture
+  // ADRESSÉE, sinon la fiche du Mac local deviendrait un chemin de copie du
+  // secret du coffre vers le trousseau.
+  let gardien = GardienEnMemoire()
+  let modele = ModeleApp(gardien: gardien)
+  modele.remplacerServeursPourEssai([distant, local])
+
+  modele.definirJeton(jetonUn, pour: local.adresse)
+  #expect(gardien.lire(pour: IdentiteHote.cle(local.adresse)) == nil)
+}
+
+@Test("La boucle locale se reconnaît, et rien d'autre")
+func boucleLocale() {
+  // MESURÉ : sur macOS, la découverte est locale et laisse `estLocal` faux pour
+  // tout le monde — la machine locale s'y reconnaît par son adresse, puisque le
+  // harness n'écoute que sur la boucle locale.
+  #expect(ModeleApp.estBoucleLocale("http://127.0.0.1:3080"))
+  #expect(ModeleApp.estBoucleLocale("localhost:3080"))
+  #expect(ModeleApp.estBoucleLocale("http://[::1]:3080"))
+  #expect(!ModeleApp.estBoucleLocale("http://100.101.102.103:3080"))
+  #expect(!ModeleApp.estBoucleLocale("http://macmini.exemple.ts.net"))
+  #expect(!ModeleApp.estBoucleLocale(""))
+}

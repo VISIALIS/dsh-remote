@@ -274,6 +274,13 @@ struct VueServeur: View {
   /// ont deux jetons distincts, et celui d'une machine ne vaut pas pour une
   /// autre. Un réglage « général » qui ne vaut que pour un hôte serait un
   /// mensonge d'endroit.
+  ///
+  /// ET C'EST LE JETON DE **CETTE** MACHINE, pas celui de la cible. La page peut
+  /// être ouverte sur un hôte auquel on n'est PAS connecté : lire et écrire le
+  /// jeton de la cible faisait alors afficher un secret sous le nom d'un autre,
+  /// et un jeton collé ici partait vers une machine qui n'est pas celle qu'on
+  /// regarde. Toutes les opérations de ce bloc passent donc par
+  /// `serveur.adresse`.
   private var jeton: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text("Jeton d'appareil de cet hôte")
@@ -281,10 +288,13 @@ struct VueServeur: View {
         .foregroundStyle(.secondary)
       HStack(spacing: 8) {
         SecureField(
-          modele.jetonDisponible ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil",
+          modele.jetonDisponible(pour: serveur.adresse)
+            ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil",
           // Guardé dès la frappe POUR CET HÔTE : un jeton collé puis abandonné
           // serait perdu, alors qu'il vient d'être recopié.
-          text: Binding(get: { modele.jetonSaisi }, set: { modele.definirJeton($0) })
+          text: Binding(
+            get: { modele.jeton(pour: serveur.adresse) },
+            set: { modele.definirJeton($0, pour: serveur.adresse) })
         )
         .font(.callout.monospaced())
         .lineLimit(1)
@@ -294,16 +304,20 @@ struct VueServeur: View {
           .textInputAutocapitalization(.never)
         #endif
         Button {
-          modele.collerLeJeton()
+          // UN COLLAGE REFUSÉ SE DIT : un presse-papiers vide ne doit pas
+          // produire un appui sans effet.
+          if !modele.collerLeJeton(pour: serveur.adresse) {
+            modele.signaler("Le presse-papier ne contient pas de jeton exploitable.")
+          }
         } label: {
           Image(systemName: "doc.on.clipboard")
         }
         .buttonStyle(.borderless)
         .cibleTactile()
         .accessibilityLabel("Coller le jeton depuis le presse-papier")
-        if modele.jetonDisponible {
+        if modele.jetonDisponible(pour: serveur.adresse) {
           Button {
-            modele.effacerJeton()
+            modele.effacerJeton(pour: serveur.adresse)
           } label: {
             Image(systemName: "xmark.circle")
           }
@@ -316,21 +330,24 @@ struct VueServeur: View {
       // ON NE JUGE QUE CE QUI A ÉTÉ SAISI. « jeton incomplet : 0 caractères au
       // lieu de 43 » s'affichait sur une page où RIEN n'avait été tapé : un
       // reproche pour un champ vide, avant même le premier mot sur la machine.
-      if modele.jetonDisponible {
+      if modele.jetonDisponible(pour: serveur.adresse) {
+        let complet = modele.jetonBienForme(pour: serveur.adresse)
         Label(
-          modele.jetonBienForme
+          complet
             ? "jeton complet (43 caractères)"
-            : "jeton incomplet : \(modele.longueurJeton) caractères au lieu de 43",
-          systemImage: modele.jetonBienForme ? "checkmark.seal" : "exclamationmark.triangle"
+            : "jeton incomplet : \(modele.longueurJeton(pour: serveur.adresse)) caractères au lieu de 43",
+          systemImage: complet ? "checkmark.seal" : "exclamationmark.triangle"
         )
         .font(.caption)
-        .foregroundStyle(modele.jetonBienForme ? Color.green : Color.orange)
+        .foregroundStyle(complet ? Color.green : Color.orange)
       }
 
       // Un `401` propose l'action qui RÉPARE, à portée de pouce : le champ est
       // juste au-dessus. Le rappel n'apparaît que pour cette cause-là — une
-      // adresse injoignable ne se règle pas ici, et une machine ÉTEINTE non plus.
-      if modele.jetonRefuseParLeService {
+      // adresse injoignable ne se règle pas ici, et une machine ÉTEINTE non plus
+      // — ET SEULEMENT SUR LA PAGE DE LA MACHINE VISÉE : un `401` parle de la
+      // connexion en cours, pas d'une fiche qu'on consulte.
+      if modele.jetonRefuseParLeService, ModeleApp.vise(modele.adresse, serveur) {
         Label(
           "Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien.",
           systemImage: "key"

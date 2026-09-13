@@ -1450,14 +1450,40 @@ public final class ModeleApp {
   }
 
 
-  /// Colle le jeton depuis le presse-papier.
+  /// Colle le jeton depuis le presse-papier, POUR LA CIBLE.
   ///
   /// POURQUOI CE BOUTON. Le jeton fait 43 caractères en base64url, copié depuis
   /// un terminal : à la main, sur un clavier de téléphone, une saisie exacte
   /// est improbable. Le presse-papier supprime le risque de faute — et comme on
   /// nettoie les espaces, un retour à la ligne collé avec la valeur ne gêne pas.
+  ///
+  /// La feuille « Adresse » emploie cette forme : son adresse EST la cible, et
+  /// elle engage le jeton plus tard (à la soumission).
   @discardableResult
   public func collerLeJeton() -> Bool {
+    guard let nettoye = ModeleApp.jetonDuPressePapiers() else { return false }
+    jetonSaisi = nettoye
+    return true
+  }
+
+  /// Colle le jeton depuis le presse-papier POUR UNE MACHINE NOMMÉE.
+  ///
+  /// POURQUOI ELLE ENREGISTRE TOUT DE SUITE, contrairement à la précédente. Le
+  /// champ d'une page de machine est celui d'un hôte CONNU : l'y coller est un
+  /// geste délibéré, qui n'a pas à attendre une soumission, et c'est déjà le
+  /// comportement de la frappe sur cette page.
+  @discardableResult
+  public func collerLeJeton(pour adresse: String) -> Bool {
+    guard let nettoye = ModeleApp.jetonDuPressePapiers() else { return false }
+    enregistrerJeton(nettoye, pour: adresse)
+    return true
+  }
+
+  /// Le presse-papiers, nettoyé, s'il contient un jeton plausible.
+  ///
+  /// Rend `nil` — et l'appelant le DIT — quand il est vide ou trop court :
+  /// « rien ne s'est passé » ne doit jamais être une réponse possible à un appui.
+  nonisolated static func jetonDuPressePapiers() -> String? {
     let valeur: String?
     #if canImport(UIKit)
       valeur = UIPasteboard.general.string
@@ -1466,11 +1492,10 @@ public final class ModeleApp {
     #else
       valeur = nil
     #endif
-    guard let valeur else { return false }
+    guard let valeur else { return nil }
     let nettoye = valeur.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard nettoye.count >= 20 else { return false }
-    jetonSaisi = nettoye
-    return true
+    guard nettoye.count >= 20 else { return nil }
+    return nettoye
   }
 
   /// Oublie le serveur mémorisé, adresse comprise.
@@ -1513,10 +1538,31 @@ public final class ModeleApp {
     enregistrerJeton(valeur)
   }
 
+  /// Le même geste, POUR UNE MACHINE NOMMÉE.
+  ///
+  /// POURQUOI L'ADRESSE EST UN PARAMÈTRE. La page d'une machine peut être celle
+  /// d'un AUTRE hôte que la cible — on ouvre la fiche d'un Mac sans s'y
+  /// connecter. Or la lecture, l'écriture et l'effacement du jeton visaient tous
+  /// `cible.adresse` : le champ annonçait « jeton de cet hôte » et agissait sur
+  /// un autre. Un jeton collé là partait vers la mauvaise machine, et celui
+  /// d'une autre s'affichait sous ce nom-là.
+  public func definirJeton(_ valeur: String, pour adresse: String) {
+    enregistrerJeton(valeur, pour: adresse)
+  }
+
   /// Efface le jeton de L'HÔTE VISÉ : en mémoire, et là où il était gardé.
   public func effacerJeton() {
-    jetonSaisi = ""
-    gardien.effacer(pour: IdentiteHote.cle(cible.adresse))
+    effacerJeton(pour: cible.adresse)
+  }
+
+  /// Efface le jeton d'une machine nommée.
+  public func effacerJeton(pour adresse: String) {
+    let cle = IdentiteHote.cle(adresse)
+    // Le champ en mémoire ne décrit que la cible : l'effacer parce qu'on efface
+    // le jeton d'une AUTRE machine ferait disparaître sous les yeux de
+    // l'utilisateur un secret qui n'était pas visé.
+    if cle == IdentiteHote.cle(cible.adresse) { jetonSaisi = "" }
+    gardien.effacer(pour: cle)
   }
 
   /// Enregistre le jeton saisi : au trousseau sur iOS, en mémoire sur macOS.
@@ -1525,24 +1571,83 @@ public final class ModeleApp {
   /// enregistrement par caractère persistait un jeton tronqué, et faisait
   /// croire à un jeton disponible alors que la saisie n'était pas terminée.
   public func enregistrerJeton(_ valeur: String) {
-    jetonSaisi = valeur.trimmingCharacters(in: .whitespacesAndNewlines)
-    let cle = IdentiteHote.cle(cible.adresse)
-    cleJetonChargee = cle
+    enregistrerJeton(valeur, pour: cible.adresse)
+  }
+
+  /// Enregistre le jeton D'UNE MACHINE NOMMÉE.
+  public func enregistrerJeton(_ valeur: String, pour adresse: String) {
+    let propre = valeur.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cle = IdentiteHote.cle(adresse)
+    // LE CHAMP EN MÉMOIRE NE DÉCRIT QUE LA CIBLE. Y écrire le jeton d'une autre
+    // machine ferait afficher ici le secret collé là-bas — et, pire, pourrait
+    // l'envoyer à la cible.
+    if cle == IdentiteHote.cle(cible.adresse) {
+      jetonSaisi = propre
+      cleJetonChargee = cle
+    }
 
     // LE JETON DE L'HÔTE LOCAL N'EST PAS RECOPIÉ ICI. Il est dans le coffre du
     // harness, qui est sa source ; en garder une seconde copie multiplierait les
     // endroits où un secret peut fuir sans rien apporter.
-    guard serveurVise?.estLocal != true, !cible.adresse.isEmpty else { return }
+    guard !adresse.isEmpty, !estHoteLocal(adresse) else { return }
 
     // C'est le GARDIEN qui sait s'il peut garder durablement — le modèle n'a pas
     // à connaître la plateforme (il le faisait, et c'était une erreur de
     // conception : deux `#if` dans la logique métier, pour une question de
     // stockage).
-    if jetonSaisi.isEmpty {
+    if propre.isEmpty {
       gardien.effacer(pour: cle)
     } else {
-      gardien.ecrire(jetonSaisi, pour: cle)
+      gardien.ecrire(propre, pour: cle)
     }
+  }
+
+  /// LE JETON D'UNE MACHINE NOMMÉE — ce que son champ doit afficher.
+  ///
+  /// POURQUOI ELLE PREND L'ADRESSE. `jetonSaisi` ne décrit QUE la cible : il est
+  /// sa valeur la plus fraîche (un collage qui n'est pas encore enregistré, une
+  /// amorce de fichier), et il n'a rien à dire d'une autre machine. Le lire pour
+  /// toutes les pages faisait afficher le jeton d'une machine sous le nom d'une
+  /// autre.
+  public func jeton(pour adresse: String) -> String {
+    let cle = IdentiteHote.cle(adresse)
+    if cle == IdentiteHote.cle(cible.adresse), !jetonSaisi.isEmpty { return jetonSaisi }
+    if let garde = gardien.lire(pour: cle), !garde.isEmpty { return garde }
+    guard estHoteLocal(adresse) else { return "" }
+    return CoffreDuHarness.jetonDeLaMachine() ?? ""
+  }
+
+  /// Vrai si un jeton est disponible POUR CETTE MACHINE, sans le révéler.
+  public func jetonDisponible(pour adresse: String) -> Bool { !jeton(pour: adresse).isEmpty }
+
+  /// Longueur du jeton de CETTE machine. Jamais le jeton lui-même.
+  public func longueurJeton(pour adresse: String) -> Int { jeton(pour: adresse).count }
+
+  /// La forme du jeton de CETTE machine.
+  public func jetonBienForme(pour adresse: String) -> Bool {
+    ModeleApp.jetonBienForme(jeton(pour: adresse))
+  }
+
+  /// CETTE ADRESSE EST-ELLE CELLE DE LA MACHINE QUI HÉBERGE LE HARNESS ?
+  ///
+  /// DEUX CHEMINS, ET LES DEUX EXISTENT. Sur iOS, la liste vient d'un hôte, qui
+  /// marque la machine ayant répondu (`estLocal`). Sur macOS, la découverte est
+  /// LOCALE et laisse ce champ faux pour tout le monde : la machine locale s'y
+  /// reconnaît par son adresse — le harness n'écoute que sur la boucle locale.
+  func estHoteLocal(_ adresse: String) -> Bool {
+    if let serveur = ModeleApp.serveurA(adresse: adresse, dans: serveurs), serveur.estLocal {
+      return true
+    }
+    return ModeleApp.estBoucleLocale(adresse)
+  }
+
+  /// `127.0.0.1`, `localhost`, `::1` — la boucle locale, et rien d'autre.
+  nonisolated static func estBoucleLocale(_ adresse: String) -> Bool {
+    guard let brut = ExceptionATS.hote(adresse)?.lowercased() else { return false }
+    // `URLComponents` rend l'hôte IPv6 tantôt entre crochets, tantôt nu selon la
+    // forme de l'adresse : les deux se ramènent à la même chose.
+    let hote = brut.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    return hote == "localhost" || hote == "127.0.0.1" || hote == "::1"
   }
 
   // MARK: - Connexion
