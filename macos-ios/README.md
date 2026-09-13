@@ -81,18 +81,24 @@ SwiftUI replie en pile sur iPhone. La seule différence réelle est la provenanc
    Il est ensuite conservé au trousseau (`kSecAttrAccessibleAfterFirstUnlock`), jamais
    dans les préférences.
 
-2. **Utiliser l'adresse tailnet en chiffres, pas le nom MagicDNS.** App Transport
-   Security n'impose TLS qu'aux noms de domaine qualifiés ; une adresse IP littérale en
-   est exemptée. Passer par le nom MagicDNS demanderait une exception ATS dans le projet
-   Xcode — donc un `Info.plist` et un projet, ce que ce paquet SwiftPM n'a pas encore.
+2. **L'adresse est le nom MagicDNS, sans port — et sa lisibilité dépend du paquet.**
+   `tailscale serve` publie l'instance sur le **port 80 du nom MagicDNS** ; le harness,
+   lui, n'écoute que sur la boucle locale, donc `http://100.x.y.z:3080` **ne répond
+   pas** (mesuré : `000`). Voir le tableau de « Installé sur l'iPhone » plus bas.
 
-   ```bash
-   tailscale ip -4        # sur le Mac : 100.x.y.z
-   ```
+   Reste App Transport Security : il n'impose TLS qu'aux **noms de domaine qualifiés**,
+   et l'exception qui les autorise en clair n'est posée que par les scripts du dépôt
+   (`Scripts/construire-app-ios.sh` côté iOS, `Scripts/empaqueter-app-macos.sh` côté
+   Mac), à partir de `Config/DomaineTailnet` — un fichier local, absent d'un clone.
+   Mesuré : un `xcodebuild` direct produit un paquet **sans** exception, qui refuse
+   toutes les machines du tailnet en `-1022`.
 
-   L'adresse est ensuite `http://100.x.y.z:3080`. Tailscale chiffre le trajet de bout en
-   bout (WireGuard) ; `tailscale serve` publie en HTTP, il n'y a donc pas de TLS à
-   attendre et aucune exception ATS n'est nécessaire.
+   L'application ne le suppose donc plus, elle le **lit** : le champ et son pied de page
+   s'adaptent à ce que l'Info.plist du paquet en cours autorise (`ExceptionATS`). Sans
+   exception, elle conseille `https://…` — à publier avec
+   `tailscale serve --https 443`, sans aucune exception à poser — ou
+   `Scripts/construire-app-ios.sh`, qui pose l'exception pour votre tailnet. Avec
+   l'exception, elle conseille `http://<machine>.<tailnet>.ts.net`, et le dit.
 
 ### Essai sur le simulateur iOS — fait, et ce qu'il a appris
 
@@ -1437,10 +1443,39 @@ affiche « Aucun jeton d'appareil » alors que `DSH_REMOTE_COFFRE` désigne bien
 Sur un iPhone réel, ce chemin n'existe de toute façon pas : le jeton se saisit **une
 fois** dans le champ prévu, puis il est conservé au trousseau.
 
+**Où est ce champ, et pourquoi c'était un cul-de-sac.** Une revue d'interface a montré
+que le champ n'existait que sur la page d'une machine **connue** — or cette page s'ouvre
+après une découverte, qui exige une connexion authentifiée. Sur un iPhone neuf : liste
+vide, donc aucune page de machine, donc aucun champ ; la connexion ne pouvait finir qu'en
+`401`, et le message du `401` renvoyait vers les **Réglages**, qui ne contiennent plus
+aucun champ de jeton depuis que chaque hôte a le sien. Le remède prescrit était un écran
+vide, et le champ réel était derrière une porte fermée.
+
+Le jeton est donc **aussi** dans la feuille « Adresse » — le seul écran qu'un appareil
+neuf puisse ouvrir —, dans une section qui lui est propre :
+
+| Où | Quand |
+|---|---|
+| Feuille « Adresse » | saisie manuelle d'une adresse, donc sur un appareil neuf |
+| Page d'une machine | la machine est déjà dans la liste : c'est son jeton, et lui seul |
+
+Deux détails d'implémentation, et le second est une règle de sécurité :
+
+- le champ de la feuille est **local** (`@State`) et n'est engagé qu'à l'appui sur
+  « Se connecter » ou « Tester l'adresse ». Une liaison directe au modèle aurait confié
+  au trousseau, caractère par caractère, un jeton tronqué rangé sous une **adresse
+  tronquée** — autant de copies partielles d'un secret que de préfixes d'adresse ;
+- l'adresse change de machine à chaque frappe : le champ se recale alors sur le jeton de
+  l'adresse affichée, pour qu'un secret saisi pour l'une ne puisse pas être engagé pour
+  l'autre. La règle « chaque hôte a le sien » tient donc aussi ici.
+
+Le message du `401` nomme maintenant les deux endroits qui portent réellement le champ,
+et un test l'empêche de reconduire un renvoi vers un écran qui n'en a plus.
+
 **Prérequis côté appareil**, indépendants du code : brancher l'iPhone en USB (ou activer
 la synchronisation Wi-Fi), l'appairer et faire confiance à cet ordinateur, puis activer
 **Réglages ▸ Confidentialité et sécurité ▸ Mode développeur** sur l'iPhone. Tant que
-`xcrun devicectl list devices` répond `No devices found`, aucune installation n'est
+`xcrun devicectl list devices` donne `No devices found`, aucune installation n'est
 possible — c'est un préalable matériel, pas logiciel.
 
 ### Écriture : répondre à l'agent, et l'interrompre
@@ -1469,6 +1504,40 @@ la file et s'insérer dans un tour en cours ne se devine pas.
 L'annulation **conserve la file d'attente** : ce qui n'a pas encore été traité
 reste en attente. Une session froide est refusée (`404`) — il n'y a rien à
 interrompre.
+
+### La couche d'adaptation : trois manques, corrigés
+
+Une revue d'interface (six réviseurs indépendants, puis vérification dans le code) a
+relevé, sans se concerter, que l'application n'avait **aucune** couche d'adaptation : ni
+tailles de texte dynamiques, ni libellés pour les lecteurs d'écran, ni respect de
+« Réduire les animations », ni cibles tactiles conformes. Trois de ces quatre points sont
+corrigés ici — le quatrième (Dynamic Type complet, qui demande de reprendre chaque taille
+absolue) reste à faire, et le rapport d'audit le classe en finition.
+
+| Manque | Ce qui a changé | Preuve |
+|---|---|---|
+| **VoiceOver muet sur les états** — l'information vivait dans une forme et une couleur | une phrase par ligne de session (`AfficheLigneSession.libelleAccessible`), par étape (`ParcoursDesEtapes`) et par machine (`EtatMachine.libelleAccessible`) ; l'indicateur décoratif est masqué pour ne pas dire deux fois la même chose | 6 tests, dont un qui vérifie que les cinq états de session ont cinq libellés **distincts** |
+| **« Réduire les animations » ignoré** — une rotation en boucle infinie, et `EtatSession.anime` que personne ne lisait | l'indicateur relit le réglage et s'arrête net ; **les quatre carrés orange restent affichés**, immobiles : une animation supprimée ne doit pas emporter l'information | règle du modèle éprouvée (`anime` n'est vrai que pour `.enCours`) ; le rendu demande un appareil |
+| **Cibles tactiles sous 44 pt** — boutons d'icône dessinés au plus juste | `cibleTactile()` : cadre de 44 pt et `contentShape` (sans quoi le cadre ne rendrait rien cliquable) sur copier une commande, coller et effacer un jeton, envoyer, interrompre, effacer la recherche | le modificateur est unique, donc la règle ne peut pas diverger d'un écran à l'autre ; macOS garde sa cible au pointeur |
+
+Ce qui n'est **pas** affirmé : l'ordre de lecture réel, les contrastes en mode sombre, et
+le rendu en taille d'accessibilité maximale. Ces trois-là demandent un appareil, et le
+rapport d'audit les liste comme tels.
+
+### Les étapes grisées restent lisibles
+
+Le propriétaire avait demandé que les étapes suivantes d'un parcours soient grisées :
+« pas besoin de rentrer dans leur détail ». La règle était appliquée trop loin — sur la
+page « Ajouter un serveur », les étapes 2 à 4 sont déclarées « à faire » **par
+construction** (on ne juge pas une machine qu'on n'a pas encore), donc la frontière ne
+pouvait jamais avancer, et les étapes 3 et 4 restaient verrouillées à perpétuité, **sans
+explication ni méthode** : « publier le port » et « installer le plugin » étaient
+inatteignables depuis la seule page qui existe pour les enseigner.
+
+Le verrou reste un **repère d'ordre** — ligne grisée, cadenas, « après l'étape N », et
+les méthodes ne sont pas dépliées d'office, donc la page reste courte. Mais chaque étape
+non franchie porte désormais son explication et un bouton **« Voir la méthode »**, la
+règle vivant dans `EtapesServeur.presentation` où elle est éprouvée.
 
 ### Un défaut trouvé en regardant, pas en compilant
 
@@ -1680,14 +1749,18 @@ Sources/
 │   ├── RemoteClient.swift
 │   ├── ModeleApp.swift    # état de l'application — la vue ne parle jamais au réseau
 │   ├── EtatMachine.swift  # l'état d'une machine : MÊMES MOTS au panneau latéral et sur sa page
+│   ├── ExceptionATS.swift # ce que CE paquet autorise en clair, lu dans son propre Info.plist
+│   ├── ConseilAdresse.swift  # l'adresse à conseiller, décidée par ce que le paquet autorise
+│   ├── CibleTactile.swift # la cible de 44 pt des boutons d'icône
 │   ├── Vues.swift         # liste des sessions
 │   ├── VueJournal.swift   # journal d'une session
 │   ├── VueServeur.swift   # page d'un serveur — quatre bandes : identité, diagnostic, réglages, détail
 │   ├── ParcoursDesEtapes.swift  # les quatre constats, en diagnostic ou en objectifs
 │   ├── Demarches.swift    # publier le port, installer le plugin : les deux procédures partagées
 │   ├── VueAjoutServeur.swift  # page « Ajouter un serveur »
+│   ├── FeuilleAdresse.swift  # adresse ET jeton — le seul écran qu'un appareil neuf puisse ouvrir
 │   ├── VueEcriture.swift  # composeur (écrire, interrompre)
-│   └── VueReglages.swift  # réglages (adresse, jeton, suivi)
+│   └── VueReglages.swift  # réglages généraux — vides à dessein, et ils le disent
 ├── DSHRemoteCtl/          # tool de validation (macOS)
 │   └── main.swift
 └── DSHRemoteApp/          # application macOS : `swift run DSHRemoteMac`
@@ -1785,12 +1858,17 @@ inactive.
 | **La vérification est mesurée, pas supposée** | découverte 44 ms, sonde complète 16 ms, verdict posé **0,3 s** après le lancement ; requêtes 1,2 à 15 ms selon la cible |
 | **Un port 80 occupé par autre chose est reconnu** | MacMini renvoie `HTTP/1.1 404 Not Found` (sans `Server`) : message et commandes affichés, là où l'écran montrait « réponse inattendue (HTTP 404) » ; 1 test couvre les deux formes |
 | **Le jeton est sur la page de l'hôte, pas dans les réglages** | capture iPhone : « Jeton d'appareil de cet hôte » + état « jeton complet (43 caractères) » sur la page ; les Réglages ne le contiennent plus |
+| **Un iPhone neuf peut saisir son premier jeton** | capture iPhone de la feuille « Adresse » (`--adresse`) : section « Jeton d'appareil », son bouton « Coller », le compte de caractères, puis « Se connecter » et « Tester l'adresse » — le champ qui manquait au seul écran qu'un appareil vierge puisse ouvrir |
+| **Le conseil d'adresse suit ce que le paquet autorise** | capture iPhone du build AVEC exception : pied de page « Ce build autorise le clair vers le tailnet déclaré » ; 6 tests couvrent le paquet sans exception (il conseille `https://…`), l'exception inopérante, et un domaine qui n'est pas un sous-domaine |
+| **Le remède d'un 401 mène à un champ qui existe** | test : le message ne dit plus « Réglages » (qui n'a plus de champ de jeton) et nomme les deux écrans qui en ont un |
+| **Les étapes grisées restent lisibles** | capture iPhone (`--ajout --page-seule`) : étapes 3 et 4 grisées avec cadenas ET « Voir la méthode » dépliable ; test : aucune étape non franchie d'une liste de travail n'est sans méthode |
+| **Les états sont dits en mots, pas seulement en couleur** | 6 tests : les cinq états de session ont cinq libellés distincts, la ligne annonce titre + état + matière, et une machine en ligne sans DSH n'est plus annoncée « en ligne » |
 | **Les Réglages ne contiennent plus rien d'une machine** | capture iPhone : une phrase qui l'explique, puis les deux interrupteurs de sessions (préférences d'affichage, communes à toutes les machines) |
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
 | **La page dit que le plugin manque, et donne la démarche** | capture iPhone de la page de MacMini (alors que l'app vise une autre machine) : constat nommé, 3 étapes, bloc `cordis.patch.yml` copiable, vérification `curl` |
 | **Le diagnostic de santé d'un serveur** | captures iPhone : conclusion (« Il reste une étape : « … » ») puis les quatre constats, sans verrou ; sur un Mac hors ligne, l'étape 2 avec ses commandes et les suivantes « à vérifier » |
-| **Les étapes suivantes sont grisées** | capture iPhone : frontière (étape 2) avec sa méthode, étapes 3 et 4 grisées avec un cadenas et « après l'étape N », sans détail |
+| **Les étapes suivantes sont grisées, et lisibles** | capture iPhone : frontière (étape 2) avec sa méthode dépliée, étapes 3 et 4 grisées avec un cadenas, « après l'étape N », leur explication, et « Voir la méthode » — le détail n'est plus caché, seulement replié |
 | **La page d'un serveur est structurée en quatre bandes** | 3 captures macOS (`--page-seule`) : prêt, pas de DSH (MacMini), hors ligne — l'état est dit UNE fois, l'action proposée peut aboutir, les réglages sont repliés |
 | **Les mots de l'état sont partagés** | 2 tests sur `EtatMachine` : la vignette abrège, la page dit la phrase entière, et les deux portent le même ton ; la conclusion suit l'état |
 | **Tailscale a quitté le panneau latéral** | capture macOS (la colonne commence aux serveurs) et capture iPhone NEUF — conteneur vidé : la liste vide offre « Ajouter un serveur », qui porte l'étape 1 et son bouton d'installation |
