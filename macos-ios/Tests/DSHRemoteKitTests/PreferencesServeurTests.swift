@@ -32,7 +32,7 @@ func preferencesIndependantes() {
   #expect(modele.preferences(pour: seconde).suivi == true)
   #expect(modele.preferences(pour: seconde).chargeesSeulement == false)
 
-  UserDefaults.standard.removeObject(forKey: ModeleApp.clePreferencesServeurs)
+  UserDefaults.standard.removeObject(forKey: Persistance.clePreferences)
 }
 
 @Test("L'adresse est écrite de plusieurs façons : c'est le même serveur")
@@ -45,7 +45,7 @@ func memeServeurMemesPreferences() {
   #expect(modele.preferences(pour: "http://portable-un.exemple.ts.net").suivi == false)
   #expect(modele.preferences(pour: "http://portable-un.exemple.ts.net/").suivi == false)
 
-  UserDefaults.standard.removeObject(forKey: ModeleApp.clePreferencesServeurs)
+  UserDefaults.standard.removeObject(forKey: Persistance.clePreferences)
 }
 
 @Test("Après relance, les réglages par serveur sont retrouvés")
@@ -58,5 +58,5 @@ func preferencesPersistees() {
   let relu = ModeleApp()
   #expect(relu.preferences(pour: premiere).suivi == false)
 
-  UserDefaults.standard.removeObject(forKey: ModeleApp.clePreferencesServeurs)
+  UserDefaults.standard.removeObject(forKey: Persistance.clePreferences)
 }

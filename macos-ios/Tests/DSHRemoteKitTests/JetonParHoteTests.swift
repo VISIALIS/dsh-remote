@@ -57,13 +57,13 @@ func leLocalNestPasRecopie() {
   // Distant : gardé, parce que rien d'autre ne peut le retrouver.
   modele.choisir(distant)
   modele.definirJeton(jetonUn)
-  #expect(gardien.lire(pour: ModeleApp.cleServeur(distant.adresse)) == jetonUn)
+  #expect(gardien.lire(pour: IdentiteHote.cle(distant.adresse)) == jetonUn)
 
   // Local : PAS recopié — le coffre du harness est sa source, et une seconde
   // copie d'un secret est une occasion de fuite de plus.
   modele.choisir(local)
   modele.definirJeton(jetonDeux)
-  #expect(gardien.lire(pour: ModeleApp.cleServeur(local.adresse)) == nil)
+  #expect(gardien.lire(pour: IdentiteHote.cle(local.adresse)) == nil)
 }
 
 @MainActor
@@ -78,7 +78,7 @@ func effacerUnSeul() {
   modele.effacerJeton()
 
   #expect(modele.jetonSaisi.isEmpty)
-  #expect(gardien.lire(pour: ModeleApp.cleServeur(distant.adresse)) == nil)
+  #expect(gardien.lire(pour: IdentiteHote.cle(distant.adresse)) == nil)
 
   // Le jeton de l'AUTRE hôte, lui, reste intact : effacer ne déborde pas.
   modele.choisir(autreDistant)

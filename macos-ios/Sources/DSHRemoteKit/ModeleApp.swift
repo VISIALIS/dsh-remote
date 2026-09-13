@@ -24,6 +24,10 @@ public final class ModeleApp {
   /// Où les jetons sont gardés — un par hôte.
   private let gardien: GardienDeJetons
 
+  /// Ce qui survit à l'application : adresse mémorisée, préférences par serveur,
+  /// fichier d'amorçage, diagnostic. Injectée, donc éprouvable sans disque.
+  private let persistance: Persistance
+
   /// Délai de la QUESTION COURTE : « y a-t-il un DSH en face ? »
   ///
   /// `sante` répond en MILLISECONDES — mesuré trois fois : 4,1 ms, 3,2 ms,
@@ -176,7 +180,7 @@ public final class ModeleApp {
   /// transition par frappe, et une lecture de trousseau par caractère serait un
   /// gaspillage — sans compter les invites système qu'elle peut provoquer.
   private func chargerJetonDeLaCible() {
-    let cle = ModeleApp.cleServeur(cible.adresse)
+    let cle = IdentiteHote.cle(cible.adresse)
     guard cle != cleJetonChargee else { return }
     cleJetonChargee = cle
     jetonSaisi = gardien.lire(pour: cle) ?? ""
@@ -201,7 +205,7 @@ public final class ModeleApp {
     // démarrait en `0 ms` sans rien tenter, avec « aucun jeton » alors que le
     // champ en contenait un.
     if !jetonSaisi.isEmpty { return jetonSaisi }
-    let cle = ModeleApp.cleServeur(cible.adresse)
+    let cle = IdentiteHote.cle(cible.adresse)
     if let garde = gardien.lire(pour: cle), !garde.isEmpty { return garde }
     guard serveurVise?.estLocal == true else { return "" }
     return Self.jetonLocal() ?? ""
@@ -244,39 +248,12 @@ public final class ModeleApp {
 
   // MARK: - Préférences, PAR SERVEUR
 
-  /// Les deux réglages d'affichage et de suivi d'une machine.
-  ///
-  /// POURQUOI ILS SONT PAR SERVEUR, ET NON GÉNÉRAUX. Les deux portent sur la
-  /// CONNEXION à une machine : le suivi décide si l'on interroge CE serveur
-  /// toutes les trois secondes, le filtre décide ce qu'on affiche de SA liste.
-  /// Les garder globaux faisait hériter silencieusement chaque serveur des choix
-  /// faits pour le précédent — on coupait le suivi pour un Mac endormi, et la
-  /// machine suivante ne se rafraîchissait plus sans qu'on sache pourquoi. C'est
-  /// exactement le genre de report que le propriétaire a signalé.
-  public struct PreferencesServeur: Codable, Equatable, Sendable {
-    /// Interroger ce serveur périodiquement (pastilles d'état à jour).
-    public var suivi = true
-    /// N'afficher de sa liste que les sessions qu'il garde en mémoire.
-    public var chargeesSeulement = true
-
-    public init() {}
-  }
-
-  /// Clé de stockage : l'ADRESSE NORMALISÉE, seul identifiant stable d'une cible
-  /// — une machine peut être nommée, saisie à la main, ou atteinte par son
-  /// adresse de tailnet, et c'est la même.
-  nonisolated static func cleServeur(_ adresse: String) -> String {
-    RemoteClient.normaliser(adresse).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-  }
-
-  static let clePreferencesServeurs = "dsh-remote.preferences-serveurs"
-
   /// Préférences connues, par clé de serveur.
   public private(set) var preferences: [String: PreferencesServeur] = [:]
 
   /// Préférences d'une adresse — les valeurs par défaut si on ne la connaît pas.
   public func preferences(pour adresse: String) -> PreferencesServeur {
-    preferences[ModeleApp.cleServeur(adresse)] ?? PreferencesServeur()
+    preferences[IdentiteHote.cle(adresse)] ?? PreferencesServeur()
   }
 
   /// Modifie les préférences d'UN serveur.
@@ -285,25 +262,21 @@ public final class ModeleApp {
   /// s'arrête tout de suite. Sinon le réglage attend, et s'appliquera quand on
   /// s'y connectera — ce qui est le sens d'un réglage par serveur.
   public func definirPreferences(pour adresse: String, _ modification: (inout PreferencesServeur) -> Void) {
-    let cle = ModeleApp.cleServeur(adresse)
+    let cle = IdentiteHote.cle(adresse)
     var valeurs = preferences[cle] ?? PreferencesServeur()
     modification(&valeurs)
     preferences[cle] = valeurs
     memoriserPreferencesServeurs()
-    guard cle == ModeleApp.cleServeur(self.adresse) else { return }
+    guard cle == IdentiteHote.cle(self.adresse) else { return }
     if valeurs.suivi { demarrerSuivi() } else { arreterSuivi() }
   }
 
   private func chargerPreferencesServeurs() {
-    guard let donnees = UserDefaults.standard.data(forKey: Self.clePreferencesServeurs),
-      let lues = try? JSONDecoder().decode([String: PreferencesServeur].self, from: donnees)
-    else { return }
-    preferences = lues
+    preferences = persistance.lirePreferences()
   }
 
   private func memoriserPreferencesServeurs() {
-    guard let donnees = try? JSONEncoder().encode(preferences) else { return }
-    UserDefaults.standard.set(donnees, forKey: Self.clePreferencesServeurs)
+    persistance.memoriserPreferences(preferences)
   }
 
   /// Le filtre « chargées seulement », POUR LE SERVEUR COURANT.
@@ -730,8 +703,12 @@ public final class ModeleApp {
   /// Dernier `seq` reçu par le flux, à repasser en `depuisSeq` si l'on rouvre.
   public private(set) var dernierSeqVu: Int?
 
-  public init(gardien: GardienDeJetons = GardienParDefaut.faire()) {
+  public init(
+    gardien: GardienDeJetons = GardienParDefaut.faire(),
+    persistance: Persistance = Persistance()
+  ) {
     self.gardien = gardien
+    self.persistance = persistance
     chargerConfiguration()
     chargerPreference()
     chargerPreferencesServeurs()
@@ -746,22 +723,15 @@ public final class ModeleApp {
   /// CE QUI N'EST PAS MÉMORISÉ ICI : le jeton. Il vit au trousseau sur iOS, qui
   /// est fait pour cela ; `UserDefaults` est un fichier de préférences lisible
   /// par une sauvegarde, ce qui n'est pas un endroit pour un secret.
-  private static let cleAdresse = "dsh-remote.derniere-adresse"
-  private static let cleNomServeur = "dsh-remote.dernier-nom-serveur"
-
   private func chargerPreference() {
-    let defaults = UserDefaults.standard
-    let memorisee = defaults.string(forKey: Self.cleAdresse) ?? ""
-    let nom = defaults.string(forKey: Self.cleNomServeur)
+    let (memorisee, nom) = persistance.lireAdresse()
     // Sans adresse mémorisée, on garde celle par défaut : le formulaire n'est
     // pas « vidé » au lancement.
     viser(Cible(adresse: memorisee.isEmpty ? cible.adresse : memorisee, nom: nom))
   }
 
   private func memoriserPreference() {
-    let defaults = UserDefaults.standard
-    defaults.set(adresse, forKey: Self.cleAdresse)
-    if let nomServeur { defaults.set(nomServeur, forKey: Self.cleNomServeur) }
+    persistance.memoriserAdresse(adresse, nom: nomServeur)
   }
 
   /// Change l'adresse ET la mémorise immédiatement.
@@ -1384,16 +1354,11 @@ public final class ModeleApp {
   /// créé par l'application, et il doit être déposé explicitement dans un
   /// conteneur de simulateur. Sur un iPhone réel, rien ne le lit.
   private func chargerConfiguration() {
-    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-    guard let documents else { return }
-    let fichier = documents.appendingPathComponent("dsh-remote-config.json")
-    guard let donnees = try? Data(contentsOf: fichier),
-      let objet = try? JSONSerialization.jsonObject(with: donnees) as? [String: String]
-    else { return }
-    if let valeur = objet["adresse"], !valeur.isEmpty {
-      viser(Cible(adresse: valeur, nom: cible.nom))
+    let (adresseAmorcee, jetonAmorce) = persistance.lireAmorcage()
+    if let adresseAmorcee {
+      viser(Cible(adresse: adresseAmorcee, nom: cible.nom))
     }
-    if let valeur = objet["jeton"], valeur.count >= 20 { jetonSaisi = valeur }
+    if let jetonAmorce { jetonSaisi = jetonAmorce }
   }
 
   /// Exemple d'adresse à montrer dans le champ vide, selon la plateforme.
@@ -1591,9 +1556,7 @@ public final class ModeleApp {
     journal = []
     sessionOuverte = nil
     connexion = .inconnue
-    let defaults = UserDefaults.standard
-    defaults.removeObject(forKey: Self.cleAdresse)
-    defaults.removeObject(forKey: Self.cleNomServeur)
+    persistance.oublierAdresse()
   }
 
   /// Le jeton saisi pour l'hôte VISÉ, gardé DÈS LA FRAPPE.
@@ -1610,7 +1573,7 @@ public final class ModeleApp {
   /// Efface le jeton de L'HÔTE VISÉ : en mémoire, et là où il était gardé.
   public func effacerJeton() {
     jetonSaisi = ""
-    gardien.effacer(pour: ModeleApp.cleServeur(cible.adresse))
+    gardien.effacer(pour: IdentiteHote.cle(cible.adresse))
   }
 
   /// Enregistre le jeton saisi : au trousseau sur iOS, en mémoire sur macOS.
@@ -1620,7 +1583,7 @@ public final class ModeleApp {
   /// croire à un jeton disponible alors que la saisie n'était pas terminée.
   public func enregistrerJeton(_ valeur: String) {
     jetonSaisi = valeur.trimmingCharacters(in: .whitespacesAndNewlines)
-    let cle = ModeleApp.cleServeur(cible.adresse)
+    let cle = IdentiteHote.cle(cible.adresse)
     cleJetonChargee = cle
 
     // LE JETON DE L'HÔTE LOCAL N'EST PAS RECOPIÉ ICI. Il est dans le coffre du
@@ -2033,37 +1996,12 @@ public final class ModeleApp {
     enChargement = false
   }
 
-  /// Écrit la dernière erreur de connexion dans le conteneur de l'application.
-  ///
-  /// POURQUOI. Un message d'erreur affiché à l'écran d'un téléphone est difficile
-  /// à rapporter fidèlement, et il ne contient pas toujours le code qui
-  /// distingue un refus App Transport Security (`-1022`) d'un DNS injoignable
-  /// (`-1003`) ou d'un délai dépassé (`-1001`) — trois causes aux corrections
-  /// opposées. Ce fichier permet de lire la cause EXACTE depuis le Mac :
-  ///
-  ///   xcrun devicectl device copy from --device <id> --domain-type appDataContainer \
-  ///     --domain-identifier org.example.DSHRemote \
-  ///     --source Documents/diagnostic.json --destination /tmp/diagnostic.json
-  ///
-  /// Il est écrasé à chaque échec : jamais de croissance, jamais d'historique.
-  /// Le jeton n'y figure jamais, ni le contenu d'une session.
+  /// Consigne la dernière erreur — le fichier, sa raison d'être et ce qu'il ne
+  /// contient JAMAIS sont documentés dans `Persistance.consignerDiagnostic`.
   private func journaliserDiagnostic(adresse: String, message: String) {
-    guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-      return
-    }
-    let contenu: [String: String] = [
-      "adresse": adresse,
-      "message": message,
-      "date": ISO8601DateFormatter().string(from: Date()),
-      // Empreinte seulement : permet de dire SI le jeton détenu est celui du
-      // coffre, sans jamais écrire le jeton sur disque.
-      "empreinteJeton": empreinteJeton,
-      "longueurJeton": String(longueurJeton),
-    ]
-    guard let donnees = try? JSONSerialization.data(withJSONObject: contenu, options: [.prettyPrinted]) else {
-      return
-    }
-    try? donnees.write(to: documents.appendingPathComponent("diagnostic.json"), options: .atomic)
+    persistance.consignerDiagnostic(
+      adresse: adresse, message: message,
+      empreinteJeton: empreinteJeton, longueurJeton: longueurJeton)
   }
 }
 
