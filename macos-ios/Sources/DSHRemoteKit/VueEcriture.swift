@@ -23,6 +23,9 @@ struct ComposeurEcriture: View {
 
   @State private var mode: ModePrompt = .queue
   @FocusState private var champActif: Bool
+  /// L'interruption DEMANDE CONFIRMATION : elle est demandée par un appui, et
+  /// elle arrête un travail en cours.
+  @State private var confirmationInterruption = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
@@ -73,8 +76,18 @@ struct ComposeurEcriture: View {
         }
 
         if modele.estEnCours(session.id), modele.annulationPossible {
+          // SÉPARATION. Le glyphe rouge était COLLÉ au bouton d'envoi, à huit
+          // points : viser l'un et toucher l'autre arrêtait un travail en cours.
+          // Un trait, et un peu d'air, disent que ce sont deux actions
+          // différentes — l'une compose, l'autre interrompt.
+          Divider().frame(height: 26)
+
+          // ET L'INTERRUPTION SE CONFIRME. Elle était immédiate, sans retour
+          // possible : un appui mal placé suffisait à arrêter un tour. Ce qui
+          // est conservé est dit à l'écran, pour que la décision se prenne en
+          // connaissance de cause.
           Button {
-            Task { await modele.annulerTour(session) }
+            confirmationInterruption = true
           } label: {
             Image(systemName: "stop.circle.fill").font(.title2)
           }
@@ -83,6 +96,18 @@ struct ComposeurEcriture: View {
           .cibleTactile()
           .help("Interrompre le tour en cours — la file d'attente est conservée")
           .accessibilityLabel("Interrompre le tour en cours")
+          .confirmationDialog(
+            "Interrompre le tour en cours ?",
+            isPresented: $confirmationInterruption,
+            titleVisibility: .visible
+          ) {
+            Button("Interrompre", role: .destructive) {
+              Task { await modele.annulerTour(session) }
+            }
+            Button("Annuler", role: .cancel) {}
+          } message: {
+            Text("Le travail déjà fait est conservé, et la file d'attente aussi.")
+          }
         }
       }
     }
