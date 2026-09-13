@@ -105,6 +105,17 @@ public actor RemoteClient {
       else { detail += " | \(ns.localizedDescription)" }
       if ns.code == NSURLErrorAppTransportSecurityRequiresSecureConnection {
         detail += " | CAUSE: App Transport Security refuse le clair vers cet hote"
+        // DEUX CAUSES POSSIBLES, ET UNE SEULE SE REPARE.
+        //
+        // Mesure : un `xcodebuild` sur un DerivedData REUTILISE produit un paquet
+        // SANS exception ATS — la phase du projet se declare pourtant executee.
+        // Tous les serveurs passent alors en « pas de DSH », chaque sonde vers un
+        // nom du tailnet etant refusee ici. Le paquet lui-meme ne peut pas le
+        // deviner, mais il peut le DIRE : sans cette ligne, l'utilisateur cherche
+        // une panne reseau, ou soupconne son jeton.
+        detail +=
+          " | VERIFIER: domaine absent de Config/DomaineTailnet, ou paquet construit sans l'exception"
+          + " (utiliser Scripts/construire-app-ios.sh, qui la pose ET la verifie)"
       }
       if ns.code == NSURLErrorCannotFindHost { detail += " | CAUSE: nom d'hote non resolu" }
       if ns.code == NSURLErrorCannotConnectToHost { detail += " | CAUSE: rien n'ecoute sur cet hote et ce port" }
@@ -179,6 +190,17 @@ public actor RemoteClient {
   public func listerServeurs() async throws -> ListeServeurs {
     let donnees = try await executer(try requete("/dsh-remote/v1/serveurs", methode: "GET", corps: nil))
     return try decoder(ListeServeurs.self, depuis: donnees)
+  }
+
+  /// Demande à l'hôte ses espaces de travail, **y compris ceux sans session**.
+  ///
+  /// L'application déduisait ses espaces des sessions : un dossier enregistré
+  /// mais encore vide n'apparaissait donc pas, alors que l'interface web
+  /// l'affiche. L'ordre rendu est celui du registre de l'hôte — par date de
+  /// création décroissante — et le client le conserve tel quel.
+  public func listerEspaces() async throws -> ListeEspaces {
+    let donnees = try await executer(try requete("/dsh-remote/v1/espaces", methode: "GET", corps: nil))
+    return try decoder(ListeEspaces.self, depuis: donnees)
   }
 
   /// Lit une page du journal d'une session.

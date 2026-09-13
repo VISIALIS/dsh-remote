@@ -118,6 +118,38 @@ func sortieIllisible() {
   #expect(DecouverteServeurs.analyser(Data("{\"Peer\":{}}".utf8)).isEmpty)
 }
 
+@Test("Un CLI qui échoue en code 0 ne doit PAS devenir « tailnet vide »")
+func cliQuiEchoueEnCodeZero() throws {
+  // LE DÉFAUT, MESURÉ ET VU À L'ÉCRAN. Lancé depuis une application ouverte par
+  // le Finder, le CLI Tailscale écrit ceci sur **stdout** et sort avec le code
+  // 0. Le prendre pour un succès faisait annoncer « aucun Mac macOS dans le
+  // tailnet » — un mensonge sur l'état du tailnet — et arrêtait la boucle des
+  // candidats avant celui qui répond.
+  let sortieCLI = Data(
+    """
+    The Tailscale GUI failed to start: The operation couldn’t be completed. (Tailscale.CLIError error 3.)
+
+    """.utf8)
+
+  // L'analyse STRICTE refuse de conclure : ce n'est pas un état, c'est un échec.
+  #expect(DecouverteServeurs.analyserEtat(sortieCLI) == nil)
+  // Le contrat historique d'`analyser` est conservé (liste vide), mais c'est
+  // désormais `analyserEtat` que la découverte emploie.
+  #expect(DecouverteServeurs.analyser(sortieCLI).isEmpty)
+
+  // Un JSON valide mais SANS `Self` ne dit rien non plus : un tailnet qui
+  // répond porte toujours l'identité de la machine locale.
+  #expect(DecouverteServeurs.analyserEtat(Data("{\"BackendState\":\"NoState\"}".utf8)) == nil)
+  #expect(DecouverteServeurs.analyserEtat(Data("{}".utf8)) == nil)
+
+  // Et un état réel reste accepté, y compris avec un seul Mac (soi-même).
+  let valide = Data(
+    """
+    {"Self":{"HostName":"Portable Un","DNSName":"portable-un.exemple.ts.net.","OS":"macOS","Online":true}}
+    """.utf8)
+  #expect(try #require(DecouverteServeurs.analyserEtat(valide)).count == 1)
+}
+
 @MainActor
 @Test("L'adresse est mémorisée dès qu'elle change, pas seulement après succès")
 func memorisationAdresse() {
@@ -146,35 +178,60 @@ func memorisationAdresse() {
 // que le code s'accorde avec lui-même.
 
 private func sessionDeTest(
-  id: String, cwd: String?, titre: String, quand: Int, profondeur: Int = 0, vivante: Bool = true
+  id: String, cwd: String?, titre: String, quand: Int, cree: Int = 1, profondeur: Int = 0, vivante: Bool = true
 ) -> SessionListee {
   let cwdJSON = cwd.map { "\"cwd\":\"\($0)\"," } ?? ""
   let json = """
     {"protocole":1,"total":1,"sessions":[
       {"projet":"--x--","dossier":"/d","fichier":"/f","octets":100,"modifieLe":1,"vivante":\(vivante),
-       "id":"\(id)",\(cwdJSON)"creeLe":1,"preset":"standard","profondeurDelegation":\(profondeur),
+       "id":"\(id)",\(cwdJSON)"creeLe":\(cree),"preset":"standard","profondeurDelegation":\(profondeur),
        "seme":false,"titre":"\(titre)","dernierEvenementLe":\(quand),"dernierSeq":1,
        "nbEnregistrements":1,"tronque":false}]}
     """.data(using: .utf8)!
   return try! JSONDecoder().decode(ListeSessions.self, from: json).sessions[0]
 }
 
-@Test("Les sessions sont groupées par espace de travail, le plus récent d'abord")
-func groupementParEspace() {
+@Test("Les espaces sont classés par CRÉATION, les sessions par ACTIVITÉ")
+func trisDistincts() {
+  // LES DEUX TRIS NE SUIVENT PAS LA MÊME DATE — c'est la règle de l'interface
+  // web, lue dans le service hôte (`newestAt`) : un espace est classé par la
+  // création de sa session la plus récente, une session par sa dernière
+  // activité. Trier les espaces par activité faisait remonter l'arbre à chaque
+  // message reçu, et déplaçait sous le doigt ce qu'on visait.
   let sessions = [
-    sessionDeTest(id: "a", cwd: "/tmp/projet-un", titre: "A", quand: 1_000),
-    sessionDeTest(id: "b", cwd: "/tmp/projet-deux", titre: "B", quand: 9_000),
-    sessionDeTest(id: "c", cwd: "/tmp/projet-un", titre: "C", quand: 5_000),
+    // Espace ANCIEN (créé t=1000) mais très actif (dernier événement t=9000).
+    sessionDeTest(id: "ancien", cwd: "/tmp/ancien", titre: "Ancien", quand: 9_000, cree: 1_000),
+    // Espace RÉCENT (créé t=8000), moins actif (t=8500) : il doit passer DEVANT.
+    sessionDeTest(id: "recent", cwd: "/tmp/recent", titre: "Récent", quand: 8_500, cree: 8_000),
+    // Deuxième session du même espace récent, créée avant mais plus active.
+    sessionDeTest(id: "recent-2", cwd: "/tmp/recent", titre: "Récent 2", quand: 9_500, cree: 7_000),
   ]
   let espaces = Regroupement.espaces(sessions)
 
-  #expect(espaces.count == 2)
-  // « projet-deux » est le plus récemment actif : il passe en tête.
-  #expect(espaces[0].nom == "projet-deux")
-  #expect(espaces[1].nom == "projet-un")
-  #expect(espaces[1].nbSessions == 2)
-  // Dans un espace, la session la plus récente d'abord.
-  #expect(espaces[1].sessions.map(\.id) == ["c", "a"])
+  #expect(espaces.map(\.nom) == ["recent", "ancien"])
+  #expect(espaces[1].nbSessions == 1)
+  // Dans un espace, c'est bien l'ACTIVITÉ qui classe : la plus récente d'abord.
+  #expect(espaces[0].sessions.map(\.id) == ["recent-2", "recent"])
+}
+
+@Test("Deux espaces créés au même instant gardent un ordre stable")
+func departageStable() {
+  // Sans départage, deux espaces de même date pourraient s'échanger d'un
+  // rafraîchissement à l'autre : l'arbre « sauterait » sans raison visible.
+  let sessions = [
+    sessionDeTest(id: "b", cwd: "/tmp/projet-b", titre: "B", quand: 100, cree: 5_000),
+    sessionDeTest(id: "a", cwd: "/tmp/projet-a", titre: "A", quand: 200, cree: 5_000),
+  ]
+  #expect(Regroupement.espaces(sessions).map(\.nom) == ["projet-a", "projet-b"])
+}
+
+@Test("Une session sans date de création n'est pas traitée comme très ancienne")
+func creationManquante() {
+  // Un journal muet sur `creeLe` ne doit pas être relégué en 1970 : on retombe
+  // sur son activité, qui est un fait connu.
+  let sansCreation = sessionDeTest(id: "muet", cwd: "/tmp/muet", titre: "Muet", quand: 9_000, cree: 0)
+  let ancienne = sessionDeTest(id: "vieux", cwd: "/tmp/vieux", titre: "Vieux", quand: 1_000, cree: 1_000)
+  #expect(Regroupement.espaces([sansCreation, ancienne]).map(\.nom) == ["muet", "vieux"])
 }
 
 @Test("Le nom d'espace vient de cwd, pas du dossier de projet encodé")

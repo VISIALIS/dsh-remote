@@ -19,22 +19,192 @@ import Foundation
 @MainActor
 @Observable
 public final class ModeleApp {
-  /// Adresse du serveur DSH. Par défaut la boucle locale : sur le Mac, c'est
-  /// Boucle locale par défaut : sur le Mac, c'est toujours la bonne. Surchargeable
-  /// par `DSH_REMOTE_ADRESSE` — ce qui sert à viser l'adresse tailnet depuis un
-  /// iPhone, et à lancer l'application dans le simulateur iOS sans saisie manuelle.
-  /// Le simulateur partage la pile réseau et le système de fichiers du Mac, donc
-  /// il atteint le tailnet et lit le coffre : c'est ce qui rend l'essai possible.
-  public var adresse: String = ModeleApp.adresseParDefaut
   public var jetonSaisi: String = ""
 
   public private(set) var sessions: [SessionListee] = []
   public private(set) var journal: [EvenementAffiche] = []
   public private(set) var sessionOuverte: ResumeSession?
-  public private(set) var capacites: Sante.Capacites?
+  /// Une opération est en cours — un fait d'INTERFACE, pas de connexion : lire
+  /// un journal occupe aussi l'écran. Il reste donc un drapeau à part.
   public private(set) var enChargement = false
-  public private(set) var erreur: String?
-  public var filtresActifs = true
+
+  /// L'état de la connexion au serveur visé : une valeur, quatre cas.
+  ///
+  /// POURQUOI UN SEUL TYPE. Cinq champs décrivaient ce même fait — `erreur` (le
+  /// texte), `erreurType` (le type), `capacites` (la réponse), `etatAdresse` (le
+  /// résultat du test, dans son propre vocabulaire) et `serveurJoint` (un
+  /// drapeau) — et leurs combinaisons invalides étaient représentables : une
+  /// erreur sans type, un succès sans capacités, « joint » avec une erreur.
+  ///
+  /// Le texte et le type ont d'ailleurs DIVERGÉ : la classification par texte a
+  /// raté le `404` de MacMini, ce qui a fait passer « quelque chose répond mais
+  /// pas DSH » pour une panne inconnue. Ici, l'erreur est typée une fois, et son
+  /// texte en découle.
+  public enum EtatConnexion: Sendable {
+    /// Rien n'a été tenté, ou la cible a changé.
+    case inconnue
+    case enCours
+    /// Le serveur a répondu ET accepté le jeton — avec le nombre de sessions
+    /// qu'il a rendues, qui est ce que le test d'adresse annonce.
+    case jointe(Sante, reponses: Int)
+    case echec(ErreurRemote)
+    /// On n'a même pas TENTÉ : il manque quelque chose AVANT la requête — jeton
+    /// absent, jeton tronqué. Distinct d'un échec réseau, parce que le remède
+    /// n'est pas sur le réseau : il est dans la saisie.
+    case incomplete(String)
+  }
+
+  public private(set) var connexion: EtatConnexion = .inconnue
+
+  // MARK: - La cible : une seule valeur
+
+  /// La CIBLE : la machine que l'application vise, en UNE valeur.
+  ///
+  /// POURQUOI CE TYPE. Cinq champs la décrivaient — `adresse`, `nomServeur`,
+  /// `serveurChoisi`, `echecCible`, `choixAjuste` — écrits depuis dix-sept
+  /// endroits. Le journal d'un démarrage réel a montré ce que cela produit :
+  /// l'adresse OSCILLE entre deux machines en vingt secondes, parce que la
+  /// bascule, la mémorisation et la reconnexion écrivaient chacune la sienne
+  /// sans que personne ne voie l'ensemble.
+  ///
+  /// Ici, la cible se remplace en UN point (`viser`), et cinq transitions
+  /// nommées y mènent : `definirAdresse`, `choisir`, `basculer`, `oublier`,
+  /// `consigner`. Aucun changement ne peut plus se produire sans passer par un
+  /// de ces noms — donc sans être relu à cet endroit.
+  ///
+  /// CE QUI N'EN FAIT PAS PARTIE : la page ouverte (`serveurOuvert`). Regarder
+  /// une machine n'est pas la viser, et les confondre a déjà produit un défaut.
+  public struct Cible: Equatable, Sendable {
+    public var adresse: String
+    /// Nom lisible, quand la machine est connue de la découverte.
+    public var nom: String?
+    /// La machine de la liste, si l'adresse y correspond.
+    public var machine: ServeurMac?
+    /// Pourquoi la dernière tentative a échoué — un FAIT constaté, jamais déduit.
+    public var echec: EchecCible?
+    /// L'avis de bascule, quand l'application a changé de machine elle-même.
+    public var avis: String?
+
+    public init(
+      adresse: String, nom: String? = nil, machine: ServeurMac? = nil,
+      echec: EchecCible? = nil, avis: String? = nil
+    ) {
+      self.adresse = adresse
+      self.nom = nom
+      self.machine = machine
+      self.echec = echec
+      self.avis = avis
+    }
+  }
+
+  public private(set) var cible = Cible(adresse: ModeleApp.adresseParDefaut)
+
+  /// LE SEUL endroit qui remplace la cible.
+  private func viser(_ nouvelle: Cible) {
+    cible = nouvelle
+  }
+
+  // Les noms historiques restent : les vues les lisent, et rien n'oblige à les
+  // renommer pour bénéficier d'une source unique.
+  public var adresse: String { cible.adresse }
+  public var nomServeur: String? { cible.nom }
+  public var serveurChoisi: ServeurMac? { cible.machine }
+  public var echecCible: EchecCible? { cible.echec }
+  public var choixAjuste: String? { cible.avis }
+
+  /// Le texte de l'échec, DÉRIVÉ du type : les deux ne peuvent plus diverger.
+  public var erreur: String? {
+    switch connexion {
+    case let .echec(erreur): return String(describing: erreur)
+    case let .incomplete(detail): return detail
+    default: return nil
+    }
+  }
+
+  /// L'erreur TYPÉE : c'est elle qui décide (« la machine répond mais pas DSH »),
+  /// jamais une recherche de code dans un texte.
+  public var erreurType: ErreurRemote? {
+    if case let .echec(erreur) = connexion { return erreur }
+    return nil
+  }
+
+  public var capacites: Sante.Capacites? {
+    if case let .jointe(sante, _) = connexion { return sante.capacites }
+    return nil
+  }
+
+  /// Vrai si les sessions affichées viennent bien du serveur visé.
+  public var serveurJoint: Bool {
+    if case .jointe = connexion { return true }
+    return false
+  }
+
+  // MARK: - Préférences, PAR SERVEUR
+
+  /// Les deux réglages d'affichage et de suivi d'une machine.
+  ///
+  /// POURQUOI ILS SONT PAR SERVEUR, ET NON GÉNÉRAUX. Les deux portent sur la
+  /// CONNEXION à une machine : le suivi décide si l'on interroge CE serveur
+  /// toutes les trois secondes, le filtre décide ce qu'on affiche de SA liste.
+  /// Les garder globaux faisait hériter silencieusement chaque serveur des choix
+  /// faits pour le précédent — on coupait le suivi pour un Mac endormi, et la
+  /// machine suivante ne se rafraîchissait plus sans qu'on sache pourquoi. C'est
+  /// exactement le genre de report que le propriétaire a signalé.
+  public struct PreferencesServeur: Codable, Equatable, Sendable {
+    /// Interroger ce serveur périodiquement (pastilles d'état à jour).
+    public var suivi = true
+    /// N'afficher de sa liste que les sessions qu'il garde en mémoire.
+    public var chargeesSeulement = true
+
+    public init() {}
+  }
+
+  /// Clé de stockage : l'ADRESSE NORMALISÉE, seul identifiant stable d'une cible
+  /// — une machine peut être nommée, saisie à la main, ou atteinte par son
+  /// adresse de tailnet, et c'est la même.
+  nonisolated static func cleServeur(_ adresse: String) -> String {
+    RemoteClient.normaliser(adresse).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+  }
+
+  static let clePreferencesServeurs = "dsh-remote.preferences-serveurs"
+
+  /// Préférences connues, par clé de serveur.
+  public private(set) var preferences: [String: PreferencesServeur] = [:]
+
+  /// Préférences d'une adresse — les valeurs par défaut si on ne la connaît pas.
+  public func preferences(pour adresse: String) -> PreferencesServeur {
+    preferences[ModeleApp.cleServeur(adresse)] ?? PreferencesServeur()
+  }
+
+  /// Modifie les préférences d'UN serveur.
+  ///
+  /// Si c'est le serveur COURANT, l'effet est immédiat : le suivi démarre ou
+  /// s'arrête tout de suite. Sinon le réglage attend, et s'appliquera quand on
+  /// s'y connectera — ce qui est le sens d'un réglage par serveur.
+  public func definirPreferences(pour adresse: String, _ modification: (inout PreferencesServeur) -> Void) {
+    let cle = ModeleApp.cleServeur(adresse)
+    var valeurs = preferences[cle] ?? PreferencesServeur()
+    modification(&valeurs)
+    preferences[cle] = valeurs
+    memoriserPreferencesServeurs()
+    guard cle == ModeleApp.cleServeur(self.adresse) else { return }
+    if valeurs.suivi { demarrerSuivi() } else { arreterSuivi() }
+  }
+
+  private func chargerPreferencesServeurs() {
+    guard let donnees = UserDefaults.standard.data(forKey: Self.clePreferencesServeurs),
+      let lues = try? JSONDecoder().decode([String: PreferencesServeur].self, from: donnees)
+    else { return }
+    preferences = lues
+  }
+
+  private func memoriserPreferencesServeurs() {
+    guard let donnees = try? JSONEncoder().encode(preferences) else { return }
+    UserDefaults.standard.set(donnees, forKey: Self.clePreferencesServeurs)
+  }
+
+  /// Le filtre « chargées seulement », POUR LE SERVEUR COURANT.
+  public var filtresActifs: Bool { preferences(pour: adresse).chargeesSeulement }
 
   private var client: RemoteClient?
 
@@ -42,17 +212,27 @@ public final class ModeleApp {
   /// découverte peut échouer des deux côtés (Tailscale absent sur l'hôte, aucun
   /// serveur encore connu), et la saisie manuelle reste toujours disponible.
   public private(set) var serveurs: [ServeurMac] = []
-  /// Serveur choisi dans la liste, ou `nil` si l'adresse est saisie à la main.
-  public private(set) var serveurChoisi: ServeurMac?
 
-  /// Vrai si l'appareil a ATTEINT le serveur choisi lors de la dernière
-  /// tentative — donc si `sessions` vient bien de lui.
+  /// Le serveur dont la PAGE est ouverte, s'il y en a un.
   ///
-  /// POURQUOI CE DRAPEAU EXISTE. Une connexion peut échouer APRÈS avoir choisi
-  /// un serveur : l'écran garde alors le serveur coché et des données qui ne
-  /// viennent pas de lui. Le drapeau permet à l'interface de dire « voici ce que
-  /// CE serveur a répondu » au lieu de laisser croire que tout va bien.
-  public private(set) var serveurJoint = false
+  /// POURQUOI CE N'EST PAS `serveurChoisi`, ET POURQUOI ÇA A ÉTÉ UN DÉFAUT.
+  /// « Choisi » veut dire « celui auquel on se connecte » ; « ouvert » veut dire
+  /// « celui qu'on regarde ». Les confondre donnait exactement ce que le
+  /// propriétaire a signalé : on touchait MacMini, sa page s'affichait — et
+  /// aucune vignette ne le montrait, puisque la coche restait sur la machine
+  /// connectée. Deux états, deux signaux.
+  ///
+  /// L'identifiant est conservé, et non la valeur : la liste est rafraîchie
+  /// toutes les quinze secondes, et une valeur capturée afficherait un état
+  /// périmé.
+  public private(set) var serveurOuvert: String?
+
+  /// Ouvre la page d'une machine. Ne se connecte pas : la connexion est un
+  /// bouton de la page.
+  public func ouvrirPage(_ serveur: ServeurMac) {
+    serveurOuvert = serveur.id
+  }
+
 
   /// Macs du tailnet qui ont RÉPONDU à la sonde de découverte.
   ///
@@ -66,18 +246,41 @@ public final class ModeleApp {
   /// Une sonde de santé, courte, le dit. Elle n'est pas gratuite : c'est une
   /// requête vers chaque Mac de la liste. On la paie parce que l'alternative est
   /// une liste qui promet ce qu'elle ne peut pas tenir.
-  public private(set) var serveursAvecDsh: Set<String> = []
-  /// Vrai pendant que les sondes sont en vol.
-  public private(set) var sondageEnCours = false
-  /// Vrai dès qu'une sonde est ALLÉE AU BOUT.
+  /// L'état de la sonde : « on ne sait pas », « on interroge », « on sait ».
   ///
-  /// POURQUOI CE DRAPEAU EN PLUS DE `serveursAvecDsh`. Un ensemble vide est
-  /// ambigu : il veut dire « aucune sonde n'a encore répondu » ET « les sondes
-  /// ont répondu, aucun Mac ne sert DSH ». Le premier état doit s'afficher en
-  /// orange (on ne sait pas), le second en gris (on sait). Sans ce drapeau, les
-  /// deux se confondaient, et une liste sans aucun serveur DSH restait ORANGE
-  /// indéfiniment — constaté sur capture.
-  public private(set) var sondageEffectue = false
+  /// POURQUOI UN SEUL TYPE, ALORS QUE TROIS CHAMPS LE DÉCRIVAIENT. Un ensemble
+  /// `serveursAvecDsh` accompagné d'un drapeau `sondageEffectue` rendait des
+  /// états CONTRADICTOIRES représentables : ensemble vide + drapeau vrai veut
+  /// dire « personne ne sert DSH », ensemble vide + drapeau faux veut dire « on
+  /// ne sait pas encore ». Deux faits différents dans deux variables qui peuvent
+  /// diverger — et elles ont divergé : une sonde ANNULÉE écrivait un verdict
+  /// vide, effaçant le bon (mesuré : `fin : 1 DSH` puis `fin : 0 DSH` sans
+  /// qu'aucune machine change d'état). Ici, la contradiction ne s'écrit pas.
+  public enum EtatSonde: Equatable, Sendable {
+    /// Aucune sonde n'a encore rendu de verdict.
+    case inconnue
+    /// Une sonde est en vol, et on ne savait rien avant elle.
+    case enCours
+    /// Verdict : les machines qui ont répondu à la sonde.
+    case connue(Set<String>)
+  }
+
+  public private(set) var sonde: EtatSonde = .inconnue
+
+  #if DEBUG
+    // ── CROCHETS DE TEST, ABSENTS DU BINAIRE LIVRÉ ──────────────────────────
+    //
+    // POURQUOI ILS EXISTENT. Les deux états ci-dessus n'ont qu'un seul écrivain
+    // — la sonde, la connexion — et c'est ce qui rend les états contradictoires
+    // inécrivables. Ouvrir les propriétés en écriture pour les tests aurait
+    // défait exactement ce qu'on vient de gagner. Ces deux fonctions, compilées
+    // en DEBUG seulement, permettent d'ÉPROUVER les invariants sans réseau.
+    func remplacerSondePourEssai(_ valeur: EtatSonde) { sonde = valeur }
+    func remplacerConnexionPourEssai(_ valeur: EtatConnexion) { connexion = valeur }
+    /// La liste des machines découvertes, pour éprouver les transitions de la
+    /// cible sans dépendre de Tailscale.
+    func remplacerServeursPourEssai(_ valeur: [ServeurMac]) { serveurs = valeur }
+  #endif
 
   /// Interroge chaque Mac pour savoir s'il sert DSH.
   ///
@@ -94,17 +297,38 @@ public final class ModeleApp {
     // La déclarer « effectuée » dans ce cas, c'était empêcher à jamais tout
     // verdict : mesuré, toutes les icônes restaient ORANGE.
     guard jeton.count == 43 else {
-      sondageEffectue = true
+      // Sans jeton, aucune sonde n'est possible : ce n'est pas « on ne sait
+      // pas », c'est « on sait qu'on ne peut pas » — un verdict vide.
+      sonde = .connue([])
       return
     }
     guard !serveurs.isEmpty else { return }
-    let candidats = serveurs
-    sondageEnCours = true
-    sondageEffectue = false
-    // Trace TEMPORAIRE de diagnostic : sans elle, on ne peut pas distinguer
-    // « la sonde n'a pas tourné » de « elle a tourné et n'a rien trouvé ».
-    print("[sonde] debut : \(candidats.count) candidat(s), jeton \(jeton.count) caracteres")
-    defer { sondageEnCours = false }
+    // ON NE SONDE QUE CE QUI PEUT RÉPONDRE. Interroger une machine que Tailscale
+    // dit hors ligne, c'est payer un délai pour un verdict déjà connu — et
+    // annoncer « pas de DSH » là où la seule vérité est « elle est éteinte ».
+    // Mesuré : la sonde partait sur 3 candidats dont un Mac éteint depuis des
+    // mois. Les machines hors ligne ne sont pas sondées, et leur légende reste
+    // « hors ligne », ce qui est exactement ce qu'on sait d'elles.
+    let candidats = serveurs.filter(\.enLigne)
+    guard !candidats.isEmpty else {
+      // Aucune machine joignable : verdict vide, et non « inconnu ».
+      sonde = .connue([])
+      return
+    }
+    // On ne repasse PAS par « en cours » si un verdict est déjà connu : les
+    // légendes ne doivent pas repartir de zéro à chaque rafraîchissement.
+    if case .inconnue = sonde { sonde = .enCours }
+    // ON NE REMET PAS LE VERDICT À ZÉRO PENDANT UN RAFRAÎCHISSEMENT.
+    //
+    // `sondageEffectue = false` était posé ici, à chaque sonde — donc toutes les
+    // quinze secondes. Les légendes repassaient alors à « vérification… » le
+    // temps de la sonde, et l'écran paraissait ne jamais conclure : c'est
+    // exactement ce que le propriétaire a photographié deux fois, alors que la
+    // sonde rendait son verdict en moins d'une seconde. Un verdict CONNU reste
+    // affiché pendant qu'on le rafraîchit ; il n'est remis à « inconnu » que
+    // lorsqu'il n'y en a jamais eu.
+    let debutSonde = Date()
+    print("[sonde] debut : \(candidats.count) candidat(s), deja annulee=\(Task.isCancelled)")
 
     let trouves = await withTaskGroup(of: (String, Bool).self) { groupe in
       for serveur in candidats {
@@ -131,9 +355,23 @@ public final class ModeleApp {
       }
       return resultat
     }
-    serveursAvecDsh = trouves
-    sondageEffectue = true
-    print("[sonde] fin : \(trouves.count) serveur(s) DSH sur \(candidats.count)")
+    // ── UNE SONDE ANNULÉE N'EST PAS UN VERDICT ──────────────────────────────
+    //
+    // MESURÉ, ET C'EST UN FAUX NÉGATIF. La sonde est relancée à chaque
+    // changement de liste, et SwiftUI ANNULE la précédente. Or une requête
+    // annulée lève, le `catch` la range en « pas de DSH », et le groupe rend
+    // donc un verdict VIDE — qui écrasait le bon. Le journal de l'application
+    // montre exactement la suite : `fin : 1 serveur(s) DSH sur 2`, puis
+    // `fin : 0 serveur(s) DSH sur 2`, sans qu'aucune machine ait changé d'état.
+    //
+    // On ne publie donc un résultat que si la sonde est allée au bout.
+    let duree = Int(Date().timeIntervalSince(debutSonde) * 1000)
+    guard !Task.isCancelled else {
+      print("[sonde] ANNULEE apres \(duree) ms — verdict non publie")
+      return
+    }
+    sonde = .connue(trouves)
+    print("[sonde] fin : \(trouves.count) serveur(s) DSH sur \(candidats.count) en \(duree) ms")
   }
 
   /// Le Mac sert-il DSH, d'après la dernière sonde ?
@@ -144,8 +382,12 @@ public final class ModeleApp {
     // « Pas encore su » : c'est l'ABSENCE de verdict qui compte, pas la
     // présence d'un résultat. Un ensemble vide après une sonde complète est un
     // verdict : aucun Mac ne sert DSH.
-    guard sondageEffectue else { return nil }
-    return serveursAvecDsh.contains(serveur.id)
+    switch sonde {
+    case let .connue(ensemble): return ensemble.contains(serveur.id)
+    // « En cours » n'est pas un verdict : pendant un rafraîchissement, on rend
+    // donc l'ANCIEN, qui reste affiché (voir le commentaire de `sonderLesServeurs`).
+    case .inconnue, .enCours: return nil
+    }
   }
 
   /// Empreinte de la liste des serveurs, pour détecter un VRAI changement.
@@ -160,6 +402,22 @@ public final class ModeleApp {
   /// ligne a changé — ce qui évite de sonder à chaque rafraîchissement.
   public var empreinteServeurs: String {
     serveurs.map(\.id).sorted().joined(separator: "|")
+  }
+
+  /// La machine que vise l'adresse courante, si elle est connue de la liste.
+  ///
+  /// Rend `nil` pour une adresse saisie à la main : on ne peut rien affirmer
+  /// d'une machine qu'on n'a pas découverte.
+  public var serveurVise: ServeurMac? {
+    ModeleApp.serveurA(adresse: adresse, dans: serveurs)
+  }
+
+  /// Version PURE — même normalisation que `serveurHorsLigne`, éprouvable seule.
+  nonisolated static func serveurA(adresse: String, dans serveurs: [ServeurMac]) -> ServeurMac? {
+    let visee = RemoteClient.normaliser(adresse).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    return serveurs.first { serveur in
+      RemoteClient.normaliser(serveur.adresse).trimmingCharacters(in: CharacterSet(charactersIn: "/")) == visee
+    }
   }
 
   /// D'où vient la liste affichée.
@@ -194,11 +452,9 @@ public final class ModeleApp {
   /// Le rafraîchissement est fréquent (3 s) parce qu'il est BON MARCHÉ : la
   /// liste ne relit pas les journaux, elle relit un résumé mis en cache côté
   /// serveur et interroge l'état des agents. On peut le couper.
-  public var suiviAutomatique = true {
-    didSet {
-      if suiviAutomatique { demarrerSuivi() } else { arreterSuivi() }
-    }
-  }
+  /// Le suivi, POUR LE SERVEUR COURANT — la même préférence par serveur que
+  /// celle réglée sur sa page.
+  public var suiviAutomatique: Bool { preferences(pour: adresse).suivi }
 
   /// Démarre la boucle de rafraîchissement, si un serveur est joignable.
   public func demarrerSuivi() {
@@ -287,23 +543,10 @@ public final class ModeleApp {
   /// Dernier `seq` reçu par le flux, à repasser en `depuisSeq` si l'on rouvre.
   public private(set) var dernierSeqVu: Int?
 
-  /// Serveur et adresse MÉMORISÉS au lancement, avant tout ajustement.
-  ///
-  /// POURQUOI LES RETENIR. Au démarrage, l'application se connecte au serveur
-  /// mémorisé — même s'il est HORS LIGNE. Mesuré : au lancement sur ce Mac,
-  /// elle visait `macbook-pro-de-clotilde`, éteint depuis 206 jours, et
-  /// affichait un échec de transport avant même que l'utilisateur ait touché à
-  /// quoi que ce soit. Comparer ces valeurs à celles d'après `ajusterAuParc`
-  /// permet de savoir si l'on a changé le choix de l'utilisateur — et donc de
-  /// le LUI DIRE.
-  private var serveurMemorise: String?
-  private var adresseMemorisee: String?
-
   public init() {
     chargerConfiguration()
     chargerPreference()
-    serveurMemorise = nomServeur
-    adresseMemorisee = adresse
+    chargerPreferencesServeurs()
   }
 
   /// Mémorise l'adresse et le nom du serveur choisis, entre deux lancements.
@@ -320,10 +563,11 @@ public final class ModeleApp {
 
   private func chargerPreference() {
     let defaults = UserDefaults.standard
-    if let memorisee = defaults.string(forKey: Self.cleAdresse), !memorisee.isEmpty {
-      adresse = memorisee
-    }
-    nomServeur = defaults.string(forKey: Self.cleNomServeur)
+    let memorisee = defaults.string(forKey: Self.cleAdresse) ?? ""
+    let nom = defaults.string(forKey: Self.cleNomServeur)
+    // Sans adresse mémorisée, on garde celle par défaut : le formulaire n'est
+    // pas « vidé » au lancement.
+    viser(Cible(adresse: memorisee.isEmpty ? cible.adresse : memorisee, nom: nom))
   }
 
   private func memoriserPreference() {
@@ -343,15 +587,14 @@ public final class ModeleApp {
   /// L'adresse n'est pas un secret : la mémoriser à la frappe ne coûte rien.
   /// Le jeton, lui, ne suit PAS ce chemin et reste confié au seul trousseau.
   public func definirAdresse(_ valeur: String) {
-    adresse = valeur
+    // Le nom et la machine suivent l'adresse : si elle correspond à une machine
+    // découverte, on la reconnaît ; sinon on n'affirme RIEN (le nom reste vide,
+    // et l'icône se déduit de l'adresse).
+    let machine = ModeleApp.serveurA(adresse: valeur, dans: serveurs)
+    viser(Cible(adresse: valeur, nom: machine?.nom, machine: machine))
     memoriserPreference()
   }
 
-  /// Nom lisible du serveur visé, mémorisé avec l'adresse.
-  ///
-  /// Sert à l'icône : sans nom, on ne peut que deviner le type de machine, et
-  /// un Mac mini afficherait l'icône d'un portable.
-  public private(set) var nomServeur: String?
 
   /// Symbole du serveur visé, déduit de son nom.
   ///
@@ -424,7 +667,11 @@ public final class ModeleApp {
   /// qui ne vient pas ne doit pas effacer celle qu'il a sous les yeux.
   private func chargerServeursDeLhote() async {
     guard let client else { return }
-    guard let liste = try? await client.listerServeurs() else { return }
+    guard let liste = try? await client.listerServeurs() else {
+      print("[demarrage] liste des serveurs : ECHEC")
+      return
+    }
+    print("[demarrage] liste des serveurs : \(liste.serveurs.count)")
     serveurs = liste.serveurs
     diagnosticServeurs = liste.diagnostic
     sourceServeurs = .hote
@@ -454,14 +701,36 @@ public final class ModeleApp {
     // racontait ce que l'application avait décidé au démarrage, et il restait
     // affiché ensuite — mesuré : « <adresse> ne répond pas : basculé sur … »
     // sous une liste chargée, alors que plus rien n'était en cause.
-    choixAjuste = nil
     let adresseAvant = adresse
-    serveurChoisi = serveur
-    nomServeur = serveur.nom
-    adresse = serveur.adresse
+    // Un avis de bascule ne survit PAS à un choix de l'utilisateur : la cible
+    // est reconstruite sans lui.
+    viser(Cible(adresse: serveur.adresse, nom: serveur.nom, machine: serveur))
     memoriserPreference()
     if adresse != adresseAvant { oublierLesDonneesDeLancienServeur() }
     relireEtatTailscale()
+  }
+
+  /// L'application change ELLE-MÊME de machine, et le dit.
+  ///
+  /// Passe par `choisir` — même transition que l'utilisateur, donc mêmes
+  /// conséquences — puis ajoute l'avis, qui est la seule chose en plus.
+  private func basculer(sur machine: ServeurMac, avis: String) {
+    choisir(machine)
+    var nouvelle = cible
+    nouvelle.avis = avis
+    viser(nouvelle)
+  }
+
+  /// Consigne — ou efface — l'échec de la cible courante.
+  ///
+  /// NE CHANGE QUE L'ÉCHEC. Un échec ne doit jamais changer la machine de
+  /// l'utilisateur : c'est exactement ce qu'on a corrigé en exigeant une preuve
+  /// avant de basculer. Le seul moyen d'être sûr que cette fonction ne touche
+  /// pas à l'adresse, c'est qu'elle ne construise pas de cible nouvelle.
+  private func consigner(_ echec: EchecCible?) {
+    var nouvelle = cible
+    nouvelle.echec = echec
+    viser(nouvelle)
   }
 
   /// Vide ce qui appartenait au serveur précédent.
@@ -473,16 +742,17 @@ public final class ModeleApp {
     arreterSuiviServeurs()
     arreterFlux()
     client = nil
-    capacites = nil
+    // UNE SEULE REMISE À ZÉRO : la connexion porte l'erreur, les capacités, le
+    // résultat du test et le fait d'être joint. Les remettre à zéro séparément
+    // était quatre occasions d'en oublier une.
+    connexion = .inconnue
     sessions = []
     journal = []
     sessionOuverte = nil
     terminees = []
-    etatAdresse = .inconnu
-    erreur = nil
-    serveurJoint = false
-    serveursAvecDsh = []
-    sondageEffectue = false
+    // On repart de zéro : la liste des machines a changé de source, un verdict
+    // sur l'ancienne ne dit rien de la nouvelle.
+    sonde = .inconnue
   }
 
   /// Démarrage : choisir une machine JOIGNABLE, puis se connecter.
@@ -512,10 +782,69 @@ public final class ModeleApp {
     await connecter()
   }
 
-  /// Message affiché quand le serveur mémorisé a été remplacé par un autre.
-  public private(set) var choixAjuste: String?
 
-  /// Préfère un serveur EN LIGNE à celui qui a été mémorisé.
+  /// Preuve qu'une cible n'aboutit pas : sans elle, on ne bascule PAS.
+  ///
+  /// POURQUOI CE TYPE EXISTE, ET CE QU'IL A CORRIGÉ. `ajusterAuParc` annonçait
+  /// « « <adresse> » ne répond pas : basculé sur … » dès que l'adresse courante
+  /// n'était pas une machine DÉCOUVERTE et en ligne — sans qu'aucune requête ait
+  /// échoué. Constaté sur capture : l'application était connectée à
+  /// `http://127.0.0.1:58674`, cette adresse répondait, et l'écran affichait
+  /// quand même qu'elle ne répondait pas. Une adresse saisie à la main, une
+  /// adresse de configuration, une instance locale : toutes étaient déclarées
+  /// mortes par simple ignorance.
+  ///
+  /// L'échec est donc CONSIGNÉ là où il est constaté — au refus motivé de
+  /// `connecter()` (machine hors ligne) ou à l'échec d'une tentative réelle — et
+  /// il est effacé dès qu'une connexion réussit.
+  public struct EchecCible: Equatable, Sendable {
+    /// Ce qui a été CONSTATÉ, et qui commande la suite.
+    public enum Raison: Equatable, Sendable {
+      /// La machine est hors ligne sur le tailnet : un fait connu, sans requête.
+      case horsLigne
+      /// Une tentative réelle n'a pas abouti : délai, DNS, connexion refusée.
+      case injoignable
+      /// La machine a RÉPONDU, mais rien n'écoute sur son port 80.
+      ///
+      /// POURQUOI CE CAS NE BASCULE PAS. Il a une cause précise, une explication
+      /// et — depuis peu — les commandes qui la corrigent. Basculer sur un autre
+      /// Mac effaçait tout cela : le propriétaire voyait un avis de bascule à la
+      /// place du seul message qui dise quoi faire sur la machine qu'il venait de
+      /// choisir.
+      case sansService
+    }
+
+    public let adresse: String
+    public let raison: Raison
+    /// Conservé pour la lisibilité des appelants : `true` seulement pour un fait
+    /// du tailnet.
+    public var horsLigne: Bool { raison == .horsLigne }
+  }
+
+
+  /// Décision PURE de bascule — éprouvable sans réseau ni état vivant.
+  ///
+  /// Rend la machine vers laquelle basculer, ou `nil` s'il n'y a rien à faire.
+  /// Trois règles, dans cet ordre :
+  ///
+  ///   1. la cible actuelle est une machine découverte et **en ligne** : on n'y
+  ///      touche pas, c'est le choix de l'utilisateur ;
+  ///   2. la machine a RÉPONDU mais ne publie rien (`sansService`) : on ne
+  ///      bascule pas non plus — le message qui explique quoi faire sur CETTE
+  ///      machine serait remplacé par un avis de bascule, et l'utilisateur
+  ///      perdrait la seule information utile ;
+  ///   3. sinon, il faut une **preuve d'échec** qui concerne l'adresse courante.
+  ///      Sans preuve, on ne bascule pas : changer la machine de quelqu'un sur
+  ///      une supposition est une substitution silencieuse.
+  nonisolated static func cibleDeBascule(
+    serveurs: [ServeurMac], choisie: ServeurMac?, echec: EchecCible?, adresse: String
+  ) -> ServeurMac? {
+    if let choisie, choisie.enLigne, serveurs.contains(where: { $0.id == choisie.id }) { return nil }
+    guard let echec, echec.adresse == adresse, echec.raison != .sansService else { return nil }
+    return serveurs.first(where: \.enLigne)
+  }
+
+  /// Préfère un serveur EN LIGNE à celui qui a été mémorisé — sur preuve.
   ///
   /// POURQUOI CE N'EST PAS UNE TRAHISON DU CHOIX DE L'UTILISATEUR. L'application
   /// mémorise la dernière machine utilisée, et s'y connecte au lancement — même
@@ -529,28 +858,26 @@ public final class ModeleApp {
   /// l'utilisateur dès qu'elle est joignable.
   public func ajusterAuParc() async {
     guard !serveurs.isEmpty else { return }
-    // La machine mémorisée répond-elle ? Si oui, rien à faire.
-    if let choisie = serveurChoisi, serveurs.contains(where: { $0.id == choisie.id && $0.enLigne }) {
-      return
-    }
-    guard let enLigne = serveurs.first(where: \.enLigne) else { return }
+    guard let enLigne = ModeleApp.cibleDeBascule(
+      serveurs: serveurs, choisie: serveurChoisi, echec: echecCible, adresse: adresse)
+    else { return }
 
-    // L'ADRESSE MÉMORISÉE AU LANCEMENT, et rien d'autre.
-    //
-    // Deux corrections ont été nécessaires ici, chacune constatée sur capture :
-    //   1. la première version citait `nomServeur`, qui vaut le nom de la
-    //      machine sur laquelle on venait de basculer — l'avis désignait donc
-    //      l'innocent ;
-    //   2. la seconde citait `adresse`, l'adresse COURANTE. Or `ajusterAuParc`
-    //      s'exécute à chaque changement de liste (toutes les quinze secondes) :
-    //      dès que la machine courante répondait, le garde-fou ne déclenchait
-    //      plus rien, mais si une bascule avait déjà eu lieu, l'avis comparait
-    //      alors la machine SAINE à elle-même — « macbook-air ne répond pas :
-    //      basculé sur MacBook Air de Camille ». Absurde, et mesuré.
-    let ecartee = adresseMemorisee ?? adresse
-    choisir(enLigne)
-    let etiquette = ecartee.isEmpty ? "le serveur mémorisé" : ecartee
-    choixAjuste = "\(etiquette) ne répond pas : basculé sur « \(enLigne.nom) », qui est en ligne."
+    // L'avis se calcule AVANT la transition, et sur l'ANCIENNE cible : après,
+    // l'échec a été remis à zéro et l'adresse a changé — l'avis parlerait alors
+    // de la machine sur laquelle on vient de basculer. C'est exactement ce que
+    // le test a attrapé : « ne répond pas » au lieu de « est hors ligne ».
+    let visee = echecCible?.adresse ?? adresse
+    let etiquette = serveurChoisi?.nom ?? (visee.isEmpty ? "le serveur mémorisé" : visee)
+    let horsLigne = echecCible?.raison == .horsLigne
+    let avis =
+      horsLigne
+      ? "« \(etiquette) » est hors ligne sur le tailnet : basculé sur « \(enLigne.nom) », qui est en ligne."
+      : "« \(etiquette) » ne répond pas : basculé sur « \(enLigne.nom) », qui est en ligne."
+
+    // UNE SEULE TRANSITION : elle choisit la machine — donc remet l'échec à zéro,
+    // car c'est une autre cible — vide les données de l'ancienne, et laisse
+    // l'avis. L'erreur affichée ne survit pas non plus.
+    basculer(sur: enLigne, avis: avis)
   }
 
   /// Un appui sur une machine AGIT : il choisit et se connecte, parce que c'est
@@ -604,12 +931,33 @@ public final class ModeleApp {
     defer { synchronisationEnCours = false }
 
     if client != nil {
+      // Les espaces d'abord : un espace créé à l'instant doit apparaître même
+      // vide, et c'est ce registre qui porte l'appartenance des sessions.
+      if capacites?.espaces == true { await chargerEspacesDeLhote() }
       await chargerServeursDeLhote()
       // L'hôte a répondu — même une liste vide AVEC sa raison : c'est une
       // réponse, on ne la remplace pas par une supposition locale.
       if sourceServeurs == .hote { return }
     }
     await chargerServeursLocaux()
+    await relancerSiLaCibleSertDsh()
+  }
+
+  /// Efface un échec devenu FAUX, et retente la connexion.
+  ///
+  /// POURQUOI. L'application affichait — à juste titre — « Aucun service ne
+  /// répond sur le port 80 de ce Mac » avec les commandes qui le corrigent. Mais
+  /// une fois la commande passée sur l'autre Mac, RIEN ne rejouait la connexion :
+  /// le message restait à l'écran alors que la machine servait désormais DSH, et
+  /// il fallait appuyer de nouveau sur la machine pour s'en apercevoir.
+  ///
+  /// La sonde, elle, le sait : elle vient d'interroger cette machine. Quand son
+  /// verdict contredit l'erreur affichée, l'erreur disparaît et la connexion est
+  /// retentée — c'est le cas où « tout d'un coup, il y arrive ».
+  private func relancerSiLaCibleSertDsh() async {
+    guard erreur != nil, let vise = serveurVise else { return }
+    guard sertDsh(vise) == true else { return }
+    await connecter()
   }
 
   /// Démarre la boucle de synchronisation de la liste des serveurs.
@@ -682,16 +1030,9 @@ public final class ModeleApp {
   /// refusé, par exemple. Sans ce chemin, l'appui ne produirait rien du tout —
   /// et « rien ne s'est passé » ne doit jamais être une réponse possible.
   public func signaler(_ message: String) {
-    erreur = message
-  }
-
-  /// Retient qu'une tentative de connexion au serveur choisi a échoué.
-  ///
-  /// Appelé par les chemins qui lancent une connexion, pour que l'interface
-  /// sache que `sessions` ne vient PAS du serveur coché. Sans cela, l'écran
-  /// gardait des données de l'ancien serveur sous la coche du nouveau.
-  private func marquerConnexionEchouee() {
-    serveurJoint = false
+    // Échec LOCAL, sans requête : la connexion n'est pas en cause, mais c'est
+    // bien un « je n'ai pas pu » — et l'écran n'a qu'un endroit pour le dire.
+    connexion = .incomplete(message)
   }
 
   /// L'adresse a répondu, mais le jeton a été refusé.
@@ -701,8 +1042,13 @@ public final class ModeleApp {
   /// panne réseau — sans ce repérage, l'utilisateur cherche une panne là où il
   /// manque un secret, ou l'inverse.
   public var jetonRefuse: Bool {
-    guard let message = erreur else { return false }
-    return message.contains("401") || message.contains("jeton d'appareil")
+    switch connexion {
+    // Un 401 : le service a répondu, le jeton est refusé.
+    case .echec(.jetonRefuse): return true
+    // Jeton absent ou tronqué : on n'a même pas tenté.
+    case .incomplete: return true
+    default: return false
+    }
   }
 
   /// Le serveur choisi est joignable, mais RIEN n'y écoute.
@@ -717,8 +1063,37 @@ public final class ModeleApp {
   /// Le code `-1004` de `NSURLErrorDomain` veut dire exactement cela : le nom
   /// se résout, la machine répond, mais aucun service n'écoute sur le port.
   public var serveurSansDsh: Bool {
-    guard let message = erreur else { return false }
-    return message.contains("-1004")
+    ModeleApp.repondMaisPasDsh(erreurType)
+  }
+
+  /// Vrai quand le port 80 répond AUTRE CHOSE que DSH, au lieu d'être vide.
+  ///
+  /// Sert au TEXTE, pas à la décision : « rien n'écoute » et « quelque chose
+  /// d'autre écoute » ne se disent pas de la même façon, et la seconde
+  /// formulation a été fausse dès qu'un `404` est apparu.
+  public var portOccupeParAutreChose: Bool {
+    if case .reponseInattendue = erreurType { return true }
+    return false
+  }
+
+  /// Décision PURE : la machine a-t-elle répondu AUTRE CHOSE que DSH ?
+  ///
+  /// DEUX FORMES, ET LA SECONDE A ÉTÉ MESURÉE APRÈS COUP. La première est
+  /// `-1004` — « rien n'écoute sur cet hôte et ce port » : la machine est vivante,
+  /// son port 80 est vide. La seconde : le port 80 répond **autre chose**, par
+  /// exemple le `404` que `tailscale serve` rend quand il est actif sans publier
+  /// DSH. Mesuré sur MacMini : `HTTP/1.1 404 Not Found`, sans en-tête `Server`.
+  /// L'application affichait alors « réponse inattendue (HTTP 404) » — un code
+  /// technique pour une situation qui a une explication et un remède.
+  ///
+  /// Dans les deux cas le tailnet fonctionne, le jeton n'y est pour rien, et la
+  /// même commande corrige les choses.
+  nonisolated static func repondMaisPasDsh(_ erreur: ErreurRemote?) -> Bool {
+    switch erreur {
+    case let .transport(detail): return detail.contains("-1004")
+    case .reponseInattendue: return true
+    default: return false
+    }
   }
 
   /// Message affiché quand la liste des Macs est vide.
@@ -750,7 +1125,17 @@ public final class ModeleApp {
     case injoignable(String)
   }
 
-  public private(set) var etatAdresse: EtatAdresse = .inconnu
+  /// Le résultat du test d'adresse, DÉRIVÉ de la connexion : plus de stockage
+  /// propre, donc plus moyen de dire autre chose que ce que la connexion dit.
+  public var etatAdresse: EtatAdresse {
+    switch connexion {
+    case .inconnue: return .inconnu
+    case .enCours: return .enCours
+    case let .jointe(_, reponses): return .joignable(reponses: reponses)
+    case let .echec(erreur): return .injoignable(String(describing: erreur))
+    case let .incomplete(detail): return .injoignable(detail)
+    }
+  }
 
   /// Teste l'adresse saisie en annonçant le résultat.
   ///
@@ -760,34 +1145,31 @@ public final class ModeleApp {
   /// effet est pire qu'un bouton absent. Celui-ci vérifie quelque chose de
   /// réel — l'adresse répond-elle, et le jeton est-il accepté — et le dit.
   public func testerAdresse() async {
-    etatAdresse = .enCours
+    connexion = .enCours
     defer { enChargement = false }
     enChargement = true
     let jeton = jetonSaisi.isEmpty ? (Self.jetonLocal() ?? "") : jetonSaisi
     guard !jeton.isEmpty else {
-      etatAdresse = .injoignable("aucun jeton : collez-le d'abord")
+      connexion = .incomplete("aucun jeton : collez-le d'abord")
       return
     }
     guard jeton.count == 43 else {
-      etatAdresse = .injoignable("jeton incomplet : \(jeton.count) caractères au lieu de 43")
+      connexion = .incomplete("jeton incomplet : \(jeton.count) caractères au lieu de 43")
       return
     }
     do {
       let client = try RemoteClient(adresse: adresse, jeton: jeton)
       let sante = try await client.verifierSante()
       self.client = client
-      capacites = sante.capacites
       let liste = try await client.listerSessions(limite: 200)
       sessions = liste.sessions
-      etatAdresse = .joignable(reponses: liste.total ?? liste.sessions.count)
-      erreur = nil
+      connexion = .jointe(sante, reponses: liste.total ?? liste.sessions.count)
       // Le test d'adresse est aussi une connexion : si l'hôte sait publier la
       // liste des Macs, c'est le moment de la demander.
       if sante.capacites.decouverte == true { await chargerServeursDeLhote() }
     } catch {
       let message = String(describing: error)
-      etatAdresse = .injoignable(message)
-      erreur = message
+      connexion = .echec(error as? ErreurRemote ?? .transport(message))
       journaliserDiagnostic(adresse: adresse, message: message)
     }
   }
@@ -811,7 +1193,9 @@ public final class ModeleApp {
     guard let donnees = try? Data(contentsOf: fichier),
       let objet = try? JSONSerialization.jsonObject(with: donnees) as? [String: String]
     else { return }
-    if let valeur = objet["adresse"], !valeur.isEmpty { adresse = valeur }
+    if let valeur = objet["adresse"], !valeur.isEmpty {
+      viser(Cible(adresse: valeur, nom: cible.nom))
+    }
     if let valeur = objet["jeton"], valeur.count >= 20 { jetonSaisi = valeur }
   }
 
@@ -989,9 +1373,7 @@ public final class ModeleApp {
   /// désinstallant l'application.
   public func oublierServeur() {
     arreterSuivi()
-    adresse = ""
-    nomServeur = nil
-    serveurChoisi = nil
+    viser(Cible(adresse: ""))
     // Une liste venue de l'hôte n'a plus de source : la garder afficherait les
     // machines d'un serveur qu'on vient d'oublier.
     if sourceServeurs == .hote {
@@ -999,14 +1381,16 @@ public final class ModeleApp {
       diagnosticServeurs = nil
       sourceServeurs = .aucune
     }
+    // Les espaces venaient du serveur oublié : les garder afficherait l'arbre
+    // d'une instance qu'on vient de quitter.
+    espacesHote = []
     // Sans serveur, plus rien ne prouve que le tailnet fonctionne : on retombe
     // sur « installé », pas sur un état connecté hérité du serveur oublié.
     relireEtatTailscale()
     sessions = []
     journal = []
     sessionOuverte = nil
-    etatAdresse = .inconnu
-    erreur = nil
+    connexion = .inconnue
     let defaults = UserDefaults.standard
     defaults.removeObject(forKey: Self.cleAdresse)
     defaults.removeObject(forKey: Self.cleNomServeur)
@@ -1034,47 +1418,120 @@ public final class ModeleApp {
 
   // MARK: - Connexion
 
+  /// Le serveur visé par l'adresse courante, s'il est connu ET hors ligne.
+  ///
+  /// Rend `nil` quand l'adresse a été saisie à la main : on ne peut rien
+  /// affirmer d'une machine qu'on n'a pas vue dans la liste, et une adresse
+  /// inconnue mérite une vraie tentative.
+  public var serveurViseHorsLigne: ServeurMac? {
+    guard let vise = serveurVise, !vise.enLigne else { return nil }
+    return vise
+  }
+
+  /// Version PURE — éprouvable sans réseau, sans liste vivante et sans attente.
+  ///
+  /// `nonisolated` À DESSEIN : la décision ne touche aucun état du modèle, elle
+  /// ne doit donc pas exiger le fil principal — un test peut l'interroger
+  /// directement, sans acteur ni attente.
+  nonisolated static func serveurHorsLigne(adresse: String, dans serveurs: [ServeurMac]) -> ServeurMac? {
+    guard let vise = serveurA(adresse: adresse, dans: serveurs), !vise.enLigne else { return nil }
+    return vise
+  }
+
+  /// Message d'ÉTAT pour une machine éteinte — jamais un échec de transport.
+  ///
+  /// « Délai dépassé, hôte injoignable » décrit ce que le RÉSEAU a fait, pas ce
+  /// que l'utilisateur doit faire. Ici l'action est concrète, et elle tient en
+  /// une phrase parce que l'état, lui, est connu.
+  nonisolated static func messageHorsLigne(_ serveur: ServeurMac) -> String {
+    "« \(serveur.nom) » est hors ligne sur le tailnet. Allumez-le, ou choisissez un Mac en ligne : la liste se rafraîchit toute seule."
+  }
+
   public func connecter() async {
     guard !adresse.trimmingCharacters(in: .whitespaces).isEmpty else {
       // Pas d'adresse : ce n'est pas une erreur, c'est un formulaire pas encore
       // rempli. Afficher un échec de transport ici accuserait le réseau à tort.
-      erreur = nil
+      connexion = .inconnue
+      return
+    }
+    // ── On ne vise pas une machine que l'on SAIT éteinte ──────────────────────
+    //
+    // POURQUOI CE GARDE EXISTE, ET CE QU'IL A COÛTÉ. L'application mémorise la
+    // dernière machine utilisée et s'y reconnecte au lancement. Le propriétaire a
+    // choisi un MacBook Pro ; ce Mac s'est éteint ; à chaque ouverture,
+    // l'application lançait donc une requête vers une machine morte, attendait
+    // 21 SECONDES (mesuré), puis affichait « échec de transport : délai dépassé,
+    // hôte injoignable » — un message technique, pour une machine dont l'écran
+    // affichait déjà « hors ligne » juste à côté. Le garde-fou `ajusterAuParc`
+    // bascule bien sur un Mac en ligne, mais seulement si la liste est déjà
+    // chargée : la requête était partie avant.
+    //
+    // L'état connu prime donc sur la tentative. Une machine hors ligne n'est pas
+    // une panne réseau : c'est une machine éteinte, et cela se dit.
+    if let vise = serveurViseHorsLigne {
+      // Refus LOCAL : on n'a même pas tenté. Le texte dit l'état et l'action.
+      connexion = .incomplete(ModeleApp.messageHorsLigne(vise))
+      // L'échec est CONSIGNÉ : c'est la preuve qui autorise `ajusterAuParc` à
+      // basculer, et elle dit pourquoi — la machine est hors ligne, ce qui n'est
+      // pas la même chose qu'une tentative ratée.
+      consigner(EchecCible(adresse: adresse, raison: .horsLigne))
       return
     }
     let jeton = jetonSaisi.isEmpty ? (Self.jetonLocal() ?? "") : jetonSaisi
     guard !jeton.isEmpty else {
-      erreur = "Aucun jeton d'appareil. Récupérez-le dans la sortie du harness sur le Mac, au premier chargement du plugin."
+      connexion = .incomplete(
+        "Aucun jeton d'appareil. Récupérez-le dans la sortie du harness sur le Mac, au premier chargement du plugin.")
       return
     }
     // Un jeton tronqué enverrait une requête vouée au 401, en accusant le
     // serveur à tort : on le dit avant, avec le compte exact.
     guard jeton.count == 43 else {
-      erreur = "jeton incomplet : \(jeton.count) caractères au lieu de 43. Recopiez-le en entier."
+      connexion = .incomplete("jeton incomplet : \(jeton.count) caractères au lieu de 43. Recopiez-le en entier.")
       return
     }
+    // TRACE TEMPORAIRE : ou passe le temps au demarrage.
+    let debutConnexion = Date()
+    let adresseVisee = adresse
     // Le jeton n'est confié au trousseau qu'ici, une fois la saisie terminée.
     enregistrerJeton(jeton)
     await executer {
       let client = try RemoteClient(adresse: self.adresse, jeton: jeton)
       let sante = try await client.verifierSante()
       self.client = client
-      self.capacites = sante.capacites
       let liste = try await client.listerSessions(limite: 200)
       self.sessions = liste.sessions
-      // Le serveur choisi a RÉPONDU : les sessions viennent bien de lui.
-      self.serveurJoint = true
+      // LE serveur a répondu ET accepté le jeton : une seule valeur le dit —
+      // capacités, nombre de sessions rendues, et « joint » en découlent.
+      self.connexion = .jointe(sante, reponses: liste.total ?? liste.sessions.count)
       // Première observation : elle ne fait que retenir qui travaille. Une
       // session déjà au repos au chargement ne doit PAS produire de pastille
       // verte — sinon l'application s'ouvrirait sur une liste de faux rappels.
       self.observerLesFinsDeTour()
     }
+    print("[demarrage] connecter \(adresseVisee) : \(Int(Date().timeIntervalSince(debutConnexion) * 1000)) ms, erreur=\(erreur == nil ? "non" : "OUI")")
     if erreur == nil {
+      // La cible a répondu : plus rien ne justifie de basculer ailleurs.
+      consigner(nil)
       demarrerSuivi()
       demarrerSuiviServeurs()
       // Une connexion réussie est le moment où la liste des Macs devient
       // disponible sur iPhone : l'hôte joint, lui, sait voir le tailnet.
       if capacites?.decouverte == true { await chargerServeursDeLhote() }
+      // Les espaces de travail viennent du registre de l'hôte : c'est ce qui
+      // fait apparaître les dossiers enregistrés mais encore SANS session, que
+      // l'application ne pouvait pas représenter en les déduisant des sessions.
+      if capacites?.espaces == true { await chargerEspacesDeLhote() }
       relireEtatTailscale()
+    } else {
+      // Tentative RÉELLE qui a échoué — transport, jeton refusé, version
+      // incompatible. C'est une preuve, et elle autorise la bascule.
+      //
+      // SAUF QUAND LA MACHINE A RÉPONDU : `-1004` veut dire « rien n'écoute sur
+      // ce port », donc la machine est vivante et c'est son port 80 qui manque.
+      // Ce cas a son propre message, avec les commandes qui le corrigent — on ne
+      // l'efface pas en basculant ailleurs.
+      let sansService = (erreur ?? "").contains("-1004")
+      consigner(EchecCible(adresse: adresse, raison: sansService ? .sansService : .injoignable))
     }
   }
 
@@ -1155,9 +1612,9 @@ public final class ModeleApp {
     case let .delta(dernierSeq):
       if let dernierSeq { dernierSeqVu = dernierSeq }
     case let .tronque(detail):
-      erreur = "Flux incomplet : \(detail)"
+      connexion = .echec(.transport("Flux incomplet : \(detail)"))
     case let .erreur(detail):
-      erreur = detail
+      connexion = .echec(.transport(detail))
       enDirect = false
     }
   }
@@ -1306,20 +1763,37 @@ public final class ModeleApp {
 
   /// Sessions regroupées par espace de travail, comme dans l'interface web.
   public var espaces: [EspaceDeTravail] {
-    Regroupement.espaces(sessionsFiltrees)
+    Regroupement.espaces(sessionsFiltrees, hotes: espacesHote)
+  }
+
+  /// Espaces de travail publiés par l'hôte, **espaces sans session compris**.
+  ///
+  /// Vide = « l'hôte n'en publie pas » : on retombe alors sur le regroupement
+  /// par `cwd`. C'est le cas d'un hôte plus ancien que cette route, et celui de
+  /// l'application avant qu'elle ne la consomme.
+  public private(set) var espacesHote: [EspaceHote] = []
+
+  /// Demande ses espaces à l'hôte. Sans bruit : un échec laisse l'arbre tel
+  /// qu'il était, plutôt que de le vider sous les yeux de l'utilisateur.
+  public func chargerEspacesDeLhote() async {
+    guard let client else { return }
+    guard let liste = try? await client.listerEspaces() else { return }
+    espacesHote = liste.espaces
   }
 
   private func executer(_ travail: @escaping () async throws -> Void) async {
     enChargement = true
-    erreur = nil
     do {
       try await travail()
+      // Le succès est posé par la fermeture : elle seule connaît la réponse
+      // (ses capacités, son nombre de sessions). On ne l'écrase pas ici.
     } catch {
-      // L'échec est centralisé ici, donc le drapeau aussi : une seule règle,
-      // un seul endroit.
-      marquerConnexionEchouee()
+      // L'échec est centralisé ici, donc l'état aussi : une seule règle, un seul
+      // endroit. L'erreur est TYPÉE, et son texte en découle — les deux ne
+      // peuvent plus dire des choses différentes, ce qui est arrivé quand la
+      // classification cherchait un code dans un texte.
       let message = String(describing: error)
-      self.erreur = message
+      connexion = .echec(error as? ErreurRemote ?? .transport(message))
       journaliserDiagnostic(adresse: adresse, message: message)
     }
     enChargement = false

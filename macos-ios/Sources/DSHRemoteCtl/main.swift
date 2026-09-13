@@ -57,6 +57,7 @@ func aider() {
       dsh-remote-ctl <adresse> sante
       dsh-remote-ctl <adresse> sessions [limite]
       dsh-remote-ctl <adresse> serveurs
+      dsh-remote-ctl <adresse> espaces
       dsh-remote-ctl <adresse> journal <identifiant> [limite]
       dsh-remote-ctl <adresse> prompt <identifiant> <texte> [queue|steer]
       dsh-remote-ctl <adresse> annuler <identifiant>
@@ -155,6 +156,17 @@ do {
       let titre = String(session.titreAffiche.prefix(46))
       let evenements = session.resume.nbEnregistrements ?? 0
       print("\(vivante) \(session.id.prefix(30))  \(titre.padding(toLength: 46, withPad: " ", startingAt: 0))  \(evenements) évts  \(octetsLisibles(session.octets))  \(horodatage(session.resume.dernierEvenementLe))")
+    }
+
+  case "espaces":
+    let liste = try await client.listerEspaces()
+    print("Espaces de travail publiés par l'hôte : \(liste.espaces.count)\n")
+    for espace in liste.espaces {
+      // « aucune session » est un état à part entière : un dossier enregistré
+      // que l'interface web affiche, et que l'application ne pouvait pas montrer
+      // tant qu'elle déduisait ses espaces des sessions.
+      let etat = espace.sessions.isEmpty ? "aucune session" : "\(espace.sessions.count) session(s)"
+      print("  \(etat.padding(toLength: 15, withPad: " ", startingAt: 0)) \(espace.chemin)")
     }
 
   case "serveurs":

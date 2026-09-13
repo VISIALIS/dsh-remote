@@ -15,7 +15,9 @@
 #
 # Ce script resout le probleme autrement : il modifie le paquet construit, et
 # jamais les sources. Le nom du domaine vient de `Config/DomaineTailnet` —
-# fichier local, ignore par git, ecrit une fois par machine.
+# fichier local, ignore par git, ecrit une fois par machine. Ce fichier porte le
+# DOMAINE DU TALNET et non le nom d'une machine : c'est ce qui couvre TOUS les
+# Macs du tailnet (voir la note sur `NSIncludesSubdomains` plus bas).
 #
 # Comportement si le fichier est absent : le script NE fait PAS echouer le
 # build. Sans exception, l'application se construit et se lance ; seule la
@@ -78,6 +80,16 @@ fi
 # saisit, avec une erreur qui ne dit pas qu'il s'agit d'une exception ATS.
 /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSExceptionDomains:${DOMAINE} dict" "${PLIST}"
 /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSExceptionDomains:${DOMAINE}:NSExceptionAllowsInsecureHTTPLoads bool true" "${PLIST}"
+
+# `NSIncludesSubdomains` — INDISPENSABLE, ET SON ABSENCE A ETE MESUREE.
+#
+# Le fichier porte le DOMAINE DU TALNET, et chaque Mac est servi sous
+# `<machine>.<domaine>`. Sans cette ligne, l'exception ne couvrirait que le
+# domaine nu : elle serait PRESENTE dans le plist et INOPERANTE pour toutes les
+# machines — le pire des cas, puisqu'elle se voit sans rien proteger. Constaté
+# sur le paquet macOS : l'exception visait le nom d'UNE machine, et le Mac mini
+# (un FRERE, pas un sous-domaine) echouait en `-1022`.
+/usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity:NSExceptionDomains:${DOMAINE}:NSIncludesSubdomains bool true" "${PLIST}"
 
 NOM_COURT="${DOMAINE%%.*}"
 if [ "${NOM_COURT}" != "${DOMAINE}" ]; then

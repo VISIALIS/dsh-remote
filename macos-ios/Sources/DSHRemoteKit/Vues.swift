@@ -10,15 +10,85 @@ import SwiftUI
 public struct VuePrincipale: View {
   @State private var modele = ModeleApp()
   @State private var sessionSelectionnee: SessionListee?
+  /// La feuille de réglages. Elle est tenue ICI parce que trois endroits
+  /// l'ouvrent : la barre d'outils, le panneau latéral, la page d'un serveur.
+  @State private var reglagesOuverts = ProcessInfo.processInfo.arguments.contains("--reglages")
+  /// La saisie manuelle d'une adresse : le chemin des cas que la découverte ne
+  /// couvre pas. Elle n'est plus dans les réglages — une adresse est celle d'UNE
+  /// machine, pas un réglage de l'application.
+  @State private var adresseOuverte = ProcessInfo.processInfo.arguments.contains("--adresse")
 
   public init() {}
 
+  /// Ancre de VÉRIFICATION, et rien d'autre : `--serveur` ouvre la page du
+  /// premier serveur au lancement, ce qui permet de la CAPTURER sans piloter la
+  /// souris. Même rôle que `--reglages` et `--deplier` : aucun effet sans
+  /// l'argument, jamais transmis par un lancement depuis le Dock.
+  private var serveurParArgument: Bool {
+    ProcessInfo.processInfo.arguments.contains("--serveur")
+  }
+
+  /// Ancre de VÉRIFICATION : `--page-seule` remplace la fenêtre entière par la
+  /// page du serveur courant.
+  ///
+  /// POURQUOI ELLE EXISTE, EN PLUS DE `--serveur`. Sur iPhone, la page d'un
+  /// serveur s'EMPILE : elle n'est visible qu'après un appui sur une icône, et
+  /// cet environnement n'injecte pas d'appui dans le simulateur. Sans cette
+  /// ancre, la page ne pourrait être ni capturée ni jugée sur iPhone — or c'est
+  /// là qu'elle a le plus de raisons d'être mal fichue, faute de place.
+  private var pageSeuleParArgument: Bool {
+    ProcessInfo.processInfo.arguments.contains("--page-seule")
+  }
+
+  /// La machine affichée, résolue dans la liste courante.
+  ///
+  /// L'état vit dans le MODÈLE (`serveurOuvert`) et non ici : la vignette du
+  /// panneau latéral doit le connaître pour montrer la page ouverte, et elle est
+  /// trop loin dans la hiérarchie pour qu'on lui passe une liaison sans la
+  /// traverser de bout en bout.
+  private var serveurDeLaPage: ServeurMac? {
+    guard let identifiant = modele.serveurOuvert else { return nil }
+    return modele.serveurs.first { $0.id == identifiant }
+  }
+
+  /// La machine visée par l'adresse courante, quand une erreur l'attend.
+  private var serveurDUneErreur: ServeurMac? {
+    guard modele.erreur != nil else { return nil }
+    return modele.serveurVise
+  }
+
   public var body: some View {
+    Group {
+      if pageSeuleParArgument, let serveur = modele.serveurChoisi ?? modele.serveurs.first {
+        // Ancre de vérification : la page seule, pour la capturer.
+        NavigationStack {
+          VueServeur(modele: modele, serveur: serveur) { reglagesOuverts = true }
+        }
+      } else {
+        contenu
+      }
+    }
+  }
+
+  private var contenu: some View {
     NavigationSplitView {
-      VueListeSessions(modele: modele, selection: $sessionSelectionnee)
+      VueListeSessions(
+        modele: modele,
+        selection: $sessionSelectionnee,
+        reglagesOuverts: $reglagesOuverts,
+        adresseOuverte: $adresseOuverte,
+        // Toucher une machine ouvre SA page : c'est là que vivent son état
+        // détaillé, ses actions et les remèdes. La sélection de session est
+        // effacée, sans quoi le journal resterait affiché par-dessus.
+        surSelectionServeur: { serveur in
+          sessionSelectionnee = nil
+          modele.ouvrirPage(serveur)
+        })
     } detail: {
       if let session = sessionSelectionnee {
         VueJournal(modele: modele, session: session)
+      } else if let serveur = serveurDeLaPage ?? serveurDUneErreur {
+        VueServeur(modele: modele, serveur: serveur) { reglagesOuverts = true }
       } else {
         ContentUnavailableView(
           "Aucune session ouverte",
@@ -27,14 +97,38 @@ public struct VuePrincipale: View {
         )
       }
     }
+    .sheet(isPresented: $reglagesOuverts) {
+      FeuilleReglages(modele: modele)
+    }
+    .sheet(isPresented: $adresseOuverte) {
+      FeuilleAdresse(modele: modele)
+    }
     .task {
       if modele.jetonSaisi.isEmpty, let local = ModeleApp.jetonLocal() {
         modele.enregistrerJeton(local)
       }
       modele.relireEtatTailscale()
+      let debutDemarrage = Date()
+      print("[demarrage] debut, adresse=\(modele.adresse)")
       // UN SEUL point d'entrée : il choisit une machine joignable AVANT de se
       // connecter. `demarrerDecouverte` reste pour le rafraîchissement manuel.
       await modele.demarrer()
+      print("[demarrage] demarrer() : \(Int(Date().timeIntervalSince(debutDemarrage) * 1000)) ms")
+      if serveurParArgument, modele.serveurOuvert == nil,
+        let premier = modele.serveurChoisi ?? modele.serveurs.first
+      {
+        modele.ouvrirPage(premier)
+      }
+    }
+    // ── POURQUOI UNE ERREUR FORCE LA PAGE DU SERVEUR ───────────────────────
+    //
+    // Le diagnostic a quitté le panneau latéral : sans cette règle, un échec de
+    // connexion au lancement ne s'afficherait NULLE PART, et l'écran se
+    // contenterait d'un « aucune session ouverte » — c'est-à-dire d'un silence.
+    // L'erreur concerne une machine : on montre sa page.
+    .onChange(of: modele.erreur) { _, nouvelle in
+      guard nouvelle != nil, sessionSelectionnee == nil, modele.serveurOuvert == nil else { return }
+      if let vise = modele.serveurVise { modele.ouvrirPage(vise) }
     }
   }
 }
@@ -52,6 +146,14 @@ public struct VuePrincipale: View {
 struct VueListeSessions: View {
   @Bindable var modele: ModeleApp
   @Binding var selection: SessionListee?
+  /// La feuille de réglages, tenue par `VuePrincipale` : trois endroits
+  /// l'ouvrent — barre d'outils, panneau latéral, page d'un serveur — elle ne
+  /// peut donc appartenir à aucun d'eux.
+  @Binding var reglagesOuverts: Bool
+  /// La saisie manuelle d'une adresse, tenue par `VuePrincipale`.
+  @Binding var adresseOuverte: Bool
+  /// Appelé quand une machine est touchée : la page de droite devient la sienne.
+  var surSelectionServeur: (ServeurMac) -> Void
 
   /// Espaces de travail dépliés, par identifiant.
   ///
@@ -59,13 +161,6 @@ struct VueListeSessions: View {
   /// touche pas aux autres et survive à un rafraîchissement de la liste. Un
   /// `DisclosureGroup` piloté par une constante ignorerait les clics.
   @State private var espacesDeplies: Set<String> = []
-  /// La feuille de configuration : adresse, jeton, filtres.
-  ///
-  /// `--reglages` l'ouvre au lancement : c'est une ancre de VÉRIFICATION, qui
-  /// permet de capturer la feuille pour la juger sans piloter la souris — un
-  /// réglage de mise en page ne se vérifie pas autrement. Aucun effet sans cet
-  /// argument, jamais transmis par un lancement depuis le Dock.
-  @State private var reglagesOuverts = ProcessInfo.processInfo.arguments.contains("--reglages")
 
   /// Ancre de VÉRIFICATION, et rien d'autre.
   ///
@@ -78,6 +173,22 @@ struct VueListeSessions: View {
   /// PORTÉE RÉELLE : aucun effet sans cet argument, jamais transmis par un
   /// lancement depuis l'écran d'accueil — ni sur iPhone, ni sur Mac. Ce n'est
   /// pas un réglage caché : c'est un outil de constat, comme `DSH_REMOTE_ADRESSE`.
+  /// Combien de machines sont UTILISABLES : en ligne **et** DSH joignable.
+  ///
+  /// POURQUOI CE N'EST PLUS « N en ligne ». Le compte annonçait des machines
+  /// allumées, alors que la section liste des SERVEURS DSH : une machine en ligne
+  /// dont DSH ne répond pas n'est pas un serveur utilisable. Le titre et le
+  /// compte disent maintenant la même chose que ce que la liste sert à faire.
+  ///
+  /// Tant que la sonde n'a pas rendu son verdict, annoncer « 0 » serait faux :
+  /// on ne sait pas encore — et le titre le dit, au lieu de compter faux.
+  private var resumeServeurs: String? {
+    guard !modele.serveurs.isEmpty else { return nil }
+    guard case .connue = modele.sonde else { return "vérification…" }
+    let joignables = modele.serveurs.filter { $0.enLigne && modele.sertDsh($0) == true }.count
+    return "\(joignables) joignable\(joignables > 1 ? "s" : "")"
+  }
+
   private var deplieParArgument: Bool {
     ProcessInfo.processInfo.arguments.contains("--deplier")
   }
@@ -96,6 +207,7 @@ struct VueListeSessions: View {
         CarteTailscale(modele: modele)
           .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 8, trailing: 0))
           .listRowBackground(Color.clear)
+          .sansSeparateurMac()
       } header: {
         EnteteSection("TailScale")
       }
@@ -110,87 +222,37 @@ struct VueListeSessions: View {
           // Une liste vide DOIT s'expliquer, et l'explication dépend de la
           // SOURCE : « l'hôte joint ne voit aucun Mac » n'appelle pas la même
           // action que « cette plateforme ne peut pas découvrir ».
-          ServeursVides(modele: modele) { reglagesOuverts = true }
+          // « Saisir une adresse » ouvre la SAISIE D'ADRESSE, et non les
+          // réglages généraux : c'est une machine qu'on vise, pas un réglage de
+          // l'application.
+          ServeursVides(modele: modele) { adresseOuverte = true }
+            .sansSeparateurMac()
         } else {
-          CarrouselServeurs(modele: modele)
+          CarrouselServeurs(modele: modele, surSelectionServeur: surSelectionServeur)
             .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 6, trailing: 0))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
         }
       } header: {
-        EnteteSection(
-          "Serveurs",
-          detail: modele.serveurs.isEmpty
-            ? nil : "\(modele.serveurs.filter(\.enLigne).count) en ligne")
+        // ── LE TITRE DIT CE QUE LA SECTION SERT, LE COMPTE DIT CE QUI MARCHE ─
+        //
+        // « Serveurs » ne disait pas de quel genre de serveur il s'agit — et
+        // cette liste ne contient QUE des machines capables d'héberger DSH.
+        // Quant au compte, « 2 en ligne » comptait des machines allumées : une
+        // machine en ligne dont DSH n'est pas joignable n'est PAS un serveur
+        // utilisable, et l'annoncer la faisait passer pour tel. Le nombre est
+        // donc celui des machines EN LIGNE **ET** dont DSH répond — la liste,
+        // elle, continue de toutes les montrer, avec leurs états.
+        EnteteSection("Serveur DeepSeek Harness", detail: resumeServeurs)
       }
 
-      // La bascule de serveur se DIT : changer la machine de l'utilisateur sans
-      // le prévenir serait une substitution silencieuse.
-      if let ajuste = modele.choixAjuste {
-        Section {
-          Label(ajuste, systemImage: "arrow.triangle.swap")
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-      }
-
-      if let erreur = modele.erreur {
-        Section {
-          VStack(alignment: .leading, spacing: 10) {
-            Label(erreur, systemImage: "exclamationmark.triangle")
-              .foregroundStyle(.red)
-              .font(.callout)
-              .fixedSize(horizontal: false, vertical: true)
-
-            // ── Le piège du Mac qui ne publie rien ───────────────────────────
-            //
-            // La découverte liste TOUS les Macs du tailnet : elle dit qu'ils
-            // sont en ligne, pas qu'ils publient DSH. En choisir un qui ne
-            // publie rien donne `-1004`, et le propriétaire cherche alors la
-            // panne du côté de son jeton — observé en vrai.
-            //
-            // LE MESSAGE NE DIT QUE CE QUI A ÉTÉ MESURÉ. « Aucun service
-            // n'écoute sur son port 80 » est un FAIT vérifiable ; « ce Mac ne
-            // publie pas DSH » serait une conclusion — et elle a été tirée à
-            // tort une fois, sur un Mac où DSH tournait bel et bien. Ce qui
-            // manquait, c'était `tailscale serve`, pas DSH.
-            if modele.serveurSansDsh {
-              VStack(alignment: .leading, spacing: 6) {
-                Label(
-                  "Aucun service ne répond sur le port 80 de ce Mac. Le tailnet, lui, fonctionne : la machine répond.",
-                  systemImage: "network.slash")
-                  .font(.footnote)
-                  .foregroundStyle(.orange)
-                  .fixedSize(horizontal: false, vertical: true)
-                Text(
-                  "Sur ce Mac-là, publiez l'instance DSH :\n\n    tailscale serve --bg 80 http://127.0.0.1:3080\n\nVérifiez ensuite avec :\n\n    tailscale serve status\n\nLe jeton n'est pas en cause : rien n'a pu être joint."
-                )
-                .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-              }
-              .padding(10)
-              .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-            }
-
-            // Un `401` propose l'action qui RÉPARE, à portée de pouce : le
-            // jeton est recopié dans Réglages, et l'utilisateur n'a pas à
-            // deviner où. Le bouton n'apparaît que pour cette cause-là : une
-            // adresse injoignable, elle, ne se règle pas dans les réglages du
-            // jeton.
-            if modele.jetonRefuse {
-              Button {
-                reglagesOuverts = true
-              } label: {
-                Label("Recopier le jeton", systemImage: "key")
-                  .font(.callout)
-              }
-              .buttonStyle(.bordered)
-            }
-          }
-        }
-      }
+      // ── Ce qui est PARTI sur la page du serveur ──────────────────────────
+      //
+      // La bascule de serveur, le diagnostic et les commandes à recopier ne
+      // sont plus ici : ils vivent sur la page de la machine concernée
+      // (`VueServeur`), qu'on ouvre en touchant son icône. Le panneau latéral
+      // garde ce qui se lit d'un coup d'œil — pastille, légende, nom — et
+      // rend la place aux sessions, qui sont ce qu'on vient y chercher.
 
       // ── Arbre des sessions, groupé par espace de travail ───────────────────
       //
@@ -200,51 +262,72 @@ struct VueListeSessions: View {
       // d'inventer une présentation différente pour le même contenu.
       Section {
         ForEach(modele.espaces) { espace in
-          // Pendant une recherche, les groupes sont dépliés d'office : laisser
-          // l'utilisateur replier chaque dossier pour voir ce qu'il vient de
-          // chercher annulerait l'intérêt de la recherche.
-          DisclosureGroup(
-            isExpanded: Binding(
-              get: {
-                !modele.recherche.isEmpty || deplieParArgument || espacesDeplies.contains(espace.id)
-              },
-              set: { ouvert in
-                if ouvert { espacesDeplies.insert(espace.id) } else { espacesDeplies.remove(espace.id) }
-              }
-            )
-          ) {
-            ForEach(espace.sessions, id: \.id) { session in
-              if Regroupement.estSousAgent(session) {
-                HStack(spacing: 6) {
-                  // Les sous-agents sont en retrait et marqués, comme dans
-                  // l'interface web : ce sont des sessions déléguées, pas des
-                  // conversations ouvertes par l'utilisateur.
-                  Image(systemName: "arrow.turn.down.right")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+          // Un espace ENREGISTRÉ mais sans session n'est pas un dossier à
+          // déplier : il n'a rien à montrer, et un chevron qui ne révèle rien
+          // est un mensonge d'interface. Il est donc rendu à plat, avec une
+          // icône distincte — la différence que l'interface web fait entre un
+          // espace utilisé et un dossier choisi mais encore vide.
+          if espace.sansSession {
+            HStack(spacing: 8) {
+              Image(systemName: "tray")
+                .foregroundStyle(.secondary)
+              Text(espace.nom).font(.body)
+              Spacer()
+              Text("aucune session")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            }
+            .sansSeparateurMac()
+          } else {
+            // Pendant une recherche, les groupes sont dépliés d'office : laisser
+            // l'utilisateur replier chaque dossier pour voir ce qu'il vient de
+            // chercher annulerait l'intérêt de la recherche.
+            DisclosureGroup(
+              isExpanded: Binding(
+                get: {
+                  !modele.recherche.isEmpty || deplieParArgument || espacesDeplies.contains(espace.id)
+                },
+                set: { ouvert in
+                  if ouvert { espacesDeplies.insert(espace.id) } else { espacesDeplies.remove(espace.id) }
+                }
+              )
+            ) {
+              ForEach(espace.sessions, id: \.id) { session in
+                if Regroupement.estSousAgent(session) {
+                  HStack(spacing: 6) {
+                    // Les sous-agents sont en retrait et marqués, comme dans
+                    // l'interface web : ce sont des sessions déléguées, pas des
+                    // conversations ouvertes par l'utilisateur.
+                    Image(systemName: "arrow.turn.down.right")
+                      .font(.caption2)
+                      .foregroundStyle(.tertiary)
+                    LigneSession(
+                      affiche: AfficheLigneSession(
+                        session: session, rappelDeFin: modele.aTermine(session.id))
+                    ).tag(session)
+                  }
+                  .padding(.leading, 14)
+                  .sansSeparateurMac()
+                } else {
                   LigneSession(
                     affiche: AfficheLigneSession(
                       session: session, rappelDeFin: modele.aTermine(session.id))
                   ).tag(session)
+                  .sansSeparateurMac()
                 }
-                .padding(.leading, 14)
-              } else {
-                LigneSession(
-                  affiche: AfficheLigneSession(
-                    session: session, rappelDeFin: modele.aTermine(session.id))
-                ).tag(session)
+              }
+            } label: {
+              HStack(spacing: 8) {
+                Image(systemName: espace.horsEspaces ? "folder.badge.questionmark" : "folder")
+                  .foregroundStyle(Color.accentColor)
+                Text(espace.nom).font(.body)
+                Spacer()
+                Text("\(espace.nbSessions)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
               }
             }
-          } label: {
-            HStack(spacing: 8) {
-              Image(systemName: "folder")
-                .foregroundStyle(Color.accentColor)
-              Text(espace.nom).font(.body)
-              Spacer()
-              Text("\(espace.nbSessions)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
+            .sansSeparateurMac()
           }
         }
       } header: {
@@ -286,6 +369,13 @@ struct VueListeSessions: View {
       .navigationBarTitleDisplayMode(.inline)
     #endif
     .navigationTitle("DSH Remote")
+    #if os(iOS)
+      // La destination des icônes de serveur, déclarée DANS la colonne qui
+      // l'affiche : sur iPhone elle s'empile, sur iPad elle remplit le détail.
+      .navigationDestination(for: ServeurMac.self) { serveur in
+        VueServeur(modele: modele, serveur: serveur) { reglagesOuverts = true }
+      }
+    #endif
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Button {
@@ -295,9 +385,6 @@ struct VueListeSessions: View {
         }
         .accessibilityLabel("Réglages")
       }
-    }
-    .sheet(isPresented: $reglagesOuverts) {
-      FeuilleReglages(modele: modele)
     }
     // LA SONDE PART D'ICI, ET C'EST UNE CORRECTION DE COURSE.
     //
@@ -505,23 +592,67 @@ struct CarteTailscale: View {
 /// que rien n'annonce.
 struct CarrouselServeurs: View {
   @Bindable var modele: ModeleApp
+  /// Touché une machine : la page de droite devient la sienne.
+  var surSelectionServeur: (ServeurMac) -> Void
 
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(alignment: .top, spacing: 16) {
         ForEach(modele.serveurs) { serveur in
-          Button {
-            Task { await modele.choisirEtConnecter(serveur) }
-          } label: {
-            IconeServeur(
-              serveur: serveur,
-              choisi: modele.serveurChoisi == serveur,
-              sertDsh: modele.sertDsh(serveur))
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel(
-            "\(serveur.nom), \(serveur.enLigne ? "en ligne" : "hors ligne")\(serveur.estLocal ? ", hôte interrogé" : "")"
-          )
+          // ── TOUCHER UNE MACHINE OUVRE SA PAGE ET S'Y CONNECTE ─────────────
+          //
+          // Deux effets pour un geste, et c'est délibéré : on touche une machine
+          // pour s'y connecter, et la page est ce qui EXPLIQUE le résultat —
+          // état, adresse, jeton, remèdes. Ce qui a changé par rapport au début
+          // n'est pas le geste, c'est l'ENDROIT du diagnostic : il s'affichait
+          // dans la colonne de gauche, au milieu des sessions ; il vit
+          // maintenant sur la page de la machine concernée.
+          //
+          // DEUX MÉCANISMES, PARCE QUE LES PLATEFORMES DIFFÈRENT. Sur macOS, les
+          // deux colonnes sont visibles : la page remplace le contenu de droite.
+          // Sur iPhone, la colonne de détail n'existe pas : il faut EMPILER la
+          // page (`NavigationLink`), sinon l'appui ne montre rien — et un appui
+          // qui ne montre rien est un appui cassé.
+          #if os(iOS)
+            NavigationLink(value: serveur) {
+              IconeServeur(
+                serveur: serveur,
+                choisi: modele.serveurChoisi == serveur,
+                sertDsh: modele.sertDsh(serveur))
+            }
+            .buttonStyle(.plain)
+            // Le lien EMPILE la page ; ce geste simultané dit au modèle laquelle
+            // est ouverte (pour que la vignette l'indique) ET lance la connexion.
+            .simultaneousGesture(
+              TapGesture().onEnded {
+                surSelectionServeur(serveur)
+                Task { await modele.choisirEtConnecter(serveur) }
+              })
+            .accessibilityLabel(
+              "\(serveur.nom), \(serveur.enLigne ? "en ligne" : "hors ligne")\(serveur.estLocal ? ", hôte interrogé" : "")"
+            )
+          #else
+            Button {
+              // OUVRIR **ET** CONNECTER — les deux, et c'est une correction.
+              //
+              // J'avais séparé les deux gestes : l'appui ouvrait la page, et il
+              // fallait ensuite viser « Se connecter ». Le propriétaire a
+              // demandé le contraire : « je voulais lancer une méthode ».
+              // Toucher une machine, c'est vouloir s'y connecter ; la page, elle,
+              // est ce qui l'EXPLIQUE quand ça ne marche pas.
+              surSelectionServeur(serveur)
+              Task { await modele.choisirEtConnecter(serveur) }
+            } label: {
+              IconeServeur(
+                serveur: serveur,
+                choisi: modele.serveurChoisi == serveur,
+                sertDsh: modele.sertDsh(serveur))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+              "\(serveur.nom), \(serveur.enLigne ? "en ligne" : "hors ligne")\(serveur.estLocal ? ", hôte interrogé" : "")"
+            )
+          #endif
         }
         // « Rafraîchir » n'est proposé QUE là où le rafraîchissement peut
         // réellement rendre des machines : sur le Mac par la découverte locale,
@@ -551,6 +682,13 @@ struct CarrouselServeurs: View {
 /// Une icône de serveur : la vignette, la pastille d'état, le nom d'un mot.
 struct IconeServeur: View {
   let serveur: ServeurMac
+  /// Le serveur CONNECTÉ, donc celui dont la page est ouverte : une coche.
+  ///
+  /// POURQUOI UN SEUL SIGNAL. J'avais ajouté un anneau bleu autour de la vignette
+  /// lue, pour distinguer « connecté » de « page ouverte ». Le propriétaire l'a
+  /// fait retirer : depuis que l'appui CONNECTE, les deux états coïncident
+  /// toujours, et la coche du coin suffit. Un signal qui ne dit jamais rien de
+  /// plus qu'un autre est du bruit.
   let choisi: Bool
 
   /// Le Mac sert-il DSH ? `nil` = pas encore su.

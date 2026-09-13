@@ -14,7 +14,12 @@
 # `Contents/Info.plist` — et rien de plus.
 #
 # Usage :
-#   Scripts/empaqueter-app-macos.sh [--ouvrir]
+#   Scripts/empaqueter-app-macos.sh [--ouvrir] [--installer]
+#
+#   --ouvrir     ouvre le paquet construit (celui du dépôt)
+#   --installer  remplace la copie de /Applications par ce paquet, vérifie son
+#                empreinte, puis l'ouvre. C'est le seul chemin qui garantit que
+#                l'application LANCÉE est bien celle qu'on vient de construire.
 #
 # Sortie : .build/macos/DSH Remote.app
 
@@ -110,7 +115,10 @@ contenu["NSAppTransportSecurity"] = {
 }
 with open(chemin, "wb") as fichier:
     plistlib.dump(contenu, fichier)
-print(f"[macos] exception ATS posee pour {domaine}")
+# Le domaine n'est PAS affiche : un journal de build peut etre partage ou
+# conserve, et un nom de tailnet n'a pas a y figurer (REGLE #0). On dit
+# seulement combien d'etiquettes il porte, de quoi verifier qu'il est complet.
+print(f"[macos] exception ATS posee ({domaine.count('.') + 1} etiquettes, sous-domaines inclus)")
 PY
   fi
 else
@@ -131,6 +139,59 @@ touch "$bundle"
 
 echo "[macos] paquet pret : $bundle"
 
-if [[ "${1:-}" == "--ouvrir" ]]; then
-  open "$bundle"
+ouvrir=0
+installer=0
+for argument in "$@"; do
+  case "$argument" in
+  --ouvrir) ouvrir=1 ;;
+  --installer)
+    installer=1
+    ouvrir=1
+    ;;
+  *)
+    echo "[macos] option inconnue : $argument" >&2
+    exit 2
+    ;;
+  esac
+done
+
+# ── Installation dans /Applications ───────────────────────────────────────────
+#
+# POURQUOI CETTE OPTION EXISTE. Le paquet construit vit dans `.build/macos/`, et
+# rien ne le relie à la copie de `/Applications` que l'utilisateur lance
+# réellement. Constaté : une copie installée à 02:16 continuait d'être lancée à
+# 08:41 pendant que le dépôt contenait déjà deux correctifs — l'écran montrait
+# donc les anciens défauts, et on cherchait la cause dans le code. Deux versions
+# du même nom, aucune ne se sachant l'autre.
+cible="/Applications/DSH Remote.app"
+if [[ "$installer" -eq 1 ]]; then
+  # Quitter l'instance en cours AVANT de remplacer : un paquet remplacé sous une
+  # application ouverte laisse l'ancien binaire en mémoire, et l'utilisateur
+  # croit avoir mis à jour ce qu'il regarde.
+  if pgrep -f "$cible/Contents/MacOS/DSHRemoteMac" >/dev/null 2>&1; then
+    echo "[macos] fermeture de l'instance en cours"
+    pkill -f "$cible/Contents/MacOS/DSHRemoteMac" 2>/dev/null || true
+    sleep 1
+  fi
+  rm -rf "$cible"
+  # `ditto` et non `cp -R` : il préserve la structure du paquet et sa signature.
+  ditto "$bundle" "$cible"
+
+  # VÉRIFICATION — c'est elle qui rend la dérive impossible. Sans elle, une copie
+  # partielle ou refusée passerait inaperçue, et l'écran mentirait de nouveau.
+  empreinte_construite="$(shasum -a 256 "$bundle/Contents/MacOS/DSHRemoteMac" | cut -d' ' -f1)"
+  empreinte_installee="$(shasum -a 256 "$cible/Contents/MacOS/DSHRemoteMac" | cut -d' ' -f1)"
+  if [[ "$empreinte_construite" != "$empreinte_installee" ]]; then
+    echo "[macos] ECHEC : la copie installee differe du paquet construit" >&2
+    exit 1
+  fi
+  if ! /usr/libexec/PlistBuddy -c "Print :NSAppTransportSecurity" "$cible/Contents/Info.plist" >/dev/null 2>&1; then
+    echo "[macos] ATTENTION : le paquet installe n'a PAS d'exception ATS." >&2
+    echo "[macos]   il ne joindra aucun Mac en HTTP (erreur -1022) : voir Config/DomaineTailnet." >&2
+  fi
+  echo "[macos] installe et verifie : $cible"
+fi
+
+if [[ "$ouvrir" -eq 1 ]]; then
+  if [[ "$installer" -eq 1 ]]; then open "$cible"; else open "$bundle"; fi
 fi

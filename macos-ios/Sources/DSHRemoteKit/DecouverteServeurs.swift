@@ -221,9 +221,27 @@ public enum DecouverteServeurs {
         let ligne = texte.split(separator: "\n").first.map(String.init) ?? ""
         return (nil, "tailscale a échoué (code \(processus.terminationStatus)): \(ligne.prefix(120))")
       }
-      return (analyser(donnees), "")
+      // LE CODE DE SORTIE NE SUFFIT PAS — mesuré. Voir `analyserEtat` : un CLI
+      // qui n'a pas pu joindre Tailscale écrit son erreur sur STDOUT et sort en
+      // code 0. On exige donc un état LISIBLE, sinon on passe au candidat
+      // suivant en gardant ce que le CLI a dit.
+      guard let macs = analyserEtat(donnees) else {
+        return (nil, raisonCourte(donnees, defaut: "sortie illisible"))
+      }
+      return (macs, "")
     }
   #endif
+
+  /// Première ligne non vide d'une sortie, tronquée — de quoi dire POURQUOI.
+  ///
+  /// Le CLI Tailscale écrit ses erreurs sur stdout, pas sur stderr : les ignorer
+  /// rendrait l'échec muet, et un échec muet se diagnostique à l'aveugle.
+  private static func raisonCourte(_ donnees: Data, defaut: String) -> String {
+    let texte = String(data: donnees, encoding: .utf8) ?? ""
+    let ligne = texte.split(separator: "\n").first.map(String.init) ?? ""
+    let propre = ligne.trimmingCharacters(in: .whitespaces)
+    return propre.isEmpty ? defaut : String(propre.prefix(120))
+  }
 
   /// Vrai si Tailscale semble installé sur CETTE machine.
   ///
@@ -275,11 +293,38 @@ public enum DecouverteServeurs {
   /// Analyse la sortie de `tailscale status --json`.
   ///
   /// Séparée de l'exécution pour être testable sans lancer de processus.
+  /// Rend `[]` quand la sortie n'est pas exploitable. `analyserEtat` est la
+  /// version STRICTE, employée par la découverte, qui doit distinguer « le
+  /// tailnet est vide » de « le CLI n'a rien répondu ».
   static func analyser(_ donnees: Data) -> [ServeurMac] {
-    guard
-      let racine = try? JSONSerialization.jsonObject(with: donnees) as? [String: Any]
-    else { return [] }
+    analyserEtat(donnees) ?? []
+  }
 
+  /// Analyse STRICTE : `nil` signifie « le CLI n'a pas rendu d'état lisible ».
+  ///
+  /// POURQUOI CETTE DISTINCTION EXISTE — MESURÉ, ET C'EST UN DÉFAUT QUI A ÉTÉ
+  /// VU À L'ÉCRAN. Lancé depuis une application ouverte par le Finder, le CLI
+  /// Tailscale n'arrive pas à joindre son application et écrit :
+  ///
+  ///     The Tailscale GUI failed to start: … (Tailscale.CLIError error 3.)
+  ///
+  /// sur **stdout**, en sortant avec le **code 0**. Un code de sortie nul ne
+  /// prouve donc rien. Le prendre pour un succès produisait deux fautes :
+  /// l'analyse rendait `[]`, et la boucle des candidats s'ARRÊTAIT au premier
+  /// au lieu d'essayer le suivant — alors que le lanceur `~/.local/bin/tailscale`
+  /// répond, lui, dans ce même environnement. L'application annonçait donc
+  /// « aucun Mac macOS dans le tailnet » : un mensonge, puisque le tailnet allait
+  /// très bien et que c'était le CLI qui n'avait pas parlé.
+  ///
+  /// Un état Tailscale digne de ce nom porte `Self`. Sans lui, ce n'est pas un
+  /// tailnet vide — c'est une réponse qui ne dit rien.
+  static func analyserEtat(_ donnees: Data) -> [ServeurMac]? {
+    guard let racine = try? JSONSerialization.jsonObject(with: donnees) as? [String: Any] else { return nil }
+    guard racine["Self"] is [String: Any] else { return nil }
+    return analyserRacine(racine)
+  }
+
+  private static func analyserRacine(_ racine: [String: Any]) -> [ServeurMac] {
     var trouves: [ServeurMac] = []
 
     func retenir(_ objet: [String: Any], soiMeme: Bool) {

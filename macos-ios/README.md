@@ -139,10 +139,390 @@ bundleIdentifier is unknown to the registry ») alors que le chemin direct rend 
 complet du tailnet. La découverte essaie donc ses candidats jusqu'à un **succès**, et
 non jusqu'au premier fichier exécutable.
 
+**UN CODE DE SORTIE NUL NE PROUVE RIEN, ET C'EST UN DÉFAUT QUI A ÉTÉ VU À L'ÉCRAN.**
+Lancé depuis une application ouverte par le **Finder**, le CLI Tailscale n'arrive pas à
+joindre son application et écrit :
+
+```
+code=0   stdout=105 octets
+The Tailscale GUI failed to start: The operation couldn't be completed. (Tailscale.CLIError error 3.)
+```
+
+L'erreur part sur **stdout**, pas sur stderr, et le code de sortie vaut **0**. La
+découverte lisait « code 0 = succès », l'analyse ne trouvait pas de JSON et rendait `[]`,
+et l'application annonçait « aucun Mac macOS dans le tailnet » — un mensonge sur l'état du
+tailnet, alors que c'était le CLI qui n'avait pas parlé. Pire : la boucle des candidats
+s'arrêtait là, avant `~/.local/bin/tailscale`, **qui répond dans ce même environnement**.
+
+Le correctif tient en une règle : **exiger un état lisible**, pas un code de sortie. Un
+état Tailscale porte `Self` ; sans lui, ce n'est pas un tailnet vide, c'est une réponse
+qui ne dit rien — et le candidat suivant est essayé. Mesuré, même code et même machine :
+
+| Environnement | Avant | Après |
+|---|---|---|
+| Terminal | 3 Macs | 3 Macs |
+| Environnement d'application (Finder) | `aucun Mac decouvert` | **3 Macs** |
+
+Le plugin hôte n'a jamais eu ce défaut : en JavaScript, `JSON.parse` **lève**, donc la
+route essaie le candidat suivant et rapporte « sortie illisible ». C'est le code Swift qui
+se fiait au code de sortie.
+
 **Résultat mesuré** : sur le simulateur iPhone 17 Pro, la liste des Macs du tailnet
 s'affiche — trois machines, avec icône, état en ligne/hors ligne, et la mention « hôte
 interrogé » sur celle qui répond. L'application n'exécute aucun processus : elle lit la
-réponse de l'hôte.
+réponse de l'hôte. Sur le Mac, l'application empaquetée lancée dans un environnement
+d'application trouve les **3 mêmes Macs** et sonde lesquels servent DSH (`1 serveur(s) DSH
+sur 3` — les deux autres n'ont rien qui écoute, ou sont hors ligne).
+
+### Une machine éteinte n'est pas une panne réseau
+
+**Le défaut, vu à l'écran.** L'application mémorise le dernier serveur utilisé et s'y
+reconnecte au lancement. Le propriétaire avait choisi un MacBook Pro ; ce Mac s'est
+éteint ; à chaque ouverture, l'application lançait donc une requête vers une machine
+morte, **attendait 21 secondes** (mesuré : `dsh-remote-ctl http://<ce-mac> sante` →
+`real 0m21.021s`), puis affichait :
+
+> échec de transport : NSURLErrorDomain -1001 … | CAUSE: délai dépassé, hôte injoignable
+
+Un message **technique**, pour une machine dont le même écran affichait déjà « hors
+ligne », trois lignes plus haut. Le garde-fou `ajusterAuParc` bascule bien sur un Mac en
+ligne — mais seulement si la liste est **déjà chargée** : la requête de 21 s était partie
+avant. Deux autres gestes inutiles allaient avec : la sonde interrogeait aussi les
+machines éteintes (`3 candidat(s)` dont un Mac éteint depuis des mois), et l'erreur
+survivait à la bascule, accusant le réseau alors que l'application avait repris ailleurs.
+
+**La règle retenue** : l'état connu prime sur la tentative. Une machine que la liste dit
+hors ligne n'est pas visée, et n'est pas sondée ; son message dit l'état et l'action
+(« allumez-le, ou choisissez un Mac en ligne »), jamais le réseau. Une adresse **saisie à
+la main** reste tentée : on ne peut rien affirmer d'une machine qu'on n'a pas vue.
+
+Mesuré sur l'application installée, lancée comme le Finder la lance, l'adresse mémorisée
+pointant toujours sur le Mac éteint :
+
+| | Avant | Après |
+|---|---|---|
+| Sonde | `3 candidat(s)` — dont la machine morte | **`2 candidat(s)`** |
+| Fichier de diagnostic | réécrit avec un `-1001` après 21 s | **inchangé** (aucune requête émise) |
+
+#### Le statut ne reste plus sur « vérification… »
+
+**Symptôme rapporté** : les Macs **en ligne** restaient sur « vérification… », alors que le
+Mac éteint, lui, affichait correctement « hors ligne ».
+
+**Cause** : la sonde lançait ses requêtes en groupe et attendait **toutes** les réponses —
+y compris celle de la machine morte, qui ne répond jamais. Le verdict des machines saines
+était donc retenu en otage par une machine éteinte. La correction est celle du paragraphe
+précédent : on ne sonde plus ce qui ne peut pas répondre.
+
+Mesuré sur la version corrigée, dans le simulateur : « **DSH · hôte** » sur le Mac qui
+sert DSH, « **pas de DSH** » sur celui qui est en ligne sans rien publier, « **hors
+ligne** » sur l'éteint.
+
+**LE VERDICT NE REPASSE PLUS PAR « vérification… » À CHAQUE RAFRAÎCHISSEMENT.** La sonde
+est relancée toutes les quinze secondes, et elle remettait `sondageEffectue` à zéro en
+commençant : les légendes redevenaient « vérification… » le temps de la sonde, et l'écran
+semblait ne jamais conclure — photographié deux fois par le propriétaire, alors que la
+sonde rendait son verdict en moins d'une seconde. Un verdict **connu** reste affiché
+pendant qu'on le rafraîchit ; il n'est « inconnu » que tant qu'il n'y en a jamais eu.
+Vérifié par une capture prise *pendant* une sonde : les trois légendes restent stables.
+
+**ET UN ÉCHEC DEVENU FAUX DISPARAÎT.** Le message « Aucun service ne répond sur le port
+80 de ce Mac », avec ses commandes, restait affiché après que la commande avait été passée
+sur l'autre Mac : rien ne rejouait la connexion, et il fallait appuyer de nouveau sur la
+machine pour s'en apercevoir. La sonde, elle, le sait — elle vient de l'interroger. Quand
+son verdict contredit l'erreur affichée, l'erreur s'efface et la connexion est retentée
+(`relancerSiLaCibleSertDsh`).
+
+#### Combien de temps prend « la vérification » : mesuré
+
+La question « pourquoi est-ce si long ? » méritait une mesure, pas une explication. Tout
+est en millisecondes :
+
+| Étape | Coût mesuré |
+|---|---|
+| Découverte locale (`tailscale status --json`) | **44 ms** |
+| Sonde complète, du `debut` au `fin` | **16 ms** (0,289 s → 0,305 s après le lancement) |
+| Requête vers la boucle locale | 1,2 ms |
+| Requête vers un Mac du tailnet (`tailscale serve`) | 6,4 ms |
+| Requête vers MacMini (qui répond `404`) | 15 ms |
+
+**Le verdict est donc posé moins de 0,3 s après le lancement.** Ce qui donnait
+l'impression du contraire était la remise à zéro décrite ci-dessus : toutes les quinze
+secondes, la légende redevenait « vérification… » le temps de la sonde. Une sonde de
+16 ms, répétée, suffisait à ce qu'un coup d'œil tombe dessus — et l'écran semblait ne
+jamais conclure. Depuis, un verdict connu reste affiché.
+
+**LE SEUL CAS OÙ LA SONDE EST VRAIMENT LENTE** est une machine **en ligne sur le tailnet
+mais qui ne répond rien** (ni accord, ni refus) : la requête attend alors le délai de
+2,5 s, et le groupe attendant tous ses membres, le verdict des machines saines est
+retardé d'autant. C'est une attente bornée, et le prix de ne pas conclure trop vite.
+
+#### Un port 80 occupé par autre chose n'est pas un port vide
+
+Mesuré après coup, sur MacMini : il ne renvoie plus `-1004` mais **`HTTP/1.1 404 Not
+Found`**, sans en-tête `Server` — la signature de `tailscale serve` actif mais ne publiant
+pas DSH. L'application affichait alors « réponse inattendue (HTTP 404) », un code
+technique pour une situation qui a une explication et un remède.
+
+Les deux cas sont donc reconnus (`repondMaisPasDsh`), et le **texte les distingue** :
+
+| Constat | Message |
+|---|---|
+| `-1004` — rien n'écoute | « Aucun service n'écoute sur le port 80 de ce Mac. Le tailnet, lui, fonctionne : la machine répond. » |
+| `404` (ou autre statut inattendu) — autre chose écoute | « Ce Mac répond, mais pas DSH : son port 80 est occupé par autre chose, ou `tailscale serve` n'y publie pas l'instance. » |
+
+La classification ne cherche plus un code dans un texte d'erreur : l'erreur est **gardée
+en type** (`erreurType`), parce que la recherche textuelle avait précisément raté ce
+`404`. Les deux cas montrent les mêmes commandes copiables.
+
+#### L'état du modèle : deux valeurs au lieu de huit champs
+
+Le propriétaire a dit : « j'ai l'impression que le projet gère mal le state management ». Il a
+raison, et l'inventaire le montre : **38 états stockés, ~127 écritures directes**, et surtout
+des champs **corrélés** dont les combinaisons invalides étaient représentables.
+
+| Ce qui coexistait | Ce que ça a produit, ici |
+|---|---|
+| `sondageEffectue` + `serveursAvecDsh` + `sondageEnCours` | verdict remis à zéro à chaque sonde (légendes qui clignotent), puis une sonde **annulée** qui écrit un faux « 0 DSH » |
+| `erreur` (texte) + `erreurType` (type) + `capacites` + `etatAdresse` + `serveurJoint` | le texte et le type ont **divergé** : la classification par texte a raté le `404` de MacMini |
+| `adresse` + `nomServeur` + `serveurChoisi` + `serveurJoint` + `serveurOuvert` | « choisi » et « ouvert » confondus → la vignette ne marquait pas la page lue |
+
+**CE QUI A ÉTÉ FAIT — les deux premiers, mécaniquement et sans toucher aux vues :**
+
+```swift
+enum EtatSonde { case inconnue, enCours, connue(Set<String>) }
+enum EtatConnexion { case inconnue, enCours, jointe(Sante, reponses: Int), echec(ErreurRemote), incomplete(String) }
+```
+
+- **`EtatSonde`** rend inécrivable le « verdict vide + drapeau vrai » qui a produit le faux
+  « 0 DSH » ; le verdict CONNU reste affiché pendant un rafraîchissement, parce que la sonde
+  ne repasse par `.enCours` que si l'on ne savait rien.
+- **`EtatConnexion`** remplace cinq champs. Le texte de l'erreur est **dérivé** de son type
+  (`erreur`, `erreurType`), `etatAdresse` est une **vue** de la connexion, `capacites` et
+  `serveurJoint` aussi : ils ne peuvent plus dire autre chose qu'elle. Le cas
+  `.incomplete` distingue ce qui empêche de TENTER (jeton absent ou tronqué) d'un échec
+  réseau — le remède n'est pas au même endroit.
+
+**5 tests d'invariants** (77 au total) tiennent ces propriétés sans réseau, via deux crochets
+compilés en `DEBUG` seulement : une sonde inconnue ne conclut pas, un verdict connu survit au
+rafraîchissement, un verdict vide est un verdict, une erreur typée porte son texte, le test
+d'adresse dérive de la connexion.
+
+**Vérifié en vrai** : après le remaniement, l'application démarre et pose son verdict en
+**0,4 s** (journal : `[sonde] debut` à 1,76 s, `fin : 1 serveur(s) DSH sur 2 en 80 ms`).
+
+**PUIS LA CIBLE — cinq champs, dix-sept écritures, un seul écrivain désormais.**
+
+Le « serveur courant » était éclaté en `adresse`, `nomServeur`, `serveurChoisi`, `echecCible`
+et `choixAjuste`, écrits depuis dix-sept endroits. Le journal d'un démarrage réel montrait ce
+que cela produit :
+
+```
+ 1.44 s  adresse=http://macmini…
+ 5.34 s  connecter http://macbook-air… : 3578 ms
+19.13 s  connecter http://macmini…     :   42 ms
+```
+
+L'adresse **oscillait** entre deux machines en vingt secondes, parce que la bascule, la
+mémorisation et la reconnexion écrivaient chacune la sienne sans que personne ne voie
+l'ensemble. Ces cinq champs sont maintenant **une valeur** (`Cible`), remplacée en **un seul
+point** (`viser`), avec cinq transitions nommées pour y mener : `definirAdresse`, `choisir`,
+`basculer`, `oublier`, `consigner`.
+
+- **`consigner` ne construit pas de cible** : elle ne modifie que l'échec, donc elle ne PEUT
+  pas déplacer la machine de l'utilisateur. C'était la règle la plus coûteuse à tenir.
+- **`basculer` passe par `choisir`** : même transition que l'utilisateur, mêmes conséquences,
+  plus l'avis qui dit pourquoi.
+- La **page ouverte** (`serveurOuvert`) reste à part : regarder une machine n'est pas la
+  viser, et les confondre a déjà produit un défaut.
+
+Après ce remaniement, un démarrage réel ne montre plus qu'**une seule adresse** et une seule
+connexion. 5 tests de plus (82 au total) éprouvent les transitions **sans réseau** : un échec
+ne change pas la cible, la bascule remplace adresse, nom et machine ensemble, un choix efface
+l'avis, oublier vide tout d'un coup, écrire une adresse inconnue n'invente ni nom ni machine.
+
+**LE TEST A ATTRAPÉ UNE FAUTE PENDANT LE REMANIEMENT** : un ancien `choisir()` subsistait
+avant le calcul de l'avis, si bien que l'avis était calculé sur la NOUVELLE cible — il
+annonçait « ne répond pas » pour une machine qui était simplement hors ligne. Sans le test de
+la transition, ce texte faux partait en production.
+
+#### La page d'un serveur, et ce qu'elle retire du panneau latéral
+
+**Toucher une icône de machine ouvre SA page** dans la colonne de droite : son état, son
+adresse, ses actions (Se connecter, Tester), **le jeton d'appareil**, et — quand la machine
+ne publie rien — le diagnostic complet avec les commandes à recopier. Le panneau latéral
+garde ce qui se lit d'un coup d'œil : la pastille, la légende, le nom.
+
+POURQUOI CE DÉPLACEMENT. Le panneau latéral portait l'état des machines **et** le
+diagnostic entier, jusqu'aux commandes destinées à l'autre Mac. Le message le plus long
+prenait la place des sessions, et il fallait faire défiler pour voir son propre travail.
+Le diagnostic appartient à la MACHINE : il vit donc sur sa page.
+
+**L'appui OUVRE la page ET se connecte.** Un geste, deux effets, et c'est délibéré : on
+touche une machine pour s'y connecter, et la page est ce qui EXPLIQUE le résultat — état,
+adresse, jeton, remèdes. J'avais un temps séparé les deux (l'appui ouvrait, un bouton
+connectait) ; le propriétaire a tranché : « je voulais lancer une méthode ». Ce qui a changé
+par rapport au début n'est donc pas le geste, mais l'ENDROIT du diagnostic : il s'affichait
+dans la colonne de gauche, au milieu des sessions ; il vit maintenant sur la page de la
+machine concernée.
+
+**Deux mécanismes, parce que les plateformes diffèrent.** Sur macOS, les deux colonnes sont
+visibles : la page remplace le contenu de droite. Sur iPhone, il n'y a pas de colonne de
+détail : la page s'EMPILE (`NavigationLink` + `navigationDestination`), sinon l'appui ne
+montrerait rien — un appui qui ne montre rien est un appui cassé.
+
+Un échec de connexion au lancement force aussi la page : sans cela, le diagnostic ayant
+quitté le panneau latéral, il ne se serait affiché NULLE PART.
+
+##### Un seul signal de sélection sur la vignette
+
+La coche du coin haut-gauche dit « c'est le serveur connecté », et depuis que l'appui
+CONNECTE, c'est aussi celui dont la page est ouverte : les deux états coïncident toujours.
+
+J'avais ajouté un **anneau bleu** autour de la vignette lue pour distinguer « connecté » de
+« page ouverte ». Le propriétaire l'a fait retirer : un signal qui ne dit jamais rien de plus
+qu'un autre est du bruit. La vignette garde donc trois indications seulement — la **coche**
+(connecté), la **pastille** (la machine répond), la **légende** et l'**atténuation** (DSH
+présent ou non).
+
+##### Où va quoi : chaque réglage à l'endroit qui le rend vrai
+
+Le partage a été fait **par nature**, pas par commodité :
+
+| Réglage | Où | Pourquoi |
+|---|---|---|
+| État, adresse, actions, diagnostic, remèdes | **page du serveur** | cela ne vaut que pour UNE machine |
+| **Jeton d'appareil** | **page du serveur** | mesuré : il est tiré par chaque hôte, celui d'un Mac ne vaut pas pour un autre |
+| « Chargées en mémoire seulement », « Suivre l'activité » | **page du serveur** | ils portent sur la CONNEXION à une machine : l'un décide si l'on interroge CE serveur, l'autre filtre SA liste |
+| Saisie manuelle d'une adresse | **feuille « Adresse »** | on vise une machine, on ne règle pas l'application ; elle s'ouvre depuis « Saisir une adresse » |
+
+Les **Réglages** ne contiennent donc plus RIEN pour l'instant, et ils le disent : une
+feuille vide sans explication ressemblerait à un écran cassé. `--adresse` est l'ancre de
+vérification de la feuille d'adresse.
+
+##### Les deux interrupteurs sont PAR SERVEUR — et je m'étais trompé
+
+J'avais classé « Chargées en mémoire seulement » et « Suivre l'activité » comme des
+préférences **générales**, au motif que le modèle n'en tenait qu'un seul drapeau. Le
+propriétaire a demandé : « normalement, c'est spécifique à chaque serveur, non ? » — et il a
+raison. Que le code soit global n'est pas un argument pour qu'il le reste :
+
+- **suivre l'activité** décide si l'on interroge **ce** serveur toutes les trois secondes ;
+- **chargées en mémoire seulement** décide ce qu'on affiche de **sa** liste.
+
+Globaux, ils faisaient hériter chaque machine des choix faits pour la précédente : on
+coupait le suivi pour un Mac endormi, et la machine suivante ne se rafraîchissait plus sans
+qu'on sache pourquoi. Ils sont donc stockés **par serveur**, la clé étant l'**adresse
+normalisée** — une machine nommée, saisie à la main ou atteinte par son adresse de tailnet
+est la même. Le réglage d'une machine non connectée est enregistré et s'appliquera à la
+connexion, ce que la page dit en toutes lettres.
+
+3 tests couvrent l'indépendance des machines, l'unicité de la clé sous trois écritures
+d'adresse, et la relecture après relance.
+
+`--page-seule` est une **ancre de vérification** : elle remplace la fenêtre par la page du
+serveur courant, ce qui permet de la capturer sur iPhone, où elle ne s'obtient autrement
+qu'en appuyant sur une icône — un appui que cet environnement ne sait pas injecter.
+
+#### « Serveur DeepSeek Harness », et un compte qui ne promet que ce qui marche
+
+La section s'appelait **« Serveurs »**, avec un compte « **N en ligne** ». Deux imprécisions,
+corrigées à la demande du propriétaire :
+
+- le titre ne disait pas **de quel genre de serveur** il s'agit — or cette liste ne contient
+  que des machines capables d'héberger DSH ;
+- le compte annonçait des machines **allumées**, alors qu'une machine en ligne dont DSH ne
+  répond pas n'est **pas un serveur utilisable** : l'annoncer la faisait passer pour tel.
+
+Elle s'appelle donc **« Serveur DeepSeek Harness »**, et le compte de droite est celui des
+machines **en ligne ET dont DSH répond** (« 1 joignable »). Deux garde-fous :
+
+- **tant que la sonde n'a pas rendu son verdict**, le compte affiche « vérification… » et non
+  « 0 » : on ne sait pas encore, et compter faux serait pire que ne pas compter ;
+- **la liste continue de montrer TOUTES les machines**, avec leurs états — c'est ce qui
+  permet de comprendre pourquoi une machine ne compte pas (hors ligne, ou DSH absent).
+
+Vérifié par capture : trois vignettes affichées (« DSH · hôte », « pas de DSH », « hors
+ligne ») et « 1 joignable » à droite.
+
+#### Une sonde annulée n'est pas un verdict
+
+**Faux négatif mesuré, et corrigé.** La sonde est relancée à chaque changement de liste, et
+SwiftUI **annule** la précédente. Or une requête annulée lève : le `catch` la rangeait en
+« pas de DSH », et le groupe rendait donc un verdict VIDE — qui écrasait le bon. Le journal
+de l'application montrait la suite exacte :
+
+```
+[sonde] debut : 2 candidat(s), jeton 43 caracteres
+[sonde] fin : 1 serveur(s) DSH sur 2      ← le bon verdict
+[sonde] fin : 0 serveur(s) DSH sur 2      ← une sonde annulée l'écrase
+```
+
+Aucune machine n'avait changé d'état : la seule différence était l'annulation. Le verdict
+n'est donc publié que si la sonde est allée au bout (`guard !Task.isCancelled`). Après
+correction, la page affiche « en ligne · DSH · hôte interrogé », vérifié par capture.
+
+#### Une bascule de serveur doit se PROUVER
+
+Trouvé sur la même capture, et corrigé : l'application annonçait
+
+> « http://127.0.0.1:58674 **ne répond pas** : basculé sur « MacBook Air de Camille » »
+
+alors qu'elle était **connectée** à cette adresse, qui répondait. `ajusterAuParc` se
+déclenchait dès que l'adresse courante n'était pas une machine **découverte et en
+ligne** — sans qu'aucune requête ait échoué. Une adresse saisie à la main, une adresse de
+configuration, une instance locale : toutes étaient déclarées mortes par simple
+ignorance.
+
+La règle est désormais : **pas de preuve, pas de bascule**. L'échec est consigné là où il
+est constaté — au refus motivé de `connecter()` (machine hors ligne) ou à l'échec d'une
+tentative réelle — et il est effacé dès qu'une connexion réussit. L'avis dit alors ce qui
+a été constaté, et rien de plus : « est hors ligne sur le tailnet » n'est pas « ne répond
+pas ». 7 tests couvrent la décision, qui est une fonction pure.
+
+**ET UN CAS NE BASCULE PAS DU TOUT** : la machine qui **répond** mais dont le port 80 est
+vide (`-1004`). C'est la seule situation où l'application sait exactement quoi faire dire
+et faire faire — et basculer remplaçait ce message par un avis de bascule, effaçant
+l'information utile *et* la machine que l'utilisateur venait de choisir. Ce cas garde donc
+sa place, avec ses commandes.
+
+#### Les commandes à taper ailleurs se COPIENT
+
+Le message du Mac qui ne publie rien affichait ses commandes en texte monospace, noyées
+dans un paragraphe : il fallait les sélectionner à la main, sur un téléphone, au milieu
+d'un texte. Elles sont maintenant dans des encadrés, **chacune avec son bouton de copie**
+(`LigneCommande`) — parce que ces commandes ne sont pas faites pour être lues ici, mais
+tapées sur l'autre Mac.
+
+**LA COMMANDE ÉTAIT FAUSSE, ET ELLE EST MAINTENANT VÉRIFIÉE.** L'ancienne —
+`tailscale serve --bg 80 http://127.0.0.1:3080` — ne pouvait pas fonctionner : `--bg` ne
+prend pas de port, et `serve` n'accepte qu'une seule cible. La nouvelle a été passée sur
+cette machine, et `tailscale serve status --json` est resté **identique avant et après** :
+elle reproduit donc exactement la configuration qui marche.
+
+```bash
+tailscale serve --bg --http=80 http://127.0.0.1:3080   # publier DSH sur le port 80 du nom MagicDNS
+tailscale serve status                                  # vérifier ce qui est publié
+```
+
+Dans ce cas précis, le pavé de transport (`NSURLErrorDomain -1004 … | sous-jacent …`)
+n'est **plus affiché** : il redisait en rouge, et en charabia, ce que l'encadré dit en une
+ligne et répare. Il reste affiché pour toutes les autres causes, où il est le seul
+diagnostic — et il est de toute façon conservé dans `diagnostic.json`.
+
+#### Les séparateurs de ligne, sur macOS
+
+Le propriétaire a demandé s'ils étaient utiles sur le Mac : ils ne le sont pas. Une colonne
+de navigation macOS n'en dessine aucun, et ici ils découpaient des lignes qui appartiennent
+au **même** objet — un espace et ses sessions, une explication et sa commande. Ils sont
+donc masqués sur macOS (`.sansSeparateurMac()`), et **conservés sur iOS**, où une liste
+encartée les utilise pour séparer des réglages distincts.
+
+**Non vérifié à l'écran, et dit comme tel** : `screencapture` exige l'autorisation
+« Enregistrement de l'écran », refusée dans cet environnement. La modification emploie
+l'API de ligne documentée (`listRowSeparator`), appliquée à chaque ligne et non au
+conteneur — posée sur un conteneur, elle serait sans effet, ce qui est pire qu'un
+séparateur.
 
 ### Installer sur l'iPhone : ce qui bloque, mesuré
 
@@ -223,12 +603,32 @@ problème autrement : elle modifie le `.app` **construit**, jamais les sources. 
 vient de `Config/DomaineTailnet`, fichier local ignoré par git :
 
 ```bash
-printf 'mon-mac.mon-tailnet.ts.net\n' > Config/DomaineTailnet
+printf 'mon-tailnet.ts.net\n' > Config/DomaineTailnet
 ```
+
+**LE FICHIER PORTE LE DOMAINE DU TALNET, PAS LE NOM D'UNE MACHINE — défaut vu à
+l'écran, puis corrigé.** Une première version y mettait le nom MagicDNS du Mac. L'exception
+était alors *présente dans le plist* et **inopérante pour tous les autres Macs** :
+`macmini.mon-tailnet.ts.net` est un **frère**, pas un sous-domaine, donc App Transport
+Security le refusait en `-1022` — « ATS refuse le clair vers cet hôte » — alors que la
+fiche du Mac lui-même fonctionnait. Le remède est le suffixe commun à toutes les machines,
+déclaré avec `NSIncludesSubdomains`.
+
+Mesuré, en **boîtier applicatif** (bundle) et vers un autre Mac du tailnet :
+
+| Exception déclarée | Résultat |
+|---|---|
+| `mon-mac.mon-tailnet.ts.net` (nom de machine) | **`-1022`** — ATS refuse : l'exception ne couvre pas les voisins |
+| `mon-tailnet.ts.net` + `NSIncludesSubdomains` | `-1004` — la requête part réellement ; ce Mac-là ne servait simplement pas DSH |
+
+`NSIncludesSubdomains` est donc indispensable **dans les deux chemins d'empaquetage**
+(phase Xcode pour iOS, `Scripts/empaqueter-app-macos.sh` pour le Mac). Sans lui,
+l'exception ne couvre que le domaine nu et ne protège aucune machine.
 
 Le script valide la forme du domaine, et **ne fait pas échouer le build** si le fichier
 est absent : sans exception, l'application se construit et se lance, seule la connexion
-HTTP vers un nom de domaine est refusée.
+HTTP vers un nom de domaine est refusée. Le domaine n'est jamais écrit dans un journal de
+build : seul son nombre d'étiquettes l'est, de quoi vérifier qu'il est complet.
 
 Deux pièges rencontrés, notés pour la suite :
 
@@ -445,10 +845,48 @@ Deux choix de données méritent d'être notés :
 - **Le nom d'espace vient de `cwd`**, jamais du nom du dossier de projet. DSH
   encode les chemins en remplaçant les `/` par des `-`, ce qui rend
   `dsh-plugins` indiscernable de `dsh/plugins` ; un libellé déduit d'un encodage
-  perdant ne doit pas primer sur une valeur exacte.
+  perdant ne doit pas primer sur une valeur exacte. *(Repli seulement : quand l'hôte
+  publie ses espaces, c'est son titre qui s'affiche — voir ci-dessous.)*
 - **Le rattachement d'un sous-agent est INDICATIF.** L'en-tête d'un sous-agent ne
   nomme pas sa session parente : on les place sous l'espace de leur parent, sans
   prétendre à une exactitude que la donnée ne porte pas.
+
+#### Les deux tris ne suivent pas la même date
+
+Règle de l'interface web, **lue dans le service hôte** (`dsh-workspace`), et non déduite
+d'une capture :
+
+| Élément | Date qui classe | Sens |
+|---|---|---|
+| **Espaces** | la **création** de leur session la plus récente (`newestAt`), ou du dossier pour un espace vide | plus récent en haut |
+| **Sessions** | leur **dernière activité** | plus récente en haut |
+
+L'application triait les espaces par **activité** : l'arbre remontait à chaque message
+reçu, et déplaçait sous le doigt l'élément qu'on visait. Deux espaces de même date sont
+départagés par leur chemin, comme le fait le service hôte — sans quoi l'ordre
+s'inverserait d'un rafraîchissement à l'autre.
+
+La **lignée n'entre pas dans l'ordre** : un sous-agent se classe par son activité, et
+c'est le rendu qui l'indente. C'est aussi le choix du web (« build one group without
+projecting session lineage into presentation »).
+
+#### Les espaces viennent du registre de l'hôte, vides compris
+
+`GET /v1/espaces` (plugin) publie le registre : identifiant, titre, chemin, création, et
+**la liste des sessions rattachées**. L'application l'utilise quand `capacites.espaces`
+vaut `true`, et retombe sinon sur son regroupement par `cwd`.
+
+- **Un espace sans session s'affiche**, avec une icône distincte : `tray` (plateau vide)
+  et la mention « aucune session », au lieu du dossier. Il n'est **pas** rendu comme un
+  groupe dépliable — un chevron qui ne révèle rien est un mensonge d'interface. SF
+  Symbols n'a pas de « dossier ouvert », contrairement aux icônes du web
+  (`IconFolderOpen16` / `IconFolderClose16`) : le dossier reste donc identique, et
+  l'état déplié se lit au chevron de la liste.
+- **L'appartenance est un fait, plus une comparaison de chemins** : une session dont le
+  `cwd` a changé reste dans son espace, et une session qu'aucun espace ne revendique va
+  dans « Sans espace », en dernier — le « Ungrouped » du web.
+- **« Vide » est un fait du registre**, pas de l'affichage : une recherche qui masque
+  toutes les sessions d'un espace ne fait pas clignoter son icône.
 
 ### Le piège du jeton : deux secrets de 43 caractères
 
@@ -662,11 +1100,35 @@ Le chemin complet, du clone à l'application :
 ```bash
 Scripts/construire-app-ios.sh --simulateur   # → .build/iphone/…/DSHRemote.app
 Scripts/empaqueter-app-macos.sh              # → .build/macos/DSH Remote.app
+Scripts/empaqueter-app-macos.sh --installer  # remplace /Applications et vérifie
 ```
 
 Le premier porte l'exception ATS le temps du build et **restaure la source ensuite**,
 même en cas d'échec (trap) : c'est ce qui empêche le nom du tailnet d'entrer dans un
 commit accidentel.
+
+**POURQUOI PASSER PAR LE SCRIPT, ET NON PAR UN `xcodebuild` DIRECT — mesuré DEUX
+FOIS.** Un `xcodebuild` lancé sur un `-derivedDataPath` RÉUTILISÉ a produit un paquet
+**sans aucune clé `NSAppTransportSecurity`**, alors que la phase « Exception ATS »
+figurait bien dans le projet (en dernière position) et se déclarait exécutée. Le premier
+build dans un chemin neuf l'injecte ; **le second, dans le même chemin, la perd** —
+l'expérience a été refaite, avec le même résultat. Conséquence, constatée à l'écran : tous
+les serveurs affichaient « **pas de DSH** », parce que chaque sonde vers un nom du tailnet
+était refusée en `-1022`. Le script, lui, injecte dans la source **avant** de construire et
+**vérifie le paquet produit** (`Print :NSAppTransportSecurity` → échec du build s'il
+manque) : c'est le seul chemin qui ne peut pas mentir sur ce point. Le message d'erreur
+`-1022` de l'application nomme désormais cette cause possible, faute de pouvoir la
+prévenir.
+
+**`--installer` : POURQUOI CETTE OPTION EXISTE.** Le paquet construit vit dans
+`.build/macos/`, et rien ne le reliait à la copie de `/Applications` que l'utilisateur
+lance réellement. Constaté : une copie installée à 02:16 continuait d'être lancée à 08:41
+alors que le dépôt contenait déjà deux correctifs — l'écran montrait donc les anciens
+défauts, et la cause était cherchée dans le code. **Deux applications du même nom, dont
+aucune ne savait qu'elle était l'ancienne.** L'option ferme l'instance en cours, copie le
+paquet (`ditto`, qui préserve la signature), **compare les empreintes SHA-256** du binaire
+construit et du binaire installé, et prévient si l'exception ATS manque. Une copie
+partielle ou refusée ne peut donc plus passer inaperçue.
 
 ### NE JAMAIS lancer le binaire du simulateur comme un programme macOS
 
@@ -820,7 +1282,30 @@ inactive.
 | **Le flux alimente l'écran ouvert** | la même capture passe de 41 à 48 enregistrements pendant qu'une autre session écrit |
 | **Le composeur est rendu** | capture du simulateur : champ « Écrire à cette session… », sélecteur de mode, bouton d'envoi |
 | **L'hôte publie la liste des Macs du tailnet** | `dsh-remote-ctl <adresse> serveurs` → 3 Macs ; le PC Windows et l'iPhone sont écartés |
+| **Les espaces viennent du registre de l'hôte** | `dsh-remote-ctl <adresse> espaces` → 7 espaces, du plus récent au plus ancien, avec leur nombre de sessions |
+| **Espaces par création, sessions par activité** | 3 tests : un espace ancien mais très actif reste sous un espace récent ; dans un espace, la session la plus active passe devant ; départage stable à date égale |
+| **Un espace vide est représenté** | 6 tests sur les charges utiles de l'hôte : espace sans session marqué `sansSession`, appartenance par identifiant et non par chemin, « Sans espace » en dernier, repli sur `cwd` sans registre |
 | **L'iPhone CONSOMME la découverte** | simulateur iPhone 17 Pro : les 3 Macs s'affichent avec icône et état, « hôte interrogé » sur la machine qui répond — aucun processus exécuté par l'application |
+| **La découverte survit à un environnement d'application** | app empaquetée lancée comme le Finder la lance : `[sonde] debut : 3 candidat(s)` puis `1 serveur(s) DSH sur 3` — contre `aucun Mac decouvert` avant le correctif |
+| **Un CLI qui échoue en code 0 ne devient pas « tailnet vide »** | test « Un CLI qui échoue en code 0 ne doit PAS devenir « tailnet vide » », sur la sortie réelle du CLI (`Tailscale.CLIError error 3` sur stdout, code 0) |
+| **L'exception ATS couvre tout le tailnet** | même requête vers un autre Mac, en boîtier applicatif : `-1022` avec un nom de machine, `-1004` avec le domaine du tailnet |
+| **Une machine éteinte n'est ni visée ni sondée** | adresse mémorisée pointant sur un Mac éteint : `2 candidat(s)` sondés au lieu de 3, et fichier de diagnostic **inchangé** (aucune requête émise) là où l'ancienne version y laissait un `-1001` après 21 s |
+| **Le statut des serveurs se résout** | simulateur : « DSH · hôte », « pas de DSH », « hors ligne » — la sonde des machines en ligne n'est plus retenue par la machine morte |
+| **Une bascule de serveur exige une preuve** | 7 tests sur la décision pure ; sur capture, l'avis « ne répond pas » a disparu alors que l'application était connectée à l'adresse qu'il prétendait morte |
+| **Les commandes d'aide se copient** | capture du simulateur : deux encadrés `tailscale serve …` avec leur bouton, et le pavé `-1004` n'est plus affiché |
+| **La commande d'aide est VRAIE** | `tailscale serve --bg --http=80 http://127.0.0.1:3080` passée sur la machine : `serve status --json` **identique** avant/après — l'ancienne forme (`--bg 80 <url>`) était invalide |
+| **La vérification est mesurée, pas supposée** | découverte 44 ms, sonde complète 16 ms, verdict posé **0,3 s** après le lancement ; requêtes 1,2 à 15 ms selon la cible |
+| **Un port 80 occupé par autre chose est reconnu** | MacMini renvoie `HTTP/1.1 404 Not Found` (sans `Server`) : message et commandes affichés, là où l'écran montrait « réponse inattendue (HTTP 404) » ; 1 test couvre les deux formes |
+| **Le jeton est sur la page de l'hôte, pas dans les réglages** | capture iPhone : « Jeton d'appareil de cet hôte » + état « jeton complet (43 caractères) » sur la page ; les Réglages ne le contiennent plus |
+| **Les Réglages ne contiennent plus rien d'une machine** | capture iPhone : une phrase qui l'explique, puis les deux interrupteurs de sessions (préférences d'affichage, communes à toutes les machines) |
+| **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
+| **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
+| **La cible se remplace en un point** | une seule ligne écrit `cible` ; 5 transitions nommées, 5 tests sans réseau ; en vrai, plus d'oscillation d'adresse au démarrage |
+| **Les états corrélés sont remplacés par deux valeurs** | 5 tests d'invariants verts (77 au total) ; en vrai, verdict posé en 0,4 s après le remaniement |
+| **Le compte de la section ne compte que l'utilisable** | capture iPhone : « Serveur DeepSeek Harness — 1 joignable », alors que deux machines sont en ligne (l'une n'a pas DSH) et que les trois sont affichées |
+| **Le verdict ne clignote plus au rafraîchissement** | capture prise **pendant** une sonde (2ᵉ `sonde] debut` du journal) : « DSH · hôte », « pas de DSH » et « hors ligne » restent affichés — l'ancien code les repassait à « vérification… » à chaque sonde |
+| **Un échec devenu faux est effacé et la connexion rejouée** | `relancerSiLaCibleSertDsh` : si la sonde dit que la machine visée sert DSH, l'erreur affichée disparaît et `connecter()` est retenté |
+| **Un `xcodebuild` sur DerivedData réutilisé perd l'exception ATS** | reproduit deux fois : le premier build dans un chemin neuf l'injecte, le second dans le même chemin la perd → tous les serveurs en « pas de DSH » (`-1022`) ; d'où le passage obligatoire par `Scripts/construire-app-ios.sh`, qui vérifie le paquet |
 | La liste vide dit pourquoi | `/v1/serveurs` rend `diagnostic` quand la liste est vide ; 5 tests couvrent les charges utiles de l'hôte |
 | Chaque icône rendue EXISTE | test « Chaque icône rendue est un symbole SF qui existe vraiment » — il a mis en évidence que `macbook.air`, `macbook.pro` et `imac` n'existent pas |
 | Les refus sont respectés | `401` sans jeton, `403` avec `Origin`, `404` sur identifiant inconnu |

@@ -158,6 +158,35 @@ public struct ListeServeurs: Sendable, Decodable {
   public let diagnostic: String?
 }
 
+/// Réponse de `GET /v1/espaces` — les espaces de travail de l'hôte.
+///
+/// POURQUOI L'HÔTE LES PUBLIE. L'application déduisait ses espaces des sessions :
+/// un espace **sans session** lui était donc invisible, alors que l'interface web
+/// les affiche tous — un espace s'enregistre dès qu'on choisit un dossier, avant
+/// même d'y ouvrir une session. L'hôte tient ce registre ; il le publie.
+public struct ListeEspaces: Sendable, Decodable {
+  public let protocole: Int
+  public let espaces: [EspaceHote]
+}
+
+/// Un espace de travail tel que le registre de l'hôte le connaît.
+public struct EspaceHote: Sendable, Decodable, Hashable {
+  /// Identifiant du registre — c'est l'APPARTENANCE des sessions.
+  public let id: String
+  /// Titre donné par l'utilisateur, ou déduit du chemin par l'hôte.
+  public let titre: String
+  /// Chemin du dossier.
+  public let chemin: String
+  /// Création, en millisecondes epoch. `nil` si l'hôte n'a pas su la lire.
+  public let creeLe: Int?
+  /// Identifiants des sessions rattachées à cet espace.
+  ///
+  /// C'est un FAIT du registre, et non une déduction : on ne recompte donc pas
+  /// les sessions en comparant des chemins, ce qui se tromperait sur un dossier
+  /// renommé, deux projets homonymes, ou un sous-agent.
+  public let sessions: [String]
+}
+
 /// Un enregistrement brut du journal.
 ///
 /// On décode `type`, `seq` et `time` — les trois seuls champs dont le TRANSPORT a
@@ -279,6 +308,10 @@ public struct Sante: Sendable, Decodable {
     /// client doit alors garder la saisie manuelle au lieu d'attendre une liste
     /// qui ne viendra jamais. `nil` signifie « ne sait pas », pas « non ».
     public let decouverte: Bool?
+    /// L'hôte publie-t-il ses espaces de travail (`/v1/espaces`), y compris ceux
+    /// qui n'ont AUCUNE session ? Sans cette capacité, le client déduit ses
+    /// espaces des sessions — le comportement d'avant.
+    public let espaces: Bool?
     /// L'hôte sait-il INTERROMPRE le tour en cours (`/v1/session/<id>/annuler`) ?
     ///
     /// Optionnel pour la même raison que `decouverte` : un hôte plus ancien ne

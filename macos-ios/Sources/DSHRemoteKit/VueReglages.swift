@@ -36,166 +36,23 @@ struct FeuilleReglages: View {
     NavigationStack {
       Form {
         Section {
-          // ── POURQUOI LE LIBELLÉ EST AU-DESSUS, ET NON À GAUCHE ──────────
+          // ── CET ÉCRAN EST VOLONTAIREMENT VIDE POUR L'INSTANT ─────────────
           //
-          // La disposition précédente employait `LabeledContent`, qui place le
-          // libellé à gauche et le champ à droite. Sur macOS, cela donnait une
-          // feuille ILLISIBLE : mesuré sur capture, l'URL `http://macmini.tail…`
-          // débordait de la fenêtre, par-dessus le texte voisin — on croyait
-          // voir DEUX adresses superposées, alors qu'il n'y avait qu'un champ
-          // trop étroit pour ce qu'il contient.
+          // TOUT ce qui l'occupait est descendu sur la PAGE DE LA MACHINE
+          // concernée : l'adresse, ses actions, le jeton — propre à chaque hôte,
+          // mesuré — le diagnostic avec ses remèdes, ET les deux interrupteurs de
+          // sessions. Ces derniers portent eux aussi sur une connexion :
+          // « suivre l'activité » décide si l'on interroge CE serveur,
+          // « chargées en mémoire seulement » filtre SA liste. Les garder ici
+          // les faisait hériter d'une machine à l'autre.
           //
-          // Une adresse de tailnet fait une quarantaine de caractères : elle a
-          // besoin de la largeur entière. Le libellé passe donc au-dessus, et le
-          // champ occupe la ligne — la disposition que macOS emploie lui-même
-          // pour les valeurs longues.
-          Label("Adresse", systemImage: modele.symboleServeur)
-            .font(.caption)
+          // Il ne reste donc rien de général à régler. Le dire évite de croire à
+          // un écran cassé : une feuille vide sans explication ressemble à un
+          // défaut.
+          Text("Les réglages généraux de l'application viendront ici. Tout ce qui concerne une machine — adresse, jeton, connexion, suivi, remèdes — se règle sur la page de cette machine, qu'on ouvre en touchant son icône.")
+            .font(.callout)
             .foregroundStyle(.secondary)
-          HStack(spacing: 8) {
-            // Liaison passant par le modèle : l'adresse est mémorisée dès la
-            // frappe, sans attendre une connexion réussie. C'est précisément
-            // quand la connexion échoue qu'on veut retrouver son adresse.
-            TextField(
-              modele.adresseExemple,
-              text: Binding(
-                get: { modele.adresse },
-                set: { modele.definirAdresse($0) }
-              )
-            )
-            // Police à chasse fixe : une adresse se lit caractère par caractère,
-            // et c'est ce qui permet de repérer une faute de frappe.
-            .font(.callout.monospaced())
-            .lineLimit(1)
-            .autocorrectionDisabled()
-            #if os(iOS)
-              .textInputAutocapitalization(.never)
-              .keyboardType(.URL)
-            #endif
-            if !modele.adresse.isEmpty {
-              Button {
-                modele.oublierServeur()
-              } label: {
-                Image(systemName: "xmark.circle")
-              }
-              .buttonStyle(.borderless)
-              .accessibilityLabel("Oublier ce serveur")
-            }
-          }
-          if let nom = modele.nomServeur, !nom.isEmpty {
-            Label(nom, systemImage: modele.symboleServeur)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-        } header: {
-          Text("Adresse")
-        } footer: {
-          Text(
-            "L'adresse découle du serveur choisi. Ce champ ne sert qu'aux cas que la découverte ne couvre pas."
-          )
-        }
-
-        Section {
-          // Même disposition que l'adresse, et pour la même raison : un secret
-          // de 43 caractères ne tient pas dans une colonne de droite étroite.
-          Label("Jeton", systemImage: "key")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          HStack(spacing: 8) {
-            SecureField(
-              modele.jetonDisponible ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil",
-              text: $modele.jetonSaisi
-            )
-            .font(.callout.monospaced())
-            .lineLimit(1)
-            .autocorrectionDisabled()
-            #if os(iOS)
-              .textInputAutocapitalization(.never)
-            #endif
-            Button {
-              modele.collerLeJeton()
-            } label: {
-              Image(systemName: "doc.on.clipboard")
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Coller le jeton depuis le presse-papier")
-            if modele.jetonDisponible {
-              Button {
-                modele.effacerJeton()
-              } label: {
-                Image(systemName: "xmark.circle")
-              }
-              .buttonStyle(.borderless)
-              .accessibilityLabel("Effacer le jeton")
-            }
-          }
-          // L'état du jeton, en clair : un jeton tronqué doit se voir AVANT
-          // d'accuser le serveur.
-          if modele.jetonDisponible {
-            Label(
-              modele.jetonBienForme
-                ? "jeton complet (43 caractères)"
-                : "jeton incomplet : \(modele.longueurJeton) caractères au lieu de 43",
-              systemImage: modele.jetonBienForme ? "checkmark.seal" : "exclamationmark.triangle"
-            )
-            .font(.caption)
-            .foregroundStyle(modele.jetonBienForme ? Color.green : Color.orange)
-          }
-          HStack(spacing: 12) {
-            Button("Se connecter") {
-              Task { await modele.connecter() }
-            }
-            .disabled(modele.enChargement)
-            Button("Tester l'adresse") {
-              Task { await modele.testerAdresse() }
-            }
-            .disabled(modele.enChargement || modele.adresse.isEmpty)
-            if modele.enChargement { ProgressView().controlSize(.small) }
-          }
-          // Le résultat du test, nommé : « rien ne s'est passé » ne doit jamais
-          // être une réponse possible à un appui.
-          switch modele.etatAdresse {
-          case .inconnu:
-            EmptyView()
-          case .enCours:
-            Label("test de l'adresse…", systemImage: "hourglass").font(.caption)
-          case let .joignable(reponses):
-            Label("\(reponses) session(s) — adresse et jeton acceptés", systemImage: "checkmark.circle")
-              .font(.caption)
-              .foregroundStyle(.green)
-          case let .injoignable(detail):
-            Label(detail, systemImage: "xmark.circle")
-              .font(.caption)
-              .foregroundStyle(.red)
-          }
-        } header: {
-          Text("Jeton d'appareil")
-        } footer: {
-          Text(
-            "Le jeton est conservé au trousseau, jamais dans les préférences. Il est affiché une seule fois par le harness, au premier chargement du plugin."
-          )
-        }
-
-        Section {
-          // L'étiquette dit ce que le critère EST, pas ce qu'il suggère.
-          //
-          // « Vivantes » laissait croire à des sessions en train de travailler :
-          // le propriétaire s'est étonné d'en compter dix. Or ce champ signifie
-          // « chargée dans le processus du harness », c'est-à-dire prête à être
-          // reprise instantanément — pas active. La nuance compte : dix sessions
-          // actives serait anormal, dix sessions chargées est normal après une
-          // journée de travail.
-          Toggle("Chargées en mémoire seulement", isOn: $modele.filtresActifs)
-          // Le suivi se voit et se commande : sans lui, les pastilles d'état
-          // resteraient figées au moment du chargement, et une session qui se
-          // met à travailler n'apparaîtrait jamais comme telle.
-          Toggle("Suivre l'activité", isOn: $modele.suiviAutomatique)
-        } header: {
-          Text("Sessions")
-        } footer: {
-          Text(
-            "« Chargées » veut dire prêtes à être reprises instantanément, pas en train de travailler."
-          )
+            .fixedSize(horizontal: false, vertical: true)
         }
       }
       .navigationTitle("Réglages")
@@ -208,5 +65,24 @@ struct FeuilleReglages: View {
         }
       }
     }
+    #if os(macOS)
+      // ── LA FEUILLE AVAIT LA LARGEUR DE SON CONTENU LE PLUS ÉTROIT ──────────
+      //
+      // POURQUOI CE CADRE EXISTE, ET POURQUOI IL EST LARGE. Sans lui, macOS
+      // dimensionne la feuille sur la largeur IDÉALE du `Form` — de l'ordre de
+      // 400 points — et tout ce qui dépasse est TRONQUÉ À DROITE. Constaté sur
+      // la capture du propriétaire : la phrase d'aide de l'adresse s'arrêtait au
+      // milieu d'un mot, celle des sessions aussi, et l'URL du tailnet était
+      // coupée. Ce n'était pas un problème de texte, mais de place.
+      //
+      // 560 points est la largeur à laquelle une adresse de tailnet complète
+      // (`http://` + machine + tailnet + `.ts.net`, une quarantaine de
+      // caractères en chasse fixe) tient SANS troncature, boutons compris.
+      .frame(minWidth: 560, idealWidth: 640, maxWidth: .infinity, minHeight: 560, idealHeight: 620)
+      // `grouped` est le style des réglages macOS : sections encartées, en-têtes
+      // en petites capitales, fond de fenêtre. Le style par défaut, lui, ressemble
+      // à un formulaire de saisie — ce que ces réglages ne sont pas.
+      .formStyle(.grouped)
+    #endif
   }
 }
