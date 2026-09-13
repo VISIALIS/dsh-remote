@@ -275,6 +275,33 @@ La classification ne cherche plus un code dans un texte d'erreur : l'erreur est 
 en type** (`erreurType`), parce que la recherche textuelle avait précisément raté ce
 `404`. Les deux cas montrent les mêmes commandes copiables.
 
+#### Un seul écrivain par état — et une génération pour les réponses en vol
+
+Les trois boucles (suivi 3 s, serveurs 15 s, flux) et les actions de l'utilisateur écrivaient
+dans le modèle **sans que rien ne relie une réponse à la cible qui l'avait demandée**. Une
+réponse partie vers l'ancienne machine peut arriver **après** une bascule : l'écran
+afficherait alors les sessions d'un serveur sous le nom d'un autre, sans que rien ne le
+signale.
+
+Deux règles, désormais tenues par la structure :
+
+1. **Chaque collection a un écrivain nommé** (`appliquerSessions`, `appliquerJournal`,
+   `appliquerEspaces`, `appliquerServeursDuTailnet`, `appliquerServeursDeLhote`). Un `grep`
+   le vérifie : plus aucune écriture directe ailleurs, sauf les remises à zéro explicites.
+2. **Un compteur de génération** est incrémenté à chaque changement de cible — dans `viser`,
+   le seul endroit qui remplace la cible. Chaque départ d'une réponse asynchrone retient la
+   génération, et chaque écrivain la vérifie : une réponse qui décrit l'ancienne machine est
+   **refusée**.
+
+La liste des machines du **tailnet** échappe délibérément à la garde : c'est un fait du
+tailnet, pas une donnée d'un serveur, et la jeter parce que la cible a bougé viderait la liste
+au moment précis où l'utilisateur choisit une machine.
+
+**2 tests** éprouvent la règle : changer de cible invalide les réponses déjà parties, et une
+liste arrivée en retard n'écrase pas la nouvelle. Écrits, ils ont d'ailleurs attrapé une
+erreur de ma part : le résumé d'une session est **aplati** dans l'objet par le plugin, et ma
+fixture l'imbriquait — l'identifiant décodé était « (inconnu) ».
+
 #### Le jeton est gardé PAR HÔTE — et le coffre local ne parle que de la machine locale
 
 Le jeton d'appareil est tiré par **chaque** hôte (mesuré). Le client n'en gardait pourtant
@@ -1341,6 +1368,7 @@ inactive.
 | **Les Réglages ne contiennent plus rien d'une machine** | capture iPhone : une phrase qui l'explique, puis les deux interrupteurs de sessions (préférences d'affichage, communes à toutes les machines) |
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
+| **Une réponse en vol n'écrit pas dans une autre cible** | 2 tests : la bascule invalide le vol, une liste en retard est refusée ; 87 tests au total |
 | **Le jeton est par hôte** | 3 tests : chaque hôte rappelle le sien, celui de l'hôte local n'est pas recopié, effacer n'efface que le sien |
 | **Deux délais, mesurés** | `sante` 1,6-4,1 ms → plafond 5 s ; liste 4,06 s à froid → plafond 30 s ; un plafond unique de 8 s avait refusé une connexion valide à 8055 ms |
 | **La cible se remplace en un point** | une seule ligne écrit `cible` ; 5 transitions nommées, 5 tests sans réseau ; en vrai, plus d'oscillation d'adresse au démarrage |

@@ -133,6 +133,31 @@ public final class ModeleApp {
 
   public private(set) var cible = Cible(adresse: ModeleApp.adresseParDefaut)
 
+  /// Compteur de GÉNÉRATION : incrémenté à CHAQUE changement de cible.
+  ///
+  /// POURQUOI IL EXISTE. Trois boucles (suivi 3 s, serveurs 15 s, flux) et les
+  /// actions de l'utilisateur écrivaient dans le modèle sans que rien ne relie
+  /// une réponse à la cible qui l'avait demandée. Une réponse partie vers
+  /// l'ANCIENNE machine peut arriver APRÈS une bascule : l'écran afficherait
+  /// alors les sessions d'un serveur sous le nom d'un autre. Chaque écriture de
+  /// donnée PAR SERVEUR passe donc par un écrivain nommé, qui vérifie que la
+  /// réponse concerne encore la cible.
+  ///
+  /// L'incrément vit dans `viser` — le seul endroit qui remplace la cible. Un
+  /// écrivain unique, donc un seul compteur à incrémenter : c'est exactement ce
+  /// que l'unification de la cible a rendu possible.
+  private var generation = 0
+
+  /// Une réponse asynchrone a-t-elle encore le droit d'écrire ?
+  ///
+  /// Non si la cible a changé depuis son départ : la réponse décrit une autre
+  /// machine, et l'écrire serait montrer les données d'une machine sous le nom
+  /// d'une autre.
+  func reponseEncoreValable(_ vue: Int) -> Bool { vue == generation }
+
+  /// La génération à confier à une réponse qui part maintenant.
+  func generationDuDepart() -> Int { generation }
+
   /// LE SEUL endroit qui remplace la cible.
   ///
   /// Ellecharge aussi le jeton QUI VA AVEC : puisque chaque hôte a le sien
@@ -140,6 +165,8 @@ public final class ModeleApp {
   /// secret de l'autre.
   private func viser(_ nouvelle: Cible) {
     cible = nouvelle
+    // La cible a changé : tout ce qui était en vol décrivait l'ancienne.
+    generation += 1
     chargerJetonDeLaCible()
   }
 
@@ -299,6 +326,44 @@ public final class ModeleApp {
     serveurOuvert = serveur.id
   }
 
+
+  // MARK: - Les seuls écrivains des collections
+
+  /// Sessions affichées — données d'UN serveur, donc protégées par la génération.
+  func appliquerSessions(_ liste: ListeSessions, vu generationVue: Int) {
+    guard reponseEncoreValable(generationVue) else { return }
+    sessions = liste.sessions
+  }
+
+  /// Journal d'une session — même règle.
+  func appliquerJournal(_ evenements: [EvenementAffiche], vu generationVue: Int) {
+    guard reponseEncoreValable(generationVue) else { return }
+    journal = evenements
+  }
+
+  /// Espaces déclarés par l'hôte — même règle.
+  func appliquerEspaces(_ liste: [EspaceHote], vu generationVue: Int) {
+    guard reponseEncoreValable(generationVue) else { return }
+    espacesHote = liste
+  }
+
+  /// Liste des machines du TAILNET — **sans** garde de génération, et c'est
+  /// délibéré : c'est un fait du tailnet, pas une donnée d'un serveur. La jeter
+  /// parce que la cible a bougé viderait la liste sous les yeux de l'utilisateur
+  /// au moment précis où il choisit une machine.
+  private func appliquerServeursDuTailnet(_ liste: [ServeurMac], diagnostic: String?) {
+    serveurs = liste
+    diagnosticServeurs = diagnostic
+    sourceServeurs = .tailscaleLocal
+    relireEtatTailscale()
+  }
+
+  /// Liste des machines publiée PAR L'HÔTE — donnée d'un serveur, donc gardée.
+  private func appliquerServeursDeLhote(_ liste: [ServeurMac], vu generationVue: Int) {
+    guard reponseEncoreValable(generationVue) else { return }
+    serveurs = liste
+    sourceServeurs = .hote
+  }
 
   /// Macs du tailnet qui ont RÉPONDU à la sonde de découverte.
   ///
@@ -550,8 +615,12 @@ public final class ModeleApp {
   /// panne : l'utilisateur n'a rien demandé, il ne doit pas être interrompu.
   private func rafraichirSilencieusement() async {
     guard let client else { return }
+    // La génération est prise AVANT l'attente : si la cible change pendant que
+    // la réponse voyage, elle décrira une autre machine — et l'écrivain la
+    // refusera.
+    let depart = generationDuDepart()
     guard let liste = try? await client.listerSessions(limite: 200) else { return }
-    sessions = liste.sessions
+    appliquerSessions(liste, vu: depart)
     observerLesFinsDeTour()
   }
 
@@ -697,11 +766,9 @@ public final class ModeleApp {
     guard decouverteLocalePossible else { return }
     let trouvees = await Task.detached { DecouverteServeurs.macsDuTailnet() }.value
     let raison = DecouverteServeurs.diagnostic
+    // L'hôte a déjà répondu, et sa liste est plus fraîche : on ne l'écrase pas.
     guard sourceServeurs != .hote else { return }
-    serveurs = trouvees
-    diagnosticServeurs = raison
-    sourceServeurs = .tailscaleLocal
-    relireEtatTailscale()
+    appliquerServeursDuTailnet(trouvees, diagnostic: raison)
   }
 
   public func demarrerDecouverte() {
@@ -714,9 +781,7 @@ public final class ModeleApp {
         // L'hôte a déjà répondu, et sa liste est plus fraîche que celle d'un
         // processus lancé avant la connexion : on ne l'écrase pas.
         guard self.sourceServeurs != .hote else { return }
-        self.serveurs = trouvees
-        self.diagnosticServeurs = raison
-        self.sourceServeurs = .tailscaleLocal
+        self.appliquerServeursDuTailnet(trouvees, diagnostic: raison)
         // La liste vient d'arriver : c'est le moment de dire si le tailnet
         // fonctionne, et non seulement si Tailscale est installé.
         self.relireEtatTailscale()
@@ -750,7 +815,7 @@ public final class ModeleApp {
       return
     }
     print("[demarrage] liste des serveurs : \(liste.serveurs.count)")
-    serveurs = liste.serveurs
+    appliquerServeursDeLhote(liste.serveurs, vu: generationDuDepart())
     diagnosticServeurs = liste.diagnostic
     sourceServeurs = .hote
     relireEtatTailscale()
@@ -1240,8 +1305,9 @@ public final class ModeleApp {
       let sante = try await client.verifierSante()
       let patient = try RemoteClient(adresse: adresse, jeton: jeton, delai: ModeleApp.delaiListe)
       self.client = patient
+      let depart = generationDuDepart()
       let liste = try await patient.listerSessions(limite: 200)
-      sessions = liste.sessions
+      appliquerSessions(liste, vu: depart)
       connexion = .jointe(sante, reponses: liste.total ?? liste.sessions.count)
       // Le test d'adresse est aussi une connexion : si l'hôte sait publier la
       // liste des Macs, c'est le moment de la demander.
@@ -1608,8 +1674,9 @@ public final class ModeleApp {
       let patient = try RemoteClient(
         adresse: self.adresse, jeton: jeton, delai: ModeleApp.delaiListe)
       self.client = patient
+      let depart = self.generationDuDepart()
       let liste = try await patient.listerSessions(limite: 200)
-      self.sessions = liste.sessions
+      self.appliquerSessions(liste, vu: depart)
       // LE serveur a répondu ET accepté le jeton : une seule valeur le dit —
       // capacités, nombre de sessions rendues, et « joint » en découlent.
       self.connexion = .jointe(sante, reponses: liste.total ?? liste.sessions.count)
@@ -1648,8 +1715,9 @@ public final class ModeleApp {
   public func rafraichir() async {
     guard let client else { return }
     await executer {
+      let depart = self.generationDuDepart()
       let liste = try await client.listerSessions(limite: 200)
-      self.sessions = liste.sessions
+      self.appliquerSessions(liste, vu: depart)
       self.observerLesFinsDeTour()
     }
     if erreur == nil { demarrerSuivi() }
@@ -1659,12 +1727,16 @@ public final class ModeleApp {
     // Ouvrir, c'est voir : le rappel de fin de cette session n'a plus lieu d'être.
     marquerCommeVue(session.id)
     guard let client else { return }
+    let depart = generationDuDepart()
     await executer {
       let journal = try await client.lireSession(
         session.id,
         demande: DemandeJournal(depuis: 0, limite: 400))
+      // Le journal vient d'UN serveur : si la cible a changé pendant la lecture,
+      // ces événements décrivent une autre machine.
+      self.appliquerJournal(
+        journal.enregistrements.map(DecodeurEvenement.afficher), vu: depart)
       self.sessionOuverte = journal.session
-      self.journal = journal.enregistrements.map(DecodeurEvenement.afficher)
     }
     await demarrerFlux(session.id)
   }
@@ -1888,7 +1960,7 @@ public final class ModeleApp {
   public func chargerEspacesDeLhote() async {
     guard let client = clientPourLhote() else { return }
     guard let liste = try? await client.listerEspaces() else { return }
-    espacesHote = liste.espaces
+    appliquerEspaces(liste.espaces, vu: generationDuDepart())
   }
 
   private func executer(_ travail: @escaping () async throws -> Void) async {
