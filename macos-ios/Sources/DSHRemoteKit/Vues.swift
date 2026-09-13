@@ -428,7 +428,25 @@ struct VueListeSessions: View {
         // différents, deux phrases : personne n'a encore rien lancé, ou la
         // recherche ne rend rien — et dans le second, on nomme le terme cherché.
         if modele.espaces.isEmpty {
-          if modele.recherche.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          if !modele.recherche.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            ContentUnavailableView.search(text: modele.recherche)
+          } else if modele.filtreCacheTout {
+            // LE SERVEUR EN CONNAÎT, LE FILTRE LES CACHE. Le dire évite de croire
+            // que la machine n'a rien — mesuré : 156 sessions rendues, 8
+            // vivantes, et un arbre vide dès qu'aucune n'est en mémoire.
+            VStack(alignment: .leading, spacing: 10) {
+              ContentUnavailableView(
+                "Aucune session en mémoire",
+                systemImage: "memorychip",
+                description: Text(
+                  "Ce serveur en connaît \(modele.sessions.count), mais le filtre « Chargées en mémoire seulement » n'affiche que celles qui sont prêtes à reprendre tout de suite."
+                )
+              )
+              Button("Les afficher toutes") { modele.afficherToutesLesSessions() }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity)
+            }
+          } else {
             ContentUnavailableView(
               "Aucune session",
               systemImage: "rectangle.stack",
@@ -436,8 +454,6 @@ struct VueListeSessions: View {
                 "Les sessions de cette machine apparaîtront ici. Lancez-en une sur le Mac, ou choisissez une autre machine ci-dessus."
               )
             )
-          } else {
-            ContentUnavailableView.search(text: modele.recherche)
           }
         }
       } header: {

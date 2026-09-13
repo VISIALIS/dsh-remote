@@ -287,6 +287,25 @@ public final class ModeleApp {
   /// Le filtre « chargées seulement », POUR LE SERVEUR COURANT.
   public var filtresActifs: Bool { preferences(pour: adresse).chargeesSeulement }
 
+  /// LE FILTRE CACHE-T-IL TOUT CE QUE LE SERVEUR A RENDU ?
+  ///
+  /// POURQUOI CETTE DISTINCTION EXISTE. Mesure du 13 septembre : le serveur
+  /// rendait **156 sessions, dont 8 vivantes**, et le filtre par serveur
+  /// « chargées en mémoire seulement » n'en affichait que huit. Quand aucune
+  /// n'est en mémoire — juste après un redémarrage du harness — l'arbre est vide
+  /// alors que le serveur en connaît cent cinquante-six, et l'écran disait
+  /// « Aucune session » : la même phrase que pour un serveur qui n'en a vraiment
+  /// aucune. Deux situations, deux phrases — et la seconde propose de tout
+  /// afficher.
+  public var filtreCacheTout: Bool {
+    filtresActifs && !sessions.isEmpty && sessionsAffichees.isEmpty
+  }
+
+  /// Montre TOUTES les sessions de ce serveur : le filtre n'a plus rien à cacher.
+  public func afficherToutesLesSessions() {
+    definirPreferences(pour: adresse) { $0.chargeesSeulement = false }
+  }
+
   /// Le client de la cible jointe. Le type est la SURFACE du port, pas la classe
   /// concrète : le modèle n'a pas à savoir qu'il parle HTTP.
   private var client: (any ClientDSH)?

@@ -155,3 +155,45 @@ func pasDeNomSansListe() {
   modele.definirAdresse(machine.adresse)
   #expect(modele.nomDuServeurAffiche == nil)
 }
+
+@MainActor
+@Test("Un arbre vide par le filtre ne se confond pas avec un serveur sans session")
+func filtreQuiCacheTout() {
+  // MESURE DU 13 SEPTEMBRE : le serveur rendait 156 sessions dont 8 vivantes, et
+  // le filtre « chargées en mémoire seulement » n'en affichait que huit. Quand
+  // aucune n'est en mémoire — juste après un redémarrage du harness —, l'arbre
+  // est vide alors que le serveur en connaît cent cinquante-six : l'écran disait
+  // « Aucune session », la même phrase que pour un serveur vide.
+  let modele = ModeleApp()
+  let liste = """
+    {"protocole":1,"total":2,"sessions":[
+      {"projet":"--x--","dossier":"/d","fichier":"/f","octets":1,"modifieLe":1,"vivante":false,
+       "id":"s1","creeLe":1,"preset":"standard","profondeurDelegation":0,
+       "seme":false,"titre":"A","dernierEvenementLe":1,"dernierSeq":1,"nbEnregistrements":1,
+       "tronque":false,"statut":null},
+      {"projet":"--x--","dossier":"/d","fichier":"/f","octets":1,"modifieLe":1,"vivante":false,
+       "id":"s2","creeLe":1,"preset":"standard","profondeurDelegation":0,
+       "seme":false,"titre":"B","dernierEvenementLe":1,"dernierSeq":1,"nbEnregistrements":1,
+       "tronque":false,"statut":null}]}
+    """.data(using: .utf8)!
+  modele.appliquerSessions(
+    try! JSONDecoder().decode(ListeSessions.self, from: liste), vu: modele.generationDuDepart())
+
+  // Le filtre est actif par défaut, et rien n'est en mémoire.
+  #expect(modele.filtresActifs)
+  #expect(modele.sessions.count == 2)
+  #expect(modele.filtreCacheTout)
+
+  // « Les afficher toutes » rend la liste, et coupe le message.
+  modele.afficherToutesLesSessions()
+  #expect(!modele.filtresActifs)
+  #expect(!modele.filtreCacheTout)
+  #expect(modele.sessionsAffichees.count == 2)
+}
+
+@MainActor
+@Test("Un serveur vraiment vide ne se dit pas « filtré »")
+func serveurVraimentVide() {
+  let modele = ModeleApp()
+  #expect(!modele.filtreCacheTout, "aucune session reçue : le filtre n'y est pour rien")
+}
