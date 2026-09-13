@@ -65,6 +65,18 @@ public enum EtatSession: Sendable, Equatable {
     }
   }
 
+  /// L'ÉTAT D'UNE SESSION LISTÉE — la règle unique, en un seul endroit.
+  ///
+  /// POURQUOI ELLE EXISTE. La liste, le tri d'urgence et le compteur par espace
+  /// répondent à la même question : « que demande cette session ? ». Trois
+  /// calculs séparés auraient fini par diverger — une session comptée « en
+  /// attente » dans un espace et pas dans la section qui la met en avant.
+  public static func de(_ session: SessionListee, rappelDeFin: Bool) -> EtatSession {
+    EtatSession(
+      statut: session.statut, vivante: session.vivante, rappelDeFin: rappelDeFin,
+      attendReponse: session.attendReponse == true)
+  }
+
   /// Vrai si l'indicateur doit s'animer.
   public var anime: Bool { self == .enCours }
 

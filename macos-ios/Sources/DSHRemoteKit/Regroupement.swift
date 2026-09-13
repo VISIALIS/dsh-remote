@@ -26,6 +26,35 @@ public struct EspaceDeTravail: Sendable, Identifiable, Hashable {
   public var nbVivantes: Int { sessions.filter { $0.vivante == true }.count }
 }
 
+/// CE QU'UN ESPACE DEMANDE, EN UNE LIGNE COURTE.
+///
+/// POURQUOI CE RÉSUMÉ EXISTE. L'en-tête d'un espace replié n'affichait que son
+/// nombre de sessions : replier un dossier cachait donc l'information la plus
+/// actionnable — celle d'une session qui attend une réponse. Ce qui compte à
+/// l'état replié se voit maintenant sans déplier.
+public struct ResumeEspace: Equatable, Sendable {
+  public let total: Int
+  public let enAttente: Int
+  public let terminees: Int
+
+  public init(total: Int, enAttente: Int, terminees: Int) {
+    self.total = total
+    self.enAttente = enAttente
+    self.terminees = terminees
+  }
+
+  /// « 6 · 1 en attente » — le total, puis ce qui appelle une action.
+  ///
+  /// Le nombre seul reste quand rien n'attend : c'est le cas le plus fréquent, et
+  /// une ligne d'en-tête chargée se lit moins vite.
+  public var texte: String {
+    var morceaux = ["\(total)"]
+    if enAttente > 0 { morceaux.append("\(enAttente) en attente") }
+    if terminees > 0 { morceaux.append("\(terminees) terminée\(terminees > 1 ? "s" : "")") }
+    return morceaux.joined(separator: " · ")
+  }
+}
+
 /// Regroupe des sessions en espaces de travail.
 ///
 /// POURQUOI UN REGROUPEMENT PLUTÔT QU'UN TRI. Une liste plate de 106 sessions
@@ -57,6 +86,27 @@ public enum Regroupement {
   /// profondeur supérieure à zéro a été créée par une autre.
   public static func estSousAgent(_ session: SessionListee) -> Bool {
     (session.resume.profondeurDelegation ?? 0) > 0
+  }
+
+  /// CE QU'UN ENSEMBLE DE SESSIONS DEMANDE — total, en attente, terminées.
+  ///
+  /// POURQUOI ELLE EST ICI. Le compte s'appuie sur `EtatSession.de`, la règle
+  /// unique de l'état d'une session listée : la même que la pastille, la même que
+  /// le tri d'urgence. Un compteur qui compterait autrement que ce que la liste
+  /// montre serait un second vocabulaire pour un seul fait.
+  public static func resume(
+    _ sessions: [SessionListee], terminees: Set<String> = []
+  ) -> ResumeEspace {
+    var enAttente = 0
+    var finies = 0
+    for session in sessions {
+      switch EtatSession.de(session, rappelDeFin: terminees.contains(session.id)) {
+      case .attendReponse: enAttente += 1
+      case .terminee: finies += 1
+      default: break
+      }
+    }
+    return ResumeEspace(total: sessions.count, enAttente: enAttente, terminees: finies)
   }
 
   /// Construit l'arbre : espaces de travail triés, sessions récentes d'abord.

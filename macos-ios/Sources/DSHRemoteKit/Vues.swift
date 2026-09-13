@@ -315,6 +315,32 @@ struct VueListeSessions: View {
       // garde ce qui se lit d'un coup d'œil — pastille, légende, nom — et
       // rend la place aux sessions, qui sont ce qu'on vient y chercher.
 
+      // ── CE QUI ATTEND, AVANT TOUT LE RESTE ────────────────────────────────
+      //
+      // POURQUOI UNE SECTION, ET POURQUOI ELLE EST EN HAUT. « Qui m'attend ? »
+      // est la question qu'on se pose en ouvrant l'application, et la réponse
+      // était enterrée : il fallait déplier les espaces et lire des pastilles de
+      // huit points. Cette section ne remplace pas l'arbre — la session y figure
+      // AUSSI, à sa place dans son projet —, elle le précède.
+      //
+      // Le tri est celui de l'urgence (`sessionsQuiAttendent`) : une session
+      // bloquée sur une décision passe avant une fin de tour non lue.
+      if !modele.sessionsQuiAttendent.isEmpty {
+        Section {
+          ForEach(modele.sessionsQuiAttendent, id: \.id) { session in
+            LigneSession(
+              affiche: AfficheLigneSession(
+                session: session, rappelDeFin: modele.aTermine(session.id))
+            ).tag(session)
+            .sansSeparateurMac()
+          }
+        } header: {
+          EnteteSection(
+            "Demande votre attention",
+            detail: "\(modele.sessionsQuiAttendent.count)")
+        }
+      }
+
       // ── Arbre des sessions, groupé par espace de travail ───────────────────
       //
       // Une liste plate de plus de cent sessions mêlant dix projets est
@@ -383,12 +409,35 @@ struct VueListeSessions: View {
                   .foregroundStyle(Color.accentColor)
                 Text(espace.nom).font(.body)
                 Spacer()
-                Text("\(espace.nbSessions)")
+                // LE COMPTE DIT CE QUI ATTEND, pas seulement combien il y a :
+                // replier un dossier cachait l'information la plus actionnable.
+                Text(modele.resume(espace).texte)
                   .font(.caption2)
-                  .foregroundStyle(.secondary)
+                  .foregroundStyle(
+                    modele.resume(espace).enAttente > 0 ? Color.orange : Color.secondary)
               }
             }
             .sansSeparateurMac()
+          }
+        }
+
+        // ── LES ÉTATS VIDES SE DISENT ────────────────────────────────────────
+        //
+        // POURQUOI. Une section « Espaces de travail » vide, avec « 0 session »
+        // pour tout discours, laisse croire à un chargement en panne. Deux cas
+        // différents, deux phrases : personne n'a encore rien lancé, ou la
+        // recherche ne rend rien — et dans le second, on nomme le terme cherché.
+        if modele.espaces.isEmpty {
+          if modele.recherche.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            ContentUnavailableView(
+              "Aucune session",
+              systemImage: "rectangle.stack",
+              description: Text(
+                "Les sessions de cette machine apparaîtront ici. Lancez-en une sur le Mac, ou choisissez une autre machine ci-dessus."
+              )
+            )
+          } else {
+            ContentUnavailableView.search(text: modele.recherche)
           }
         }
       } header: {
@@ -1059,9 +1108,9 @@ struct AfficheLigneSession: Equatable {
 
   init(session: SessionListee, rappelDeFin: Bool) {
     self.titre = session.titreAffiche
-    self.etat = EtatSession(
-      statut: session.statut, vivante: session.vivante, rappelDeFin: rappelDeFin,
-      attendReponse: session.attendReponse == true)
+    // LA RÈGLE EST UNIQUE, et elle vit dans `EtatSession` : la pastille, le tri
+    // d'urgence et les compteurs par espace répondent tous à la même question.
+    self.etat = EtatSession.de(session, rappelDeFin: rappelDeFin)
     self.evenements = session.resume.nbEnregistrements
     self.octets = session.octets
     self.age = AgeLisible.texte(session.resume.dernierEvenementLe)

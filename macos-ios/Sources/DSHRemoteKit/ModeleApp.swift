@@ -2173,6 +2173,45 @@ public final class ModeleApp {
     Regroupement.espaces(sessionsFiltrees, hotes: espacesHote)
   }
 
+  /// L'ÉTAT D'UNE SESSION, tel que la liste l'affiche — une seule règle.
+  public func etatDe(_ session: SessionListee) -> EtatSession {
+    EtatSession.de(session, rappelDeFin: aTermine(session.id))
+  }
+
+  /// LES SESSIONS QUI DEMANDENT QUELQUE CHOSE, en tête de liste.
+  ///
+  /// POURQUOI CETTE LISTE EXISTE. C'était l'information la plus actionnable de
+  /// l'application, et elle était ENTERRÉE : il fallait déplier dix espaces et
+  /// lire des pastilles de huit points pour trouver la session bloquée sur une
+  /// question. Une liste qui trie par urgence vaut mieux qu'une liste qui trie
+  /// par date quand la question est « qui m'attend ».
+  ///
+  /// L'ORDRE EST CELUI DE L'URGENCE, et il suit celui d'`EtatSession` : une
+  /// session qui ATTEND UNE DÉCISION passe avant une fin de tour non lue — l'une
+  /// est bloquée sur vous, l'autre vous informe. À urgence égale, la plus récente
+  /// d'abord.
+  public var sessionsQuiAttendent: [SessionListee] {
+    let retenues = sessionsFiltrees.compactMap { session -> (SessionListee, EtatSession)? in
+      let etat = etatDe(session)
+      guard etat == .attendReponse || etat == .terminee else { return nil }
+      return (session, etat)
+    }
+    return
+      retenues
+      .sorted { gauche, droite in
+        if gauche.1 != droite.1 { return gauche.1 == .attendReponse }
+        let dateGauche = gauche.0.resume.dernierEvenementLe ?? 0
+        let dateDroite = droite.0.resume.dernierEvenementLe ?? 0
+        return dateGauche > dateDroite
+      }
+      .map(\.0)
+  }
+
+  /// Le résumé d'un espace : son total, et ce qui y attend une action.
+  public func resume(_ espace: EspaceDeTravail) -> ResumeEspace {
+    Regroupement.resume(espace.sessions, terminees: terminees)
+  }
+
   /// Espaces de travail publiés par l'hôte, **espaces sans session compris**.
   ///
   /// Vide = « l'hôte n'en publie pas » : on retombe alors sur le regroupement
