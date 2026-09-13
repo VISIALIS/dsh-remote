@@ -91,7 +91,7 @@ enum SondeLigneDeCommande {
   static func executer(_ adresses: [String]) async {
     let modele = ModeleApp()
     let saisi = modele.jetonSaisi
-    let jeton = saisi.isEmpty ? (ModeleApp.jetonLocal() ?? "") : saisi
+    let jeton = saisi.isEmpty ? (CoffreDuHarness.jetonDeLaMachine() ?? "") : saisi
     print("[sonde] jeton : \(jeton.count) caracteres")
     for adresse in adresses {
       guard let client = try? RemoteClient(adresse: adresse, jeton: jeton, delai: 3) else {

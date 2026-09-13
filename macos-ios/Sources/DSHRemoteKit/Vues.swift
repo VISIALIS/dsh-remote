@@ -131,7 +131,7 @@ public struct VuePrincipale: View {
       FeuilleAdresse(modele: modele)
     }
     .task {
-      if modele.jetonSaisi.isEmpty, let local = ModeleApp.jetonLocal() {
+      if modele.jetonSaisi.isEmpty, let local = CoffreDuHarness.jetonDeLaMachine() {
         modele.enregistrerJeton(local)
       }
       modele.relireEtatTailscale()

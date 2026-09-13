@@ -117,7 +117,7 @@ func ecritureReelle() async throws {
   let adresse = try #require(environnement["DSH_REMOTE_ESSAI_ADRESSE"])
   let session = try #require(environnement["DSH_REMOTE_ESSAI_SESSION"])
   let jeton = try #require(
-    environnement["DSH_REMOTE_TOKEN"] ?? ModeleApp.jetonLocal(),
+    environnement["DSH_REMOTE_TOKEN"] ?? CoffreDuHarness.jetonDeLaMachine(),
     "aucun jeton d'appareil : ni DSH_REMOTE_TOKEN, ni le coffre du harness")
 
   let client = try RemoteClient(adresse: adresse, jeton: jeton)
