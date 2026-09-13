@@ -56,3 +56,24 @@ func empreinteNeReveleRien() {
   #expect(!empreinteUn.contains(un))
   #expect(empreinteUn.count == 16, "huit octets en hexadécimal")
 }
+
+// MARK: - Sortir d'un jeton étranger
+
+@Test("Deux jetons se comparent sans être révélés")
+func memesJetons() {
+  // POURQUOI CETTE RÈGLE EXISTE. Mesure du 13 septembre : une instance de
+  // l'application présentait un jeton de 43 caractères que le service refusait,
+  // alors que le coffre de la machine contenait le bon. La sortie de secours
+  // compare donc les DEUX empreintes — jamais les valeurs : on veut seulement
+  // savoir si elles diffèrent, et le secret ne sort ni à l'écran ni dans un
+  // journal.
+  let un = String(repeating: "a", count: 43)
+  let deux = String(repeating: "b", count: 43)
+
+  #expect(ModeleApp.memeJeton(un, un))
+  #expect(!ModeleApp.memeJeton(un, deux))
+  // Un champ vide n'est PAS « le même jeton » : c'est précisément le cas où le
+  // bouton doit apparaître (le champ ne porte rien, le coffre si).
+  #expect(!ModeleApp.memeJeton(un, ""))
+  #expect(!ModeleApp.memeJeton("", ""))
+}

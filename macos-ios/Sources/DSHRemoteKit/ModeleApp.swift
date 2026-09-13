@@ -194,11 +194,25 @@ public final class ModeleApp {
     // rechargée par hôte à chaque changement de cible. Résultat mesuré : l'app
     // démarrait en `0 ms` sans rien tenter, avec « aucun jeton » alors que le
     // champ en contenait un.
-    if !jetonSaisi.isEmpty { return jetonSaisi }
+    if !jetonSaisi.isEmpty {
+      Trace.siActive("[jeton] champ en memoire : longueur=\(jetonSaisi.count) empreinte=\(empreinteJeton)")
+      return jetonSaisi
+    }
     let cle = IdentiteHote.cle(cible.adresse)
-    if let garde = gardien.lire(pour: cle), !garde.isEmpty { return garde }
-    guard serveurVise?.estLocal == true else { return "" }
-    return CoffreDuHarness.jetonDeLaMachine() ?? ""
+    if let garde = gardien.lire(pour: cle), !garde.isEmpty {
+      Trace.siActive(
+        "[jeton] gardien de l'hote : longueur=\(garde.count) empreinte=\(Empreinte.de(garde).prefix(8))")
+      return garde
+    }
+    guard serveurVise?.estLocal == true else {
+      Trace.siActive("[jeton] AUCUN jeton pour \(cle)")
+      return ""
+    }
+    let duCoffre = CoffreDuHarness.jetonDeLaMachine() ?? ""
+    Trace.siActive(
+      "[jeton] coffre du harness : longueur=\(duCoffre.count) empreinte=\(duCoffre.isEmpty ? "aucun" : String(Empreinte.de(duCoffre).prefix(8)))"
+    )
+    return duCoffre
   }
 
   // Les noms historiques restent : les vues les lisent, et rien n'oblige à les
@@ -1440,7 +1454,9 @@ public final class ModeleApp {
     return String(Empreinte.de(jetonSaisi).prefix(8))
   }
 
-  /// Empreinte SHA-256 tronquée d'une chaîne. Non réversible.
+  /// Empreinte courte d'une chaîne — FNV-1a 64 bits, pas SHA-256 (voir
+  /// `Empreinte.de`, qui dit pourquoi : ici on veut DISTINGUER deux secrets, pas
+  /// résister à une attaque).
 
   /// Vrai si le jeton a la forme attendue : 43 caractères base64url.
   ///
@@ -1670,6 +1686,44 @@ public final class ModeleApp {
   /// La forme du jeton de CETTE machine.
   public func jetonBienForme(pour adresse: String) -> Bool {
     ModeleApp.jetonBienForme(jeton(pour: adresse))
+  }
+
+  /// LE COFFRE DE CETTE MACHINE PROPOSE-T-IL UN AUTRE JETON QUE LE CHAMP ?
+  ///
+  /// POURQUOI. Mesure du 13 septembre : une instance de l'application présentait
+  /// un jeton de 43 caractères que le service refusait (`401`), alors que le
+  /// coffre de la machine contenait le bon — l'application restait donc bloquée
+  /// sur un secret étranger, sans rien pour en sortir qu'un recollage manuel.
+  ///
+  /// La comparaison se fait PAR EMPREINTE, jamais par valeur : on veut seulement
+  /// savoir si les deux diffèrent, et c'est exactement ce pour quoi `Empreinte`
+  /// existe (le jeton n'est ni affiché, ni journalisé, ni recopié ailleurs).
+  public func jetonDuCoffreDiffert(pour adresse: String) -> Bool {
+    guard estHoteLocal(adresse),
+      let duCoffre = CoffreDuHarness.jetonDeLaMachine(), !duCoffre.isEmpty
+    else { return false }
+    return !ModeleApp.memeJeton(duCoffre, jeton(pour: adresse))
+  }
+
+  /// Adopte le jeton du coffre pour cette machine — sans jamais le montrer.
+  ///
+  /// N'est proposé que là où le coffre fait autorité : la machine locale, celle
+  /// qui exécute le harness. Le coffre d'un AUTRE Mac n'est pas lisible d'ici, et
+  /// prétendre le contraire serait une devinette.
+  public func adopterLeJetonDuCoffre(pour adresse: String) {
+    guard estHoteLocal(adresse), let duCoffre = CoffreDuHarness.jetonDeLaMachine(),
+      !duCoffre.isEmpty
+    else { return }
+    enregistrerJeton(duCoffre, pour: adresse)
+  }
+
+  /// Deux jetons sont-ils le MÊME, sans les révéler ?
+  ///
+  /// Fonction pure, pour que la règle qui décide d'afficher « essayer le jeton du
+  /// coffre » soit éprouvable sans coffre, sans réseau et sans secret.
+  public nonisolated static func memeJeton(_ gauche: String, _ droite: String) -> Bool {
+    guard !gauche.isEmpty, !droite.isEmpty else { return false }
+    return Empreinte.de(gauche) == Empreinte.de(droite)
   }
 
   /// CETTE ADRESSE EST-ELLE CELLE DE LA MACHINE QUI HÉBERGE LE HARNESS ?

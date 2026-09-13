@@ -348,13 +348,33 @@ struct VueServeur: View {
       // — ET SEULEMENT SUR LA PAGE DE LA MACHINE VISÉE : un `401` parle de la
       // connexion en cours, pas d'une fiche qu'on consulte.
       if modele.jetonRefuseParLeService, ModeleApp.vise(modele.adresse, serveur) {
-        Label(
-          "Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien.",
-          systemImage: "key"
-        )
-        .font(.caption)
-        .foregroundStyle(.orange)
-        .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 8) {
+          Label(
+            "Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien.",
+            systemImage: "key"
+          )
+          .font(.caption)
+          .foregroundStyle(.orange)
+          .fixedSize(horizontal: false, vertical: true)
+
+          // LE COFFRE EN SAIT PARFOIS PLUS QUE LE CHAMP. Quand le jeton détenu
+          // n'est PAS celui du coffre de cette machine, l'application le DIT et
+          // propose de l'essayer — sans jamais montrer ni recopier le secret.
+          // C'est la sortie de secours qui manquait : un jeton étranger refusé
+          // laissait l'application bloquée, sans autre issue qu'un recollage.
+          if modele.jetonDuCoffreDiffert(pour: serveur.adresse) {
+            Text("Le coffre du harness de cette machine contient un AUTRE jeton.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+            Button("Essayer le jeton du coffre") {
+              modele.adopterLeJetonDuCoffre(pour: serveur.adresse)
+              Task { await modele.choisirEtConnecter(serveur) }
+            }
+            .buttonStyle(.bordered)
+            .font(.caption)
+          }
+        }
       }
 
       Text("Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il n'est jamais renvoyé par une route.")
