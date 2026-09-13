@@ -67,6 +67,41 @@ dans un processus neuf.**
 
 ---
 
+## Les fichiers, et les tests
+
+Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
+être découpé en plusieurs fichiers, contrairement à un plugin posé par
+`cordis_define`.
+
+| Fichier | Ce qu'il porte |
+|---|---|
+| `dynamic/host.js` | le plugin : les routes, le cache, le flux, le jeton |
+| `dynamic/tailscale.js` | la découverte du tailnet — lancement du CLI local et **analyse pure** de sa sortie |
+| `tests/tailscale.test.js` | les règles de cette analyse, éprouvées sans lancer Tailscale |
+
+```bash
+node --test plugins/dsh-remote/tests/     # 10 tests, aucune dépendance
+```
+
+POURQUOI `node:test` ET PAS UNE DÉPENDANCE : la RÈGLE #0 fait de chaque
+dépendance une surface d'attaque de plus dans un processus sans bac à sable. Le
+runner est intégré à Node depuis la version 18 ; il n'y a rien à installer.
+
+POURQUOI CES TESTS EXISTENT : le plugin n'en avait **aucun**, alors que c'est le
+code qui s'exécute chez l'utilisateur, dans le processus du harness. Les règles
+éprouvées sont celles qui décident de ce qu'on propose à l'utilisateur — seuls
+les **Macs** sont proposés (un PC ou un iPhone ne peut pas héberger DSH), le point
+final du DNS est retiré pour que le nom serve d'adresse, l'ordre est **stable**
+(en ligne d'abord, puis par nom — la machine locale n'a aucune priorité), et les
+deux diagnostics d'échec restent distincts : « sortie illisible » (le JSON lève)
+n'est pas « sortie inattendue » (le JSON est valide, mais ce n'est pas un état de
+tailnet).
+
+`scripts/verifier.sh` les exécute, et le hook de pré-commit refuse un commit qui
+les casse.
+
+---
+
 ## Jeton d'appareil
 
 Au premier chargement, le plugin tire 32 octets aléatoires, les stocke dans le
