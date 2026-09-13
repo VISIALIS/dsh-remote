@@ -1095,6 +1095,18 @@ vient de `Config/DomaineTailnet`, fichier local ignoré par git :
 printf 'mon-tailnet.ts.net\n' > Config/DomaineTailnet
 ```
 
+**Mesure du 13 septembre, Xcode 26.6 — elle corrige une note antérieure.** La phase
+fonctionne : DerivedData neuf, `App/Info.plist` source propre, l'exception est
+**présente** dans le paquet produit, en Debug **et** en Release simulateur. Sans
+`Config/DomaineTailnet` — le cas d'un clone —, le paquet se construit **sans** exception
+et **sans erreur**, ce qui est le piège décrit plus haut. Une mesure antérieure (Xcode
+26.2, quatre paquets : Debug/Release × simulateur/appareil) donnait zéro exception, et
+c'est elle qui a fait écrire `Scripts/construire-app-ios.sh` ; la configuration
+« appareil » n'a pas été remesurée. Ce script reste le chemin le plus sûr — il écrit
+l'exception dans l'`Info.plist` que Xcode lit, donc rien ne peut la réécrire après coup —
+et l'écran d'adresse annonce désormais le refus `-1022` **avant** l'essai
+(`ConseilAdresse`), au lieu de laisser l'utilisateur chercher une panne réseau.
+
 **LE FICHIER PORTE LE DOMAINE DU TALNET, PAS LE NOM D'UNE MACHINE — défaut vu à
 l'écran, puis corrigé.** Une première version y mettait le nom MagicDNS du Mac. L'exception
 était alors *présente dans le plist* et **inopérante pour tous les autres Macs** :

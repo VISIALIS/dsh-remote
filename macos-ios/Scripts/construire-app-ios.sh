@@ -8,20 +8,29 @@
 # du tailnet dans un fichier — et ce nom ne doit pas entrer dans l'histoire du
 # dépôt (RÈGLE #0).
 #
-# TROIS MÉTHODES ONT ÉTÉ ESSAYÉES, ET DEUX NE MARCHENT PAS :
+# TROIS MÉTHODES ONT ÉTÉ ESSAYÉES ; CE SCRIPT EMPLOIE LA TROISIÈME, LA PLUS SÛRE.
 #
 #   1. **la phase de script du projet Xcode** (`injecter-exception-ats.sh`) :
-#      elle s'exécute — elle affiche « exception ATS injectee » — mais Xcode
-#      réécrit l'Info.plist du paquet APRÈS les phases de script. Mesuré sur
-#      quatre paquets (Debug et Release, simulateur et appareil) : ZÉRO exception
-#      dans le paquet produit. C'est la cause du `-1022` observé sur l'iPhone :
-#      l'application installée n'a jamais pu joindre le Mac en HTTP ;
+#      elle s'exécute APRÈS le traitement de l'Info.plist, et l'injection tient.
+#      MESURE DU 13 SEPTEMBRE, Xcode 26.6, DerivedData neuf, Info.plist source
+#      propre : l'exception est PRÉSENTE dans le paquet produit, en Debug ET en
+#      Release pour le simulateur. Une mesure ANTÉRIEURE (Xcode 26.2, quatre
+#      paquets : Debug/Release × simulateur/appareil) donnait ZÉRO exception et
+#      avait fait écrire ce script ; elle n'est plus reproductible ici en
+#      simulateur, et la configuration « appareil » n'a pas été remesurée.
+#      CE QUI RESTE VRAI, ET QUI SUFFIT À JUSTIFIER CE SCRIPT : sans
+#      `Config/DomaineTailnet`, le paquet se construit SANS exception et SANS
+#      erreur — mesuré également. Un clone produit donc une application qui
+#      refuse le tailnet en `-1022`, ce que l'écran d'adresse annonce désormais
+#      AVANT l'essai (`ConseilAdresse`) ;
 #   2. **injecter dans le paquet puis RE-SIGNER à la main** : la signature est
 #      valide (« satisfies its Designated Requirement ») et iOS REFUSE quand même
 #      l'installation (IXUserPresentableErrorDomain, sans raison exploitable).
 #      La signature automatique d'Xcode n'est pas reproductible à la main ;
 #   3. **injecter dans la source, laisser Xcode signer, puis retirer** : c'est
-#      celle qui fonctionne, et c'est ce que fait ce script.
+#      celle que fait ce script. Elle reste la plus SÛRE des trois, et c'est ce
+#      qui la justifie même quand la phase fonctionne : l'exception est écrite
+#      dans l'Info.plist que Xcode lit, donc rien ne peut la réécrire après coup.
 #
 # La source est nettoyée même si le build échoue (trap), pour qu'aucun commit
 # accidentel n'emporte le nom du tailnet.
