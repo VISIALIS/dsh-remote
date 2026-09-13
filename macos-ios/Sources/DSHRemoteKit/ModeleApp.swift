@@ -28,32 +28,9 @@ public final class ModeleApp {
   /// fichier d'amorçage, diagnostic. Injectée, donc éprouvable sans disque.
   private let persistance: Persistance
 
-  /// Délai de la QUESTION COURTE : « y a-t-il un DSH en face ? »
-  ///
-  /// `sante` répond en MILLISECONDES — mesuré trois fois : 4,1 ms, 3,2 ms,
-  /// 1,6 ms. Cinq secondes laissent mille fois la marge nécessaire, et refusent
-  /// d'attendre une machine qui ne répond rien : c'est la question dont la
-  /// réponse doit être rapide, parce que c'est elle qui décide si l'on attend.
-  public static let delaiSante: TimeInterval = 5
-
-  /// Délai de la LISTE des sessions — une lecture LOURDE, donc patiente.
-  ///
-  /// POURQUOI ELLE A SON PROPRE PLAFOND, ET POURQUOI IL EST LONG. Mesuré sur un
-  /// harness occupé : **4,06 s à froid** (200 sessions à relire), puis 15 à
-  /// 27 ms une fois son cache chaud. Un plafond court ne protège de rien : il
-  /// transforme une machine occupée en machine en panne. C'est exactement ce qui
-  /// est arrivé avec un plafond unique de huit secondes — une connexion
-  /// parfaitement valide a été refusée après **8055 ms**, et l'application a
-  /// annoncé un échec pour un serveur qui répondait.
-  public static let delaiListe: TimeInterval = 30
-
-  /// Délai des routes qui font travailler l'HÔTE (`/v1/serveurs`).
-  ///
-  /// POURQUOI PLUS LONG QUE LA CONNEXION : chez lui, la route borne son appel à
-  /// `tailscale status` à huit secondes. Un client qui coupe à huit secondes
-  /// couperait EXACTEMENT ce que l'hôte s'autorise — une course perdue d'avance
-  /// les jours où le CLI est lent.
-  public static let delaiHote: TimeInterval = 14
+  /// COMMENT on parle à une machine, et avec quelle patience. La politique vit
+  /// là-bas (`Connexion`) ; le modèle garde l'état et les transitions.
+  private let transport: Connexion
 
   /// La clé du dernier jeton CHARGÉ, pour ne pas relire le trousseau à chaque
   /// frappe dans le champ d'adresse (une lecture par caractère, sinon).
@@ -282,7 +259,9 @@ public final class ModeleApp {
   /// Le filtre « chargées seulement », POUR LE SERVEUR COURANT.
   public var filtresActifs: Bool { preferences(pour: adresse).chargeesSeulement }
 
-  private var client: RemoteClient?
+  /// Le client de la cible jointe. Le type est la SURFACE du port, pas la classe
+  /// concrète : le modèle n'a pas à savoir qu'il parle HTTP.
+  private var client: (any ClientDSH)?
 
   /// Macs proposés, découverts au lancement. Vide est un état normal : la
   /// découverte peut échouer des deux côtés (Tailscale absent sur l'hôte, aucun
@@ -342,9 +321,13 @@ public final class ModeleApp {
   }
 
   /// Liste des machines publiée PAR L'HÔTE — donnée d'un serveur, donc gardée.
-  private func appliquerServeursDeLhote(_ liste: [ServeurMac], vu generationVue: Int) {
+  private func appliquerServeursDeLhote(_ liste: ListeServeurs, vu generationVue: Int) {
     guard reponseEncoreValable(generationVue) else { return }
-    serveurs = liste
+    serveurs = liste.serveurs
+    // Le DIAGNOSTIC de l'hôte fait partie de la réponse : sans lui, une liste
+    // vide n'explique rien — tailnet vide, Tailscale arrêté, binaire introuvable
+    // ne se corrigent pas de la même façon.
+    diagnosticServeurs = liste.diagnostic
     sourceServeurs = .hote
   }
 
@@ -705,10 +688,12 @@ public final class ModeleApp {
 
   public init(
     gardien: GardienDeJetons = GardienParDefaut.faire(),
-    persistance: Persistance = Persistance()
+    persistance: Persistance = Persistance(),
+    transport: Connexion = Connexion()
   ) {
     self.gardien = gardien
     self.persistance = persistance
+    self.transport = transport
     chargerConfiguration()
     chargerPreference()
     chargerPreferencesServeurs()
@@ -821,25 +806,22 @@ public final class ModeleApp {
   /// l'hôte, qui borne son propre appel à huit secondes. Le client de connexion
   /// coupe à huit : il couperait exactement ce que l'hôte s'autorise. On ne parle
   /// à l'hôte que si on l'a déjà joint — `client` en est la preuve.
-  private func clientPourLhote() -> RemoteClient? {
-    guard client != nil, !adresse.isEmpty else { return nil }
-    return try? RemoteClient(adresse: adresse, jeton: jetonDeLaCible(), delai: ModeleApp.delaiHote)
-  }
+  /// L'hôte ne se demande QUE si on l'a déjà joint — `client` en est la preuve.
+  private var hoteEstJoint: Bool { client != nil && !adresse.isEmpty }
 
   /// Demande la liste à l'hôte déjà joint — la voie qui fonctionne sur iPhone.
   ///
   /// Sans bruit en cas d'échec : l'utilisateur n'a rien demandé, et une liste
   /// qui ne vient pas ne doit pas effacer celle qu'il a sous les yeux.
   private func chargerServeursDeLhote() async {
-    guard let client = clientPourLhote() else { return }
-    guard let liste = try? await client.listerServeurs() else {
+    guard hoteEstJoint else { return }
+    guard let liste = try? await transport.serveursDeLhote(adresse: adresse, jeton: jetonDeLaCible())
+    else {
       print("[demarrage] liste des serveurs : ECHEC")
       return
     }
     print("[demarrage] liste des serveurs : \(liste.serveurs.count)")
-    appliquerServeursDeLhote(liste.serveurs, vu: generationDuDepart())
-    diagnosticServeurs = liste.diagnostic
-    sourceServeurs = .hote
+    appliquerServeursDeLhote(liste, vu: generationDuDepart())
     relireEtatTailscale()
     // On demande à chaque Mac s'il sert DSH, plutôt que de le supposer.
     await sonderLesServeurs()
@@ -1323,17 +1305,17 @@ public final class ModeleApp {
       return
     }
     do {
-      let client = try RemoteClient(adresse: adresse, jeton: jeton, delai: ModeleApp.delaiSante)
-      let sante = try await client.verifierSante()
-      let patient = try RemoteClient(adresse: adresse, jeton: jeton, delai: ModeleApp.delaiListe)
-      self.client = patient
+      let jonction = try await transport.joindre(adresse: adresse, jeton: jeton)
+      self.client = jonction.client
       let depart = generationDuDepart()
-      let liste = try await patient.listerSessions(limite: 200)
-      appliquerSessions(liste, vu: depart)
-      connexion = .jointe(sante, reponses: liste.total ?? liste.sessions.count)
+      appliquerSessions(
+        ListeSessions(protocole: 1, racine: nil, total: jonction.reponses,
+          sessions: jonction.sessions, erreur: nil),
+        vu: depart)
+      connexion = .jointe(jonction.sante, reponses: jonction.reponses)
       // Le test d'adresse est aussi une connexion : si l'hôte sait publier la
       // liste des Macs, c'est le moment de la demander.
-      if sante.capacites.decouverte == true { await chargerServeursDeLhote() }
+      if jonction.sante.capacites.decouverte == true { await chargerServeursDeLhote() }
     } catch {
       let message = String(describing: error)
       connexion = .echec(error as? ErreurRemote ?? .transport(message))
@@ -1604,20 +1586,18 @@ public final class ModeleApp {
     // Le jeton n'est confié au trousseau qu'ici, une fois la saisie terminée.
     enregistrerJeton(jeton)
     await executer {
-      // DEUX DÉLAIS POUR DEUX QUESTIONS. La première est brève et doit échouer
-      // vite ; la seconde est une lecture lourde, et mérite qu'on l'attende.
-      let client = try RemoteClient(
-        adresse: self.adresse, jeton: jeton, delai: ModeleApp.delaiSante)
-      let sante = try await client.verifierSante()
-      let patient = try RemoteClient(
-        adresse: self.adresse, jeton: jeton, delai: ModeleApp.delaiListe)
-      self.client = patient
+      // DEUX DÉLAIS POUR DEUX QUESTIONS, et l'ordre qui va avec : la brève
+      // d'abord. C'est la politique de `Connexion`, éprouvée là-bas.
+      let jonction = try await self.transport.joindre(adresse: self.adresse, jeton: jeton)
+      self.client = jonction.client
       let depart = self.generationDuDepart()
-      let liste = try await patient.listerSessions(limite: 200)
-      self.appliquerSessions(liste, vu: depart)
+      self.appliquerSessions(
+        ListeSessions(protocole: 1, racine: nil, total: jonction.reponses,
+          sessions: jonction.sessions, erreur: nil),
+        vu: depart)
       // LE serveur a répondu ET accepté le jeton : une seule valeur le dit —
       // capacités, nombre de sessions rendues, et « joint » en découlent.
-      self.connexion = .jointe(sante, reponses: liste.total ?? liste.sessions.count)
+      self.connexion = .jointe(jonction.sante, reponses: jonction.reponses)
       // Première observation : elle ne fait que retenir qui travaille. Une
       // session déjà au repos au chargement ne doit PAS produire de pastille
       // verte — sinon l'application s'ouvrirait sur une liste de faux rappels.
@@ -1896,9 +1876,10 @@ public final class ModeleApp {
   /// Demande ses espaces à l'hôte. Sans bruit : un échec laisse l'arbre tel
   /// qu'il était, plutôt que de le vider sous les yeux de l'utilisateur.
   public func chargerEspacesDeLhote() async {
-    guard let client = clientPourLhote() else { return }
-    guard let liste = try? await client.listerEspaces() else { return }
-    appliquerEspaces(liste.espaces, vu: generationDuDepart())
+    guard hoteEstJoint else { return }
+    guard let liste = try? await transport.espacesDeLhote(adresse: adresse, jeton: jetonDeLaCible())
+    else { return }
+    appliquerEspaces(liste, vu: generationDuDepart())
   }
 
   private func executer(_ travail: @escaping () async throws -> Void) async {
