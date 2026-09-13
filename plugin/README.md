@@ -103,6 +103,7 @@ d'URL — un paramètre finit dans un journal d'accès ou un historique.
 |---|---|---|
 | `/dsh-remote/v1/sante` | `GET` | Poignée de main : version du protocole, capacités. Aucune donnée. |
 | `/dsh-remote/v1/sessions` | `GET`, `POST` | Liste des sessions, de la plus récente à la plus ancienne. |
+| `/dsh-remote/v1/espaces` | `GET` | Espaces de travail du registre de l'hôte, **ceux sans session compris**, dans son ordre de création décroissante. |
 | `/dsh-remote/v1/serveurs` | `GET` | Liste des Macs du tailnet, **découverte par l'hôte** — c'est ce qui donne une liste à l'iPhone. |
 | `/dsh-remote/v1/session/<id>` | `POST` | Une page du journal d'une session. |
 | `/dsh-remote/v1/session/<id>/prompt` | `POST` | Envoyer un prompt. Reprend la session si elle est froide. |
@@ -353,6 +354,44 @@ filtre de portée. Seule la place dans la chaîne comptait.
 
 ---
 
+## Espaces de travail : le registre de l'hôte, pas une déduction
+
+L'application groupait ses sessions par `cwd` et en déduisait ses espaces. Deux
+conséquences, toutes deux visibles à l'écran :
+
+- **un espace sans session était invisible.** Un espace s'enregistre dès qu'on choisit
+  un dossier, avant qu'une session y soit ouverte ; l'interface web l'affiche, pas
+  l'application ;
+- **l'appartenance d'une session était devinée** par comparaison de chemins — ce qui se
+  trompe sur un dossier renommé, deux projets homonymes, ou une session de sous-agent.
+
+`GET /v1/espaces` publie donc le registre tel quel :
+
+```json
+{
+  "protocole": 1,
+  "espaces": [
+    { "id": "…", "titre": "dsh-plugins", "chemin": "/Users/…/dsh-plugins",
+      "creeLe": 1789059396739, "sessions": ["session-…", "session-…"] },
+    { "id": "…", "titre": "veille", "chemin": "/Users/…/veille",
+      "creeLe": 1788445270539, "sessions": [] }
+  ]
+}
+```
+
+- **`sessions` est l'appartenance**, un fait du registre : le client ne la recalcule pas.
+- **L'ordre est celui du registre** — création décroissante (`newestAt`) — et il est
+  conservé tel quel. Retrier côté plugin ferait diverger l'application du web à la
+  première évolution de la règle.
+- **`creeLe` est en millisecondes epoch**, comme partout ailleurs dans ce protocole.
+
+`capacites.espaces` annonce la disponibilité de la route : un client qui lit `false`
+(hôte plus ancien, ou service absent) garde son regroupement par `cwd` au lieu d'attendre
+une liste qui ne viendra jamais. Le service est lu **à chaque requête** :
+`workspaceRegistry` est publié par vagues, comme `sessionController`.
+
+---
+
 ## Découverte des serveurs : le Mac découvre, l'iPhone consomme
 
 Personne ne devrait avoir à taper `http://<machine>.<tailnet>.ts.net` pour choisir un
@@ -428,6 +467,12 @@ répondu *est* retenu — les deux implémentations ne se comportent pas pareil,
   mesurée.
 - **Aucun chemin absolu publié** : le diagnostic ne contient qu'une ligne courte, jamais
   le chemin d'un binaire.
+- **Le code de sortie ne sert pas de preuve.** Un CLI qui n'a pas pu joindre Tailscale
+  écrit son erreur sur **stdout** en sortant avec le code **0** — mesuré depuis une
+  application macOS ouverte par le Finder : `The Tailscale GUI failed to start: …`, code 0.
+  La route exige donc un **JSON analysable** ; sinon elle garde la raison du CLI et essaie
+  le candidat suivant. Se fier au code de sortie ferait conclure « tailnet vide » alors
+  que le tailnet va bien — et arrêterait la boucle avant le lanceur qui, lui, répond.
 
 ### Limites assumées
 
@@ -538,6 +583,7 @@ testée, et le plugin se dégrade au lieu de lever une exception au chargement.
 | `credentials.readRecord` / `.modifyRecord` | stocker le jeton | sans coffre, aucune authentification n'est possible : toutes les routes répondent `401` |
 | `sessions.get`, `agents.roots` | marquer une session `vivante` | `vivante` vaut `false` partout ; le reste fonctionne |
 | `sessionController.prompt` / `.cancel` | écrire et interrompre | `capacites.ecriture` vaut `false`, la lecture continue de fonctionner, les deux routes répondent `503` |
+| `workspaceRegistry.list()` | publier les espaces de travail, **vides compris** | `capacites.espaces` vaut `false` et `/v1/espaces` répond `503` ; le client retombe sur le regroupement des sessions par `cwd` |
 | `ctx.on('user-questions/request' \| 'approval/request', …, { prepend: true })` | signaler qu'une décision humaine est attendue | `attendReponse` reste `false` partout : l'indicateur disparaît, rien d'autre ne casse |
 | `ctx.effect` | retirer les routes au déchargement | les routes fuient jusqu'au redémarrage |
 
@@ -564,6 +610,7 @@ limite la surface de casse.
 | Une route nommée échappe à l'authentification navigateur | `200` sans cookie sur `/dsh-remote-probe/ping` (sonde), là où `/` répond `401` |
 | Le tailnet atteint la route | `200` via le nom MagicDNS du Mac (`tailscale serve`) |
 | L'hôte publie la liste du tailnet | instance neuve : `GET /v1/serveurs` → 3 Macs, `local: true` sur celui qui répond, et **NI** le PC Windows **NI** l'iPhone |
+| L'hôte publie ses espaces de travail | instance neuve : `GET /v1/espaces` → 7 espaces, du plus récent au plus ancien (`creeLe` décroissant), avec l'appartenance des sessions |
 | La découverte ne lit rien avant l'authentification | sur cette route : `401` sans jeton, `403` avec `Origin`, `405` en `POST` |
 | Le CHEMIN du binaire décide du succès | `/usr/local/bin/tailscale` (lien symbolique) échoue « The current bundleIdentifier is unknown to the registry » ; `/Applications/Tailscale.app/Contents/MacOS/Tailscale` rend l'état complet |
 | La capacité est annoncée | `capacites.decouverte: true` dans `/v1/sante` |
@@ -631,6 +678,13 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
   `patchReload: live` recharge »).
 - **Aucune révocation par appareil.** Le jeton est unique : le tourner révoque
   tout le monde.
+- **Le jeton est propre à CHAQUE HÔTE.** Il est tiré au premier chargement du plugin et
+  rangé dans le coffre de la machine — deux Macs qui hébergent le plugin ont donc deux
+  jetons distincts. Un client qui interroge plusieurs machines doit détenir celui de
+  l'hôte qu'il vise : le sien ne vaut pas pour les autres. C'est une propriété du
+  dispositif, pas un défaut à corriger ici — partager un jeton entre machines est un
+  choix, qui se fait en recopiant l'enregistrement du coffre, et il élargit la portée du
+  secret à toutes les machines qui le portent.
 - **`vivante` n'est pas une preuve d'activité.** Une session reprise par un autre
   processus peut être marquée vivante à tort ; le champ dit seulement ce que CE
   processus connaît.

@@ -1022,6 +1022,10 @@ export function apply(ctx, config) {
           // ancien que cette route lira `false` et gardera la saisie manuelle
           // plutot que d'attendre une liste qui ne viendra jamais.
           decouverte: true,
+          // L'hote sait-il publier ses espaces de travail — y compris ceux qui
+          // n'ont AUCUNE session ? Sans cette capacite, le client deduit ses
+          // espaces des sessions, ce qui est le comportement d'avant.
+          espaces: registreEspaces() !== null,
           ecriture: controleurEcriture() !== null,
           // Annuler le tour en cours. Meme service que l'ecriture : un client qui
           // lit `false` ne propose pas de bouton « Arreter » qui ne ferait rien.
@@ -1037,6 +1041,73 @@ export function apply(ctx, config) {
         },
       })
       tracer(req, 200)
+    },
+  })
+
+  // ── GET /dsh-remote/v1/espaces — les espaces de travail de l'hote ─────────
+  //
+  // POURQUOI CETTE ROUTE EXISTE. L'application deduisait ses espaces de travail
+  // des SESSIONS : un espace sans session lui etait donc invisible, alors que
+  // l'interface web les affiche tous (un espace s'enregistre des qu'on choisit
+  // un dossier, avant meme d'y ouvrir une session). Résultat : deux arbres qui
+  // ne se ressemblaient plus.
+  //
+  // L'ORDRE VIENT DE L'HOTE, et il est deja le bon : `workspaceRegistry.list()`
+  // rend les espaces dans l'ordre durable du registre, qui classe par date de
+  // creation decroissante (`newestAt`). On ne retrie donc PAS ici — retrier
+  // ferait diverger l'application du web a la premiere evolution de la regle.
+  //
+  // `sessionIds` est publie tel quel : c'est l'APPARTENANCE, qui est un fait du
+  // registre. Le client n'a pas a la recalculer en comparant des chemins — ce
+  // que faisait l'application, avec les erreurs que cela suppose (un dossier
+  // deplace, un sous-agent, deux projets homonymes).
+  const registreEspaces = () => {
+    try {
+      const service = ctx.get('workspaceRegistry')
+      return service !== undefined && service !== null && typeof service.list === 'function' ? service : null
+    } catch {
+      return null
+    }
+  }
+
+  enregistrer({
+    kind: 'exact',
+    path: PREFIX + '/v1/espaces',
+    handler: (req, res) => {
+      if (!autoriser(req, res)) return tracer(req, 401)
+      if (req.method !== 'GET') {
+        envoyer(res, 405, { erreur: 'methode non autorisee' })
+        return tracer(req, 405)
+      }
+      // Le service est resolu A LA REQUETE : la composition web publie ses
+      // services par vagues, et une lecture au chargement du plugin rendrait
+      // `undefined` pour toujours (meme piege que `sessionController`).
+      const registre = registreEspaces()
+      if (registre === null) {
+        envoyer(res, 503, {
+          erreur: 'espaces indisponibles',
+          detail: "le service workspaceRegistry n'est pas monte dans cette composition",
+        })
+        return tracer(req, 503)
+      }
+      try {
+        const espaces = registre.list().map((espace) => {
+          const cree = Date.parse(espace.createdAt)
+          return {
+            id: String(espace.id),
+            titre: typeof espace.title === 'string' ? espace.title : '',
+            chemin: String(espace.path),
+            // Millisecondes epoch, comme partout ailleurs dans ce protocole.
+            creeLe: Number.isFinite(cree) ? cree : null,
+            sessions: Array.isArray(espace.sessionIds) ? espace.sessionIds.map(String) : [],
+          }
+        })
+        envoyer(res, 200, { protocole: VERSION_PROTOCOLE, espaces })
+        tracer(req, 200, espaces.length + ' espaces')
+      } catch (erreur) {
+        envoyer(res, 500, { erreur: 'lecture des espaces impossible', detail: String(erreur?.message ?? erreur) })
+        tracer(req, 500)
+      }
     },
   })
 
@@ -1558,7 +1629,7 @@ export function apply(ctx, config) {
     .then((valeur) => {
       jeton = valeur
       if (valeur === null) console.log('[dsh-remote] aucune authentification possible: routes inutilisables (401)')
-      else console.log('[dsh-remote] pret: ' + PREFIX + '/v1/sante, /v1/sessions, /v1/serveurs, /v1/session/<id>, /v1/session/<id>/prompt, /v1/session/<id>/annuler, ws /v1/flux')
+      else console.log('[dsh-remote] pret: ' + PREFIX + '/v1/sante, /v1/sessions, /v1/espaces, /v1/serveurs, /v1/session/<id>, /v1/session/<id>/prompt, /v1/session/<id>/annuler, ws /v1/flux')
     })
     .catch((erreur) => {
       console.log('[dsh-remote] ECHEC du chargement du jeton: ' + String(erreur?.message ?? erreur))
