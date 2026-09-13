@@ -26,21 +26,31 @@ struct ComposeurEcriture: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      if let erreur = modele.erreurEcriture {
+      if let erreur = modele.refusEcriture(pour: session.id) {
         EtatEcriture(texte: erreur, icone: "exclamationmark.triangle.fill", teinte: .orange)
-      } else if let accuse = modele.accuseEnvoi {
+      } else if let accuse = modele.acquittement(pour: session.id) {
         EtatEcriture(texte: accuse, icone: "checkmark.circle.fill", teinte: .green)
       }
 
       HStack(alignment: .bottom, spacing: 8) {
-        TextField("Écrire à cette session…", text: $modele.brouillon, axis: .vertical)
-          .textFieldStyle(.plain)
-          .lineLimit(1...5)
-          .focused($champActif)
-          .padding(.horizontal, 10)
-          .padding(.vertical, 7)
-          .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
-          .onSubmit { envoyer() }
+        // LE CHAMP APPARTIENT À CETTE SESSION. Une liaison directe à un champ
+        // unique du modèle faisait suivre le texte d'une session à l'autre :
+        // un message écrit pour l'une pouvait partir vers l'autre.
+        TextField(
+          "Écrire à cette session…",
+          text: Binding(
+            get: { modele.brouillon(pour: session.id) },
+            set: { modele.definirBrouillon($0, pour: session.id) }
+          ),
+          axis: .vertical
+        )
+        .textFieldStyle(.plain)
+        .lineLimit(1...5)
+        .focused($champActif)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .onSubmit { envoyer() }
 
         menuMode
 
@@ -53,8 +63,10 @@ struct ComposeurEcriture: View {
             Image(systemName: "arrow.up.circle.fill").font(.title2)
           }
           .buttonStyle(.plain)
-          .foregroundStyle(modele.brouillon.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary : Color.accentColor)
-          .disabled(modele.brouillon.trimmingCharacters(in: .whitespaces).isEmpty)
+          .foregroundStyle(
+            modele.brouillonVide(pour: session.id) ? Color.secondary : Color.accentColor
+          )
+          .disabled(modele.brouillonVide(pour: session.id))
           .cibleTactile()
           .help("Envoyer")
           .accessibilityLabel("Envoyer le message")
@@ -78,8 +90,11 @@ struct ComposeurEcriture: View {
     .padding(.vertical, 8)
     .background(.bar)
     .onChange(of: session.id) {
-      // Changer de session efface les messages du composeur : un acquittement
-      // affiché sous une AUTRE session ferait croire qu'il la concerne.
+      // Changer de session oublie les MESSAGES du composeur : un acquittement
+      // affiché sous une AUTRE session ferait croire qu'elle la concerne.
+      // Le TEXTE, lui, reste : chaque session a le sien, et le perdre au
+      // changement de session coûterait à l'utilisateur ce qu'il vient
+      // d'écrire.
       modele.oublierEtatEcriture()
     }
   }
