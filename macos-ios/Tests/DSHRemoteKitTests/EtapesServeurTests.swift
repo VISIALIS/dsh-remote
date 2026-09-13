@@ -147,3 +147,28 @@ func etapesDAjout() {
   // Les étapes parlent du Mac À AJOUTER, pas d'une machine connue.
   #expect(avecTailscale[1].titre.contains("à ajouter"))
 }
+
+@Test("Les étapes SUIVANT la frontière sont verrouillées")
+func verrouDesEtapes() {
+  // Demande du propriétaire : « si une étape de goal n'est pas réalisée, les
+  // goals suivants sont grisés ». On ne publie pas un port sur un Mac qui n'est
+  // pas sur le réseau, et on n'installe pas un plugin derrière un port fermé.
+  let portFerme = EtapesServeur.etapes(
+    tailnetDeLAppareil: true, enLigne: true, sertDsh: false, cause: .rienNEcoute)
+  #expect(!EtapesServeur.estVerrouillee(portFerme[0], dans: portFerme), "franchie")
+  #expect(!EtapesServeur.estVerrouillee(portFerme[1], dans: portFerme), "franchie")
+  #expect(!EtapesServeur.estVerrouillee(portFerme[2], dans: portFerme), "c'est LA frontière")
+  #expect(EtapesServeur.estVerrouillee(portFerme[3], dans: portFerme), "après la frontière")
+
+  // Sans frontière — tout est franchi —, plus rien n'est verrouillé.
+  let pret = EtapesServeur.etapes(
+    tailnetDeLAppareil: true, enLigne: true, sertDsh: true, cause: nil)
+  #expect(pret.allSatisfy { !EtapesServeur.estVerrouillee($0, dans: pret) })
+
+  // Et le verrou suit la PREMIÈRE non franchie, pas la première « à faire » : une
+  // étape inconnue bloque aussi ce qui la suit.
+  let inconnu = EtapesServeur.etapes(
+    tailnetDeLAppareil: true, enLigne: true, sertDsh: nil, cause: nil)
+  #expect(!EtapesServeur.estVerrouillee(inconnu[2], dans: inconnu))
+  #expect(EtapesServeur.estVerrouillee(inconnu[3], dans: inconnu))
+}

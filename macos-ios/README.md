@@ -342,6 +342,22 @@ liste arrivée en retard n'écrase pas la nouvelle. Écrits, ils ont d'ailleurs 
 erreur de ma part : le résumé d'une session est **aplati** dans l'objet par le plugin, et ma
 fixture l'imbriquait — l'identifiant décodé était « (inconnu) ».
 
+**UNE SEULE FRONTIÈRE À LA FOIS.** Demande du propriétaire : « si une étape de goal
+n'est pas réalisée, les goals suivants sont grisés (pas besoin de rentrer dans leur
+détail) ». Le parcours affiche donc :
+
+- les étapes **franchies** : leur titre, et rien d'autre ;
+- la **première non franchie** : son explication et sa méthode — c'est elle qu'on
+  peut faire maintenant ;
+- les **suivantes** : grisées, avec un cadenas et la mention « après l'étape N »,
+  sans explication ni commande. Leur mode d'emploi suppose la précédente franchie ;
+  l'afficher noierait celle qui bloque.
+
+C'est une conséquence de l'ordre : on ne publie pas un port sur un Mac qui n'est pas
+sur le réseau, et on n'installe pas un plugin derrière un port fermé. La règle vit
+dans `EtapesServeur.estVerrouillee` (éprouvée), et la mise en page dans
+`ParcoursDesEtapes`, **partagée** par les deux pages.
+
 #### La page « Ajouter un serveur » : le même parcours, pour un Mac qu'on n'a pas encore
 
 La vignette **« Ajouter »** du carrousel menait à une **recherche**. Sur un iPhone
@@ -1545,6 +1561,7 @@ inactive.
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
 | **La page dit que le plugin manque, et donne la démarche** | capture iPhone de la page de MacMini (alors que l'app vise une autre machine) : constat nommé, 3 étapes, bloc `cordis.patch.yml` copiable, vérification `curl` |
+| **Les étapes suivantes sont grisées** | capture iPhone : frontière (étape 2) avec sa méthode, étapes 3 et 4 grisées avec un cadenas et « après l'étape N », sans détail |
 | **La page « Ajouter un serveur »** | capture iPhone (`--ajout --page-seule`) : étape 1 constatée, étapes 2-4 à faire avec leurs commandes, chacune disant sur quelle machine |
 | **Le parcours d'un serveur, en trois étapes** | captures iPhone : MacMini (étapes 1-3 vertes, 4 à faire + méthode) et un Mac hors ligne (étapes 2 à faire, suivantes « à vérifier ») ; 8 tests |
 | **Le diagnostic appartient à la machine** | `404` observé par la sonde → procédure d'installation ; `-1004` → procédure de publication ; vérifié par capture sur une machine NON visée |

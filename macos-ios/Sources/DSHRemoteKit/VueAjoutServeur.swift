@@ -54,27 +54,11 @@ struct VueAjoutServeur: View {
   }
 
   private var parcours: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      ForEach(etapes, id: \.numero) { etape in
-        VStack(alignment: .leading, spacing: 8) {
-          HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: etape.etat == .franchie ? "checkmark.circle.fill" : "circle")
-              .foregroundStyle(etape.etat == .franchie ? Color.green : Color.orange)
-            Text("\(etape.numero). \(etape.titre)")
-              .font(.callout.weight(etape.etat == .franchie ? .regular : .medium))
-              .foregroundStyle(etape.etat == .franchie ? Color.secondary : Color.primary)
-              .fixedSize(horizontal: false, vertical: true)
-          }
-          Text(etape.explication)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-          methode(pour: etape.numero)
-        }
-      }
+    // LA MISE EN PAGE EST PARTAGÉE, et la règle du verrou avec : une seule
+    // frontière à la fois, les suivantes grisées.
+    ParcoursDesEtapes(etapes: etapes) { etape in
+      methode(pour: etape.numero)
     }
-    .padding(12)
-    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
   }
 
   /// LA MÉTHODE DE CHAQUE ÉTAPE — les commandes se tapent SUR LE MAC CONCERNÉ.

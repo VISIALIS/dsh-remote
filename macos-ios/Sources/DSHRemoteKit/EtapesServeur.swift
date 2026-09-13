@@ -210,6 +210,20 @@ public enum EtapesServeur {
     ]
   }
 
+  /// Cette étape est-elle VERROUILLÉE par une précédente non franchie ?
+  ///
+  /// Demande du propriétaire : « si une étape de goal n'est pas réalisée, les goals
+  /// suivants sont grisés (pas besoin de rentrer dans leur détail) ». C'est une
+  /// conséquence de l'ordre : on ne publie pas un port sur un Mac qui n'est pas sur
+  /// le réseau, et on n'installe pas un plugin derrière un port fermé.
+  ///
+  /// Rend `false` quand tout est franchi : il n'y a alors plus de frontière, donc
+  /// plus rien à verrouiller.
+  public static func estVerrouillee(_ etape: Etape, dans etapes: [Etape]) -> Bool {
+    guard let frontiere = premiereAEtapesFranchir(etapes) else { return false }
+    return etape.numero > frontiere
+  }
+
   /// Le numéro de la PREMIÈRE étape à franchir, s'il y en a une.
   ///
   /// Sert à mettre en avant l'étape qui débloque les suivantes : inutile de

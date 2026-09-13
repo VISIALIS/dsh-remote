@@ -265,20 +265,22 @@ struct VueServeur: View {
   /// L'ÉTAPE EN COURS EST CELLE QUI DÉBLOQUE LES SUIVANTES : inutile de publier
   /// un port sur un Mac éteint, inutile d'installer un plugin dont le port sera
   /// fermé. Le calcul des états vit dans `EtapesServeur`, où il est éprouvé.
-  private var parcours: some View {
-    let etapes = EtapesServeur.etapes(
+  /// Les étapes de CETTE machine, recalculées à chaque rendu : la sonde peut
+  /// rendre son verdict entre deux affichages.
+  private var etapes: [EtapesServeur.Etape] {
+    EtapesServeur.etapes(
       tailnetDeLAppareil: modele.tailnetDeLAppareil,
       enLigne: serveur.enLigne,
       sertDsh: modele.sertDsh(serveur),
       cause: cause)
+  }
 
-    return VStack(alignment: .leading, spacing: 14) {
-      ForEach(etapes, id: \.numero) { etape in
-        etapeAffichee(etape)
-      }
+  private var parcours: some View {
+    // LA MISE EN PAGE EST PARTAGÉE, et la règle du verrou avec : une seule
+    // frontière à la fois, les suivantes grisées.
+    ParcoursDesEtapes(etapes: etapes) { etape in
+      methodologie(pour: etape.numero, connue: etape.etat == .aFaire)
     }
-    .padding(12)
-    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
   }
 
   @ViewBuilder
