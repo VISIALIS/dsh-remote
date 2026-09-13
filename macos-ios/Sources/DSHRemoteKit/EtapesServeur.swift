@@ -164,9 +164,9 @@ public enum EtapesServeur {
     switch numero {
     case 1:
       titre = "Tailscale est connecté sur cet appareil"
-      explication = "Sans cela, aucun Mac du tailnet n'est joignable — ni celui-ci, ni un autre."
+      explication = "Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre."
     case 2:
-      titre = "Ce Mac est visible"
+      titre = "Cette machine est visible"
       switch etat {
       case .franchie:
         explication = "Il est en ligne sur le tailnet, donc la découverte le propose."
@@ -215,11 +215,11 @@ public enum EtapesServeur {
         numero: 1,
         titre: "Tailscale est connecté sur cet appareil",
         explication:
-          "Sans cela, aucun Mac du tailnet n'est joignable — ni celui-ci, ni un autre.",
+          "Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre.",
         etat: tailnetDeLAppareil == nil ? .inconnue : (tailnetDeLAppareil! ? .franchie : .aFaire)),
       Etape(
         numero: 2,
-        titre: "Le Mac à ajouter est sur le tailnet",
+        titre: "La machine à ajouter est sur le tailnet",
         explication:
           "Il doit avoir Tailscale installé et connecté : c'est ce qui le rend visible depuis cet appareil.",
         etat: .aFaire),
@@ -253,7 +253,7 @@ public enum EtapesServeur {
     if sures.isEmpty { return "Vérification en cours…" }
     if sures.count == 1, let seule = sures.first {
       // LE TITRE EST CITÉ TEL QUEL. Le mettre en minuscules abîmait les noms
-      // propres — « Ce Mac est visible » devenait « ce mac est visible »,
+      // propres — « Cette machine est visible » devenait « cette machine est visible »,
       // constaté sur capture.
       return "Il reste une étape : « \(seule.titre) »."
     }

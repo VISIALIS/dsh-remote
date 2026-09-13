@@ -762,7 +762,7 @@ public final class ModeleApp {
   /// connecter. Ici, on attend le résultat.
   public func chargerServeursLocaux() async {
     guard decouverteLocalePossible else { return }
-    let trouvees = await Task.detached { DecouverteServeurs.macsDuTailnet() }.value
+    let trouvees = await Task.detached { DecouverteServeurs.machinesDuTailnet() }.value
     let raison = DecouverteServeurs.diagnostic
     // L'hôte a déjà répondu, et sa liste est plus fraîche : on ne l'écrase pas.
     guard sourceServeurs != .hote else { return }
@@ -772,7 +772,7 @@ public final class ModeleApp {
   public func demarrerDecouverte() {
     guard decouverteLocalePossible else { return }
     Task.detached { [weak self] in
-      let trouvees = DecouverteServeurs.macsDuTailnet()
+      let trouvees = DecouverteServeurs.machinesDuTailnet()
       let raison = DecouverteServeurs.diagnostic
       await MainActor.run {
         guard let self else { return }
@@ -1275,9 +1275,9 @@ public final class ModeleApp {
   public var messageListeVide: String {
     guard sourceServeurs == .hote else { return DecouverteServeurs.messageDAbsence() }
     if let diagnosticServeurs, !diagnosticServeurs.isEmpty {
-      return "Le serveur joint ne voit aucun Mac sur le tailnet (\(diagnosticServeurs)). Saisissez l'adresse ci-dessous."
+      return "Le serveur joint ne voit aucune machine sur le tailnet (\(diagnosticServeurs)). Saisissez l'adresse ci-dessous."
     }
-    return "Le serveur joint ne voit aucun Mac sur le tailnet. Saisissez l'adresse ci-dessous."
+    return "Le serveur joint ne voit aucune machine sur le tailnet. Saisissez l'adresse ci-dessous."
   }
 
   /// Légende d'une machine : son état, et le fait qu'elle soit l'hôte interrogé.
@@ -1563,7 +1563,7 @@ public final class ModeleApp {
   /// que l'utilisateur doit faire. Ici l'action est concrète, et elle tient en
   /// une phrase parce que l'état, lui, est connu.
   nonisolated static func messageHorsLigne(_ serveur: ServeurMac) -> String {
-    "« \(serveur.nom) » est hors ligne sur le tailnet. Allumez-le, ou choisissez un Mac en ligne : la liste se rafraîchit toute seule."
+    "« \(serveur.nom) » est hors ligne sur le tailnet. Allumez-le, ou choisissez une machine en ligne : la liste se rafraîchit toute seule."
   }
 
   public func connecter() async {
@@ -1599,7 +1599,7 @@ public final class ModeleApp {
     let jeton = jetonDeLaCible()
     guard !jeton.isEmpty else {
       connexion = .jetonInvalide(
-        "Aucun jeton d'appareil. Récupérez-le dans la sortie du harness sur le Mac, au premier chargement du plugin.")
+        "Aucun jeton d'appareil. Récupérez-le dans la sortie du harness sur l'hôte, au premier chargement du plugin.")
       return
     }
     // Un jeton tronqué enverrait une requête vouée au 401, en accusant le

@@ -107,9 +107,9 @@ public struct RefusEcriture: Sendable, Decodable {
   public static func expliquer(code: String?, detail: String?, erreur: String?) -> String {
     switch code {
     case "session/not-found":
-      return "cette session n'existe plus sur le Mac"
+      return "cette session n'existe plus sur l'hôte"
     case "session/model-unavailable":
-      return "aucun modèle n'est disponible pour cette session : choisissez-en un sur le Mac"
+      return "aucun modèle n'est disponible pour cette session : choisissez-en un sur l'hôte"
     case "session/agent-busy":
       return "l'agent n'a pas pu prendre ce message maintenant"
     case "session/steer-unavailable":

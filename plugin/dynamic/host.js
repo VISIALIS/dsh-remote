@@ -59,12 +59,13 @@
 import { execFile } from 'node:child_process'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { readFile, readdir, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 // LA DÉCOUVERTE DU TAILNET vit dans son propre fichier : elle ne dépend que du
 // binaire local de Tailscale, et ses deux fonctions d'analyse sont PURES — donc
 // éprouvables sans lancer de processus (voir `tests/tailscale.test.js`).
-import { decouvrirMacs } from './tailscale.js'
+import { decouvrirMachines } from './tailscale.js'
 
 // LA LECTURE DU JOURNAL vit dans son propre fichier : décodage des trames zstd,
 // analyse des lignes JSONL, et résumé d'une session. Ce sont des règles pures —
@@ -184,11 +185,17 @@ export function apply(ctx, config) {
   // bibliotheque de fonctions, pas un service Cordis. On refait donc la
   // resolution documentee (variable `DSH_HOME`, sinon `~/.dsh`). Les chemins ne
   // sont jamais journalises ni renvoyes : seule la liste des sessions l'est.
+  //
+  // `homedir()` ET NON `process.env.HOME` : la variable n'existe pas sur
+  // Windows, ou le profil est dans `USERPROFILE`. Le repli `/tmp` d'avant y
+  // aurait resolu `C:\tmp\.dsh` — un dossier vide, donc une liste de sessions
+  // vide sans erreur. Le defaut n'a pas ete observe (aucun hote Windows n'a
+  // encore charge ce plugin) : il est corrige par lecture du code.
   const racineSessions = () => {
     const configure =
       typeof process.env.DSH_HOME === 'string' && process.env.DSH_HOME.length > 0
         ? process.env.DSH_HOME
-        : join(process.env.HOME ?? '/tmp', '.dsh')
+        : join(homedir() || '/tmp', '.dsh')
     return join(configure, 'sessions')
   }
 
@@ -740,12 +747,12 @@ export function apply(ctx, config) {
     try {
       const maintenant = Date.now()
       if (cacheDecouverte.valeur === null || maintenant - cacheDecouverte.vuLe > TTL_DECOUVERTE_MS) {
-        const { macs, diagnostic } = await decouvrirMacs()
-        cacheDecouverte = { vuLe: maintenant, valeur: { macs, diagnostic } }
+        const { machines, diagnostic } = await decouvrirMachines()
+        cacheDecouverte = { vuLe: maintenant, valeur: { machines, diagnostic } }
       }
-      const { macs, diagnostic } = cacheDecouverte.valeur
-      envoyer(res, 200, { protocole: VERSION_PROTOCOLE, serveurs: macs, diagnostic })
-      tracer(req, 200, macs.length + ' macs')
+      const { machines, diagnostic } = cacheDecouverte.valeur
+      envoyer(res, 200, { protocole: VERSION_PROTOCOLE, serveurs: machines, diagnostic })
+      tracer(req, 200, machines.length + ' machines')
     } catch (erreur) {
       envoyer(res, 500, { erreur: 'decouverte impossible', detail: String(erreur?.message ?? erreur) })
       tracer(req, 500)

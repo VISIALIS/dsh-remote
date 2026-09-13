@@ -877,7 +877,7 @@ struct ServeursVides: View {
         // découverte locale est impossible, et un bouton sans effet est un
         // mensonge d'interface.
         if modele.rechercheServeursPossible {
-          Button("Chercher un Mac") { Task { await modele.synchroniserServeurs() } }
+          Button("Chercher une machine") { Task { await modele.synchroniserServeurs() } }
             .font(.callout)
             .buttonStyle(.bordered)
             .disabled(modele.synchronisationEnCours)

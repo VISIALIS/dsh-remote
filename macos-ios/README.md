@@ -200,19 +200,89 @@ qui ne dit rien — et le candidat suivant est essayé. Mesuré, même code et m
 
 | Environnement | Avant | Après |
 |---|---|---|
-| Terminal | 3 Macs | 3 Macs |
-| Environnement d'application (Finder) | `aucun Mac decouvert` | **3 Macs** |
+| Terminal | 3 machines | 3 machines |
+| Environnement d'application (Finder) | `aucune machine decouverte` | **3 machines** |
+
+**DEPUIS, LA RÈGLE A CHANGÉ, ET CES COMPTES AVEC ELLE.** La découverte ne retenait que
+les machines `macOS` ; elle retient maintenant **toutes celles qui peuvent héberger
+DSH** — macOS, Windows, Linux — et écarte iOS et Android, qui n'exécutent pas de
+processus. Le même tailnet en rend donc **4** : les trois Macs et `MiBook` (`OS`
+`windows`), mesuré par `dsh-remote-ctl serveurs`. Le motif est écrit plus bas, dans
+« Un PC Windows est un serveur DSH légitime ».
 
 Le plugin hôte n'a jamais eu ce défaut : en JavaScript, `JSON.parse` **lève**, donc la
 route essaie le candidat suivant et rapporte « sortie illisible ». C'est le code Swift qui
 se fiait au code de sortie.
 
-**Résultat mesuré** : sur le simulateur iPhone 17 Pro, la liste des Macs du tailnet
-s'affiche — trois machines, avec icône, état en ligne/hors ligne, et la mention « hôte
-interrogé » sur celle qui répond. L'application n'exécute aucun processus : elle lit la
+**Résultat mesuré** : sur le simulateur iPhone 17 Pro, la liste des machines du tailnet
+s'affiche — avec icône, état en ligne/hors ligne, et la mention « hôte interrogé » sur
+celle qui répond. L'application n'exécute aucun processus : elle lit la
 réponse de l'hôte. Sur le Mac, l'application empaquetée lancée dans un environnement
-d'application trouve les **3 mêmes Macs** et sonde lesquels servent DSH (`1 serveur(s) DSH
-sur 3` — les deux autres n'ont rien qui écoute, ou sont hors ligne).
+d'application trouve les **mêmes machines** et sonde lesquelles servent DSH (`1 serveur(s)
+DSH sur 3` au moment de la mesure — les autres n'ont rien qui écoute, ou sont hors
+ligne).
+
+#### Un PC Windows est un serveur DSH légitime
+
+**Le défaut, rapporté par le propriétaire** : « je constate qu'il y a un serveur windows
+qui n'est pas listé, or le serveur DSH est universel non ? c'est juste le remote qui est
+macOS ou iOS ». Il a raison sur les deux points, et la découverte était fautive.
+
+Elle ne retenait que les machines `OS == "macOS"`, dans **deux** endroits — le plugin de
+l'hôte (`dynamic/tailscale.js`) et la découverte locale du client
+(`DecouverteServeurs.analyserRacine`). La justification écrite était : « proposer un PC
+Windows ou un iPhone comme serveur DSH serait une promesse que l'installation ne peut pas
+tenir ». Elle confondait deux choses :
+
+- **ce qui ne peut pas héberger DSH** : iOS, iPadOS, Android, tvOS — ces systèmes
+  n'exécutent pas de processus, et un iPhone ne fera jamais tourner un harness Node ;
+- **ce qui peut l'héberger** : macOS, **Windows**, Linux. DSH est un harness Node, et il
+  est cross-platform jusqu'au bac à sable (`dsh-sandbox-windows-acl` est publié pour
+  Windows). C'est l'**application** qui est macOS et iOS — pas l'hôte.
+
+La règle est donc devenue une **liste blanche** — `macOS`, `windows`, `linux` — écrite
+aux deux endroits, et **identique** : deux listes qui divergeraient feraient apparaître
+une machine côté hôte et pas côté client. Elle ne promet pas qu'une machine serve DSH :
+elle dit qu'elle *pourrait* l'héberger, et la sonde tranche — une machine qui ne répond
+pas s'affiche « pas de DSH », ce qui est exactement ce qu'on sait d'elle.
+
+**Mesuré sur le tailnet du propriétaire**, là où le défaut a été vu :
+
+```text
+$ dsh-remote-ctl serveurs
+Machines sur le tailnet : 4
+  en ligne    MacBook Air de Camille
+  en ligne    MacMini
+  hors ligne  MacBook Pro de Camille
+  hors ligne  MiBook                    ← OS `windows`, absent avant la correction
+```
+
+L'iPhone (`OS` `iOS`) reste écarté, et c'est la seule exclusion qui subsiste — celle qui
+était juste.
+
+**TROIS CORRECTIONS DE PLATEFORME SONT VENUES AVEC**, parce que la découverte n'était pas
+la seule ligne écrite pour un Mac :
+
+1. les **candidats du CLI Tailscale** du plugin étaient tous POSIX ; Windows reçoit
+   `…\Tailscale\tailscale.exe`, et un **nom nu** est désormais essayé par le `PATH` sur
+   les trois systèmes (un nom nu n'est pas soumis au test d'existence : `access()` résout
+   relativement au dossier courant, pas dans le `PATH`) ;
+2. **`homedir()` remplace `process.env.HOME`** pour résoudre `~/.dsh` : la variable
+   n'existe pas sur Windows, où le profil est dans `USERPROFILE`. Le repli `/tmp` d'avant
+   y aurait résolu `C:\tmp\.dsh` — un dossier vide, donc **zéro session, sans erreur** ;
+3. le vocabulaire : l'application ne dit plus « Mac » là où la machine peut être un PC
+   (« Chercher une machine », « Cette machine est visible », « Allumez cette machine-là »,
+   « sur l'hôte »). Un libellé qui nomme un Mac sur la page d'un PC est un mensonge, et
+   c'est précisément ce que ce dépôt traque.
+
+**CE QUI N'A PAS ÉTÉ ÉPROUVÉ, ET QUI EST ÉCRIT COMME TEL** : aucun hôte Windows n'a
+chargé ce plugin ici. Le chemin du CLI, les candidats et `homedir()` sont écrits d'après
+la documentation des plateformes, pas mesurés ; ce qui EST mesuré, c'est que `OS ==
+"windows"` est retenu par les deux découvertes, et que la liste réelle gagne `MiBook`.
+
+**Et le code du plugin n'est pas rechargé à chaud** : la correction de la règle ne prend
+effet qu'au **redémarrage du harness** (`dsh web`). La découverte locale du client, elle,
+suffit à voir `MiBook` dès la reconstruction de l'application.
 
 ### Une machine éteinte n'est pas une panne réseau
 
@@ -358,7 +428,7 @@ Le diagnostic s'ouvre sur sa **conclusion** — « Ce serveur est prêt. » / «
 une étape : « … » » / « Vérification en cours… » — parce que « ce serveur est-il
 utilisable ? » est la question, et les quatre étapes la démonstration. Le titre de
 l'étape restante est **cité tel quel** : le mettre en minuscules abîmait les noms
-propres (« Ce Mac est visible » devenait « ce mac est visible », constaté sur
+propres (« Cette machine est visible » devenait « cette machine est visible », constaté sur
 capture).
 
 **UNE SEULE FRONTIÈRE À LA FOIS.** Demande du propriétaire : « si une étape de goal
@@ -393,8 +463,8 @@ pas encore.
 | Étape | Ce qu'elle dit |
 |---|---|
 | 1. Tailscale est connecté sur cet appareil | **constaté** : c'est la seule des quatre qu'on puisse mesurer d'ici |
-| 2. Le Mac à ajouter est sur le tailnet | sur ce Mac-là : installer Tailscale, le connecter, `tailscale status` |
-| 3. Le port de DSH y est ouvert | sur ce Mac-là : `tailscale serve --bg --http=80 http://127.0.0.1:3080` |
+| 2. La machine à ajouter est sur le tailnet | sur cette machine-là : installer Tailscale, le connecter, `tailscale status` |
+| 3. Le port de DSH y est ouvert | sur cette machine-là : `tailscale serve --bg --http=80 http://127.0.0.1:3080` |
 | 4. Le plugin `dsh-remote` y est installé | la même démarche que la page d'un serveur |
 
 Les commandes disent **sur quelle machine les taper** — l'étape 1 concerne cet
@@ -422,7 +492,7 @@ donc un **parcours** — et non plus seulement un diagnostic.
 | Étape | Ce qu'elle veut dire | D'où vient son état |
 |---|---|---|
 | 1. Tailscale est connecté sur cet appareil | il porte une adresse de tailnet | une CONSTATATION locale : `getifaddrs`, plage `100.64.0.0/10` |
-| 2. Ce Mac est visible | il est en ligne sur le tailnet, donc la découverte le propose | un FAIT de Tailscale (`Online`), lu, jamais mesuré par l'application |
+| 2. Cette machine est visible | elle est en ligne sur le tailnet, donc la découverte la propose | un FAIT de Tailscale (`Online`), lu, jamais mesuré par l'application |
 | 3. Le port de DSH est ouvert | quelque chose répond sur son port 80, publié par `tailscale serve` | la sonde : un `404` prouve que le port est ouvert |
 | 4. Le plugin `dsh-remote` est installé | DSH Remote y répond | la sonde : `200` ou `401` |
 
@@ -1604,7 +1674,7 @@ Sources/
 │   ├── Regroupement.swift # arbre des sessions par espace de travail
 │   ├── EtatSession.swift  # pastilles et libellés d'état
 │   ├── RappelsDeFin.swift # détection des fins de tour non vues (pastille verte)
-│   ├── DecouverteServeurs.swift  # Macs du tailnet : découverte par l'hôte, ou locale sur macOS
+│   ├── DecouverteServeurs.swift  # machines du tailnet : découverte par l'hôte, ou locale sur macOS
 │   ├── Tailscale.swift    # état de Tailscale sur cette machine
 │   ├── FluxSession.swift  # WebSocket temps réel
 │   ├── RemoteClient.swift
@@ -1699,11 +1769,11 @@ inactive.
 | **La décision attendue devient un point orange** | chaîne mesurée sur une charge utile RÉELLE : `attendReponse: true` → `EtatSession.attendReponse` (la valeur que la pastille rend), pendant qu'une question d'un tool est en attente |
 | **Le flux alimente l'écran ouvert** | la même capture passe de 41 à 48 enregistrements pendant qu'une autre session écrit |
 | **Le composeur est rendu** | capture du simulateur : champ « Écrire à cette session… », sélecteur de mode, bouton d'envoi |
-| **L'hôte publie la liste des Macs du tailnet** | `dsh-remote-ctl <adresse> serveurs` → 3 Macs ; le PC Windows et l'iPhone sont écartés |
+| **L'hôte publie la liste des machines du tailnet** | `dsh-remote-ctl serveurs` → 4 machines : les 3 Macs **et `MiBook` (OS `windows`)** ; l'iPhone (`OS` `iOS`) est écarté |
 | **Les espaces viennent du registre de l'hôte** | `dsh-remote-ctl <adresse> espaces` → 7 espaces, du plus récent au plus ancien, avec leur nombre de sessions |
 | **Espaces par création, sessions par activité** | 3 tests : un espace ancien mais très actif reste sous un espace récent ; dans un espace, la session la plus active passe devant ; départage stable à date égale |
 | **Un espace vide est représenté** | 6 tests sur les charges utiles de l'hôte : espace sans session marqué `sansSession`, appartenance par identifiant et non par chemin, « Sans espace » en dernier, repli sur `cwd` sans registre |
-| **L'iPhone CONSOMME la découverte** | simulateur iPhone 17 Pro : les 3 Macs s'affichent avec icône et état, « hôte interrogé » sur la machine qui répond — aucun processus exécuté par l'application |
+| **L'iPhone CONSOMME la découverte** | simulateur iPhone 17 Pro : les machines s'affichent avec icône et état, « hôte interrogé » sur la machine qui répond — aucun processus exécuté par l'application |
 | **La découverte survit à un environnement d'application** | app empaquetée lancée comme le Finder la lance : `[sonde] debut : 3 candidat(s)` puis `1 serveur(s) DSH sur 3` — contre `aucun Mac decouvert` avant le correctif |
 | **Un CLI qui échoue en code 0 ne devient pas « tailnet vide »** | test « Un CLI qui échoue en code 0 ne doit PAS devenir « tailnet vide » », sur la sortie réelle du CLI (`Tailscale.CLIError error 3` sur stdout, code 0) |
 | **L'exception ATS couvre tout le tailnet** | même requête vers un autre Mac, en boîtier applicatif : `-1022` avec un nom de machine, `-1004` avec le domaine du tailnet |

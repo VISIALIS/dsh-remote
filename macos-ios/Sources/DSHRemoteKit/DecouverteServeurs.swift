@@ -97,7 +97,7 @@ public struct ServeurMac: Sendable, Identifiable, Hashable, Decodable {
 
 }
 
-/// Découverte des Macs joignables.
+/// Découverte des machines joignables.
 ///
 /// DEUX SOURCES, DANS CET ORDRE DE QUALITÉ :
 ///
@@ -105,7 +105,7 @@ public struct ServeurMac: Sendable, Identifiable, Hashable, Decodable {
 ///      `RemoteClient.listerServeurs`). C'est la voie retenue : l'hôte tourne sur
 ///      un Mac qui a Tailscale, il publie la liste, et l'application la LIT. Elle
 ///      marche donc sur iPhone, où rien d'autre ne marche.
-///   2. **Le Tailscale local** (`macsDuTailnet`, macOS seulement). Utile quand
+///   2. **Le Tailscale local** (`machinesDuTailnet`, macOS seulement). Utile quand
 ///      aucun serveur n'est encore connu — c'est-à-dire au tout premier
 ///      lancement, et pour le tool `dsh-remote-ctl`.
 ///
@@ -139,6 +139,29 @@ public enum DecouverteServeurs {
     "/usr/local/bin/tailscale",
   ]
 
+  /// LES SYSTÈMES QUI PEUVENT HÉBERGER DSH — et ceux qui ne le peuvent pas.
+  ///
+  /// POURQUOI CETTE RÈGLE A CHANGÉ. Elle ne retenait que `macOS` : « proposer un
+  /// PC Windows ou un iPhone comme serveur DSH serait une promesse que
+  /// l'installation ne peut pas tenir ». La prémisse était fausse, et le
+  /// propriétaire l'a relevée : « il y a un serveur windows qui n'est pas listé,
+  /// or le serveur DSH est universel non ? c'est juste le remote qui est macOS ou
+  /// iOS ». DSH est un harness Node : il tourne aussi sur Windows et sur Linux —
+  /// le harness publie même un bac à sable Windows ACL. C'est l'APPLICATION
+  /// CLIENT qui est macOS et iOS, pas l'hôte.
+  ///
+  /// Ce qui reste écarté, ce sont les systèmes qui ne peuvent pas exécuter de
+  /// processus : iOS, iPadOS, Android, tvOS. Un iPhone ne peut pas héberger DSH.
+  /// La liste est donc une LISTE BLANCHE — un système inconnu n'est pas proposé —
+  /// et elle est IDENTIQUE à celle du plugin (`SYSTEMES_QUI_HEBERGENT`,
+  /// `dynamic/tailscale.js`) : deux listes qui divergeraient feraient apparaître
+  /// une machine côté hôte et pas côté client.
+  ///
+  /// CE QU'ELLE NE PROMET PAS : qu'une machine serve DSH. Elle dit qu'elle
+  /// POURRAIT l'héberger ; c'est la sonde qui tranche, et une machine qui ne
+  /// répond pas s'affiche « pas de DSH ».
+  static let systemesQuiHebergent: Set<String> = ["macOS", "windows", "linux"]
+
   /// Candidats existants, dans l'ordre d'essai.
   private static func candidats() -> [String] {
     let maison = NSHomeDirectory()
@@ -168,7 +191,7 @@ public enum DecouverteServeurs {
   ///
   /// Ne lève jamais. Une découverte impossible rend une liste vide, ce qui est
   /// un état normal et non une erreur : l'utilisateur garde la saisie manuelle.
-  public static func macsDuTailnet() -> [ServeurMac] {
+  public static func machinesDuTailnet() -> [ServeurMac] {
     #if os(macOS)
       var raisons: [String] = []
       // On essaie CHAQUE candidat jusqu'à une réponse exploitable : le premier
@@ -178,7 +201,7 @@ public enum DecouverteServeurs {
         let resultat = interroger(binaire)
         if let macs = resultat.macs {
           binaireRetenu = binaire
-          diagnostic = macs.isEmpty ? "aucun Mac macOS dans le tailnet" : nil
+          diagnostic = macs.isEmpty ? "aucune machine du tailnet" : nil
           return macs
         }
         raisons.append(resultat.raison)
@@ -268,10 +291,10 @@ public enum DecouverteServeurs {
   public static func messageDAbsence() -> String {
     #if os(macOS)
       if let diagnostic, !diagnostic.isEmpty {
-        return "Découverte automatique indisponible (\(diagnostic)). Saisissez l'adresse du Mac ci-dessous."
+        return "Découverte automatique indisponible (\(diagnostic)). Saisissez l'adresse de la machine ci-dessous."
       }
       if tailscaleSembleInstalle() {
-        return "Aucun Mac trouvé sur le tailnet. Vérifiez que Tailscale est connecté, puis rafraîchissez."
+        return "Aucune machine trouvée sur le tailnet. Vérifiez que Tailscale est connecté, puis rafraîchissez."
       }
       return "Tailscale ne semble pas installé : installez-le, connectez-vous, puis rafraîchissez."
     #else
@@ -279,7 +302,7 @@ public enum DecouverteServeurs {
       // impossible LOCALEMENT, mais un hôte déjà joint publie la liste. Le
       // message donne donc l'action qui débloque, au lieu d'un constat.
       return
-        "Saisissez l'adresse d'un Mac ci-dessous, puis connectez-vous : ce Mac publiera ensuite la liste des Macs de votre tailnet."
+        "Saisissez l'adresse d'une machine ci-dessous, puis connectez-vous : elle publiera ensuite la liste des machines de votre tailnet."
     #endif
   }
 
@@ -328,7 +351,7 @@ public enum DecouverteServeurs {
     var trouves: [ServeurMac] = []
 
     func retenir(_ objet: [String: Any], soiMeme: Bool) {
-      guard (objet["OS"] as? String) == "macOS" else { return }
+      guard let systeme = objet["OS"] as? String, systemesQuiHebergent.contains(systeme) else { return }
       guard let dns = objet["DNSName"] as? String, !dns.isEmpty else { return }
       let nom = (objet["HostName"] as? String) ?? dns
       // Le point final est la forme absolue du DNS : on le retire pour que

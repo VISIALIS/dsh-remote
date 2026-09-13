@@ -45,7 +45,7 @@ struct VueAjoutServeur: View {
       Label("Ajouter un serveur", systemImage: "plus.square.dashed")
         .font(.title3.weight(.semibold))
       Text(
-        "Un Mac devient un serveur DSH en quatre étapes. Elles se font dans cet ordre : chacune suppose la précédente."
+        "Une machine devient un serveur DSH en quatre étapes. Elles se font dans cet ordre : chacune suppose la précédente."
       )
       .font(.callout)
       .foregroundStyle(.secondary)
@@ -98,7 +98,7 @@ struct VueAjoutServeur: View {
         LigneCommande(commande: "tailscale up")
       #endif
     case 2:
-      Text("Sur ce Mac-là : installez Tailscale, connectez-le, puis vérifiez :")
+      Text("Sur cette machine-là : installez Tailscale, connectez-le, puis vérifiez :")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -125,7 +125,7 @@ struct VueAjoutServeur: View {
         Button {
           Task { await modele.synchroniserServeurs() }
         } label: {
-          Label("Chercher un Mac", systemImage: "arrow.clockwise")
+          Label("Chercher une machine", systemImage: "arrow.clockwise")
         }
         .disabled(modele.synchronisationEnCours)
       }

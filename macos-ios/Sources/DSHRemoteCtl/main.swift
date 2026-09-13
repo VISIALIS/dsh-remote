@@ -88,17 +88,17 @@ let commande = arguments.count > 2 ? arguments[2] : ""
 
 // `serveurs` ne demande ni adresse ni jeton : il interroge Tailscale.
 if adresse == "serveurs" {
-  let macs = DecouverteServeurs.macsDuTailnet()
-  if macs.isEmpty {
-    print("aucun Mac decouvert")
+  let machines = DecouverteServeurs.machinesDuTailnet()
+  if machines.isEmpty {
+    print("aucune machine decouverte")
     if let raison = DecouverteServeurs.diagnostic { print("raison : \(raison)") }
     exit(0)
   }
-  print("Macs sur le tailnet : \(macs.count)\n")
-  for mac in macs {
-    let etat = mac.enLigne ? "en ligne   " : "hors ligne "
-    print("  \(etat) \(mac.nom)")
-    print("             \(mac.adresse)")
+  print("Machines sur le tailnet : \(machines.count)\n")
+  for machine in machines {
+    let etat = machine.enLigne ? "en ligne   " : "hors ligne "
+    print("  \(etat) \(machine.nom)")
+    print("             \(machine.adresse)")
   }
   exit(0)
 }

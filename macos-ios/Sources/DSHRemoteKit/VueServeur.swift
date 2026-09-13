@@ -429,7 +429,7 @@ struct VueServeur: View {
     case 2:
       // LA MACHINE VISÉE, pas cet appareil-ci : ces commandes se tapent SUR ELLE.
       if connue {
-        Text("Allumez ce Mac-là, et vérifiez que Tailscale y est connecté :")
+        Text("Allumez cette machine-là, et vérifiez que Tailscale y est connecté :")
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
@@ -439,7 +439,7 @@ struct VueServeur: View {
           .foregroundStyle(.secondary)
         LigneCommande(commande: "tailscale up")
       } else {
-        Text("Vérifiez l'état du tailnet, sur ce Mac-là ou sur un autre :")
+        Text("Vérifiez l'état du tailnet, sur cette machine-là ou sur une autre :")
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
@@ -449,7 +449,7 @@ struct VueServeur: View {
       if connue {
         DemarchePublicationPort()
       } else {
-        Text("Vérifiez sur ce Mac ce qui est publié :")
+        Text("Vérifiez sur cette machine ce qui est publié :")
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)

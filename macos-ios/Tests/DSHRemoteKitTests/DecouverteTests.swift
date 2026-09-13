@@ -8,7 +8,7 @@ import Testing
 // non sur un exemple inventé, est ce qui permet d'attraper une dérive réelle de
 // la part de Tailscale.
 
-@Test("Les Macs du tailnet sont retenus, les autres systèmes écartés")
+@Test("Un PC Windows est retenu, un iPhone NON — héberger DSH n'est pas tenir dans une poche")
 func analyseTailnet() throws {
   let json = """
     {
@@ -22,24 +22,33 @@ func analyseTailnet() throws {
         "node1": { "HostName": "Bureau Mini", "DNSName": "bureau-mini.exemple.ts.net.", "OS": "macOS", "Online": true },
         "node2": { "HostName": "Portable Deux", "DNSName": "portable-deux.exemple.ts.net.", "OS": "macOS", "Online": false },
         "node3": { "HostName": "PortableWindows", "DNSName": "portable-windows.exemple.ts.net.", "OS": "windows", "Online": false },
-        "node4": { "HostName": "iphone-de-test", "DNSName": "iphone-de-test.exemple.ts.net.", "OS": "iOS", "Online": true }
+        "node4": { "HostName": "iphone-de-test", "DNSName": "iphone-de-test.exemple.ts.net.", "OS": "iOS", "Online": true },
+        "node5": { "HostName": "tablette-de-test", "DNSName": "tablette-de-test.exemple.ts.net.", "OS": "android", "Online": true },
+        "node6": { "HostName": "ServeurLinux", "DNSName": "serveur-linux.exemple.ts.net.", "OS": "linux", "Online": true }
       }
     }
   """.data(using: .utf8)!
 
-  let macs = DecouverteServeurs.analyser(json)
+  let machines = DecouverteServeurs.analyser(json)
 
-  // Trois macOS (soi-même inclus), et NI le PC Windows NI l'iPhone : on ne
-  // propose que des machines capables de faire tourner le harness.
-  #expect(macs.count == 3)
-  #expect(!macs.contains { $0.nom == "PortableWindows" })
-  #expect(!macs.contains { $0.nom == "iphone-de-test" })
+  // LA RÈGLE A CHANGÉ, ET ELLE ÉTAIT FAUSSE. Elle ne retenait que `macOS` :
+  // « proposer un PC Windows ou un iPhone comme serveur DSH serait une promesse
+  // que l'installation ne peut pas tenir ». Le propriétaire a relevé la
+  // confusion : DSH est un harness Node, il tourne aussi sur Windows et sur
+  // Linux — seule l'APPLICATION est macOS et iOS. Ce qui ne peut pas héberger
+  // DSH, c'est iOS et Android, qui n'exécutent pas de processus.
+  #expect(machines.count == 5)
+  #expect(machines.contains { $0.nom == "PortableWindows" })
+  #expect(machines.contains { $0.nom == "ServeurLinux" })
+  #expect(!machines.contains { $0.nom == "iphone-de-test" })
+  #expect(!machines.contains { $0.nom == "tablette-de-test" })
 
-  // En ligne d'abord, puis par nom : « Bureau Mini » précède « Portable Un ».
-  #expect(macs[0].nom == "Bureau Mini")
-  #expect(macs[1].nom == "Portable Un")
-  #expect(macs[2].nom == "Portable Deux")
-  #expect(macs[2].enLigne == false)
+  // En ligne d'abord, puis par nom : c'est ce qui garde la liste stable d'un
+  // affichage à l'autre, et la machine locale n'a aucune priorité.
+  #expect(machines.prefix(3).allSatisfy { $0.enLigne })
+  #expect(machines.suffix(2).allSatisfy { !$0.enLigne })
+  #expect(machines[0].nom == "Bureau Mini")
+  #expect(machines[1].nom == "Portable Un")
 }
 
 @Test("Le point final du nom DNS est retiré : l'adresse doit être utilisable telle quelle")

@@ -75,10 +75,10 @@ struct FeuilleAdresse: View {
               .fixedSize(horizontal: false, vertical: true)
           }
         } header: {
-          Text("Adresse du Mac")
+          Text("Adresse de la machine")
         } footer: {
           Text(
-            "Le nom MagicDNS du Mac, publié par `tailscale serve` — par exemple mon-mac.mon-tailnet.ts.net. Sans protocole, `http://` est supposé."
+            "Le nom MagicDNS de la machine, publié par `tailscale serve` — par exemple mon-mac.mon-tailnet.ts.net. Sans protocole, `http://` est supposé."
           )
           .fixedSize(horizontal: false, vertical: true)
         }

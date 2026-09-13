@@ -53,25 +53,37 @@ test('le point final du DNS est retiré — le nom doit servir d’adresse', () 
   assert.equal(macs[0].nomDNS, 'portable-un.exemple.ts.net')
 })
 
-test('seuls les Macs sont proposés — un PC ou un téléphone ne peut pas héberger DSH', () => {
-  const macs = analyserTailnet(
+test('un PC Windows est proposé, un iPhone NON — héberger DSH n’est pas la même question que tenir dans une poche', () => {
+  // LA RÈGLE A CHANGÉ, ET ELLE ÉTAIT FAUSSE. Elle ne retenait que `macOS` :
+  // « proposer un PC Windows ou un iPhone comme serveur DSH serait une promesse
+  // que l'installation ne peut pas tenir ». Le propriétaire a relevé la
+  // confusion : « il y a un serveur windows qui n'est pas listé, or le serveur
+  // DSH est universel non ? c'est juste le remote qui est macOS ou iOS ». DSH est
+  // un harness Node — il tourne aussi sur Windows et sur Linux ; ce qui ne le
+  // peut pas, c'est iOS ou Android, qui n'exécutent pas de processus.
+  const machines = analyserTailnet(
     sortie({
       Self: { OS: 'macOS', DNSName: 'portable-un.exemple.ts.net.', HostName: 'portable-un' },
       Peer: {
         cle1: { OS: 'windows', DNSName: 'pc.exemple.ts.net.', HostName: 'pc', Online: true },
         cle2: { OS: 'iOS', DNSName: 'iphone.exemple.ts.net.', HostName: 'iphone', Online: true },
-        cle3: { OS: 'macOS', DNSName: 'portable-deux.exemple.ts.net.', HostName: 'portable-deux', Online: true },
+        cle3: { OS: 'android', DNSName: 'tablette.exemple.ts.net.', HostName: 'tablette', Online: true },
+        cle4: { OS: 'linux', DNSName: 'serveur.exemple.ts.net.', HostName: 'serveur', Online: true },
+        cle5: { OS: 'macOS', DNSName: 'portable-deux.exemple.ts.net.', HostName: 'portable-deux', Online: true },
       },
     }),
   )
 
+  const noms = machines.map((machine) => machine.nom)
+  assert.ok(noms.includes('pc'), 'un PC Windows peut héberger DSH : il doit être proposé')
+  assert.ok(noms.includes('serveur'), 'un Linux aussi')
+  assert.ok(!noms.includes('iphone'), 'iOS ne peut pas exécuter de processus : jamais proposé')
+  assert.ok(!noms.includes('tablette'), 'Android non plus')
+
   // L'ORDRE SUIT LA RÈGLE, PAS L'INTUITION : « en ligne d'abord, puis par nom ».
   // La machine LOCALE n'a aucune priorité — elle est en ligne comme une autre, et
   // `portable-deux` passe donc devant `portable-un` par ordre alphabétique.
-  assert.deepEqual(
-    macs.map((mac) => mac.nom),
-    ['portable-deux', 'portable-un'],
-  )
+  assert.deepEqual(noms, ['pc', 'portable-deux', 'portable-un', 'serveur'])
 })
 
 test('en ligne d’abord, puis par nom — l’ordre ne doit pas sauter d’un appel à l’autre', () => {

@@ -65,7 +65,7 @@ func refusTraduit() throws {
   let refus = try JSONDecoder().decode(RefusEcriture.self, from: json)
   #expect(refus.code == "session/not-found")
   let explication = refus.explication
-  #expect(explication == "cette session n'existe plus sur le Mac")
+  #expect(explication == "cette session n'existe plus sur l'hôte")
   // Ni le code du protocole, ni le mot « session/not-found » ne doivent
   // atteindre l'utilisateur : il ne peut rien en faire.
   #expect(!explication.contains("session/"))

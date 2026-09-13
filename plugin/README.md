@@ -176,7 +176,7 @@ d'URL — un paramètre finit dans un journal d'accès ou un historique.
 | `/dsh-remote/v1/sante` | `GET` | Poignée de main : version du protocole, capacités. Aucune donnée. |
 | `/dsh-remote/v1/sessions` | `GET`, `POST` | Liste des sessions, de la plus récente à la plus ancienne. |
 | `/dsh-remote/v1/espaces` | `GET` | Espaces de travail du registre de l'hôte, **ceux sans session compris**, dans son ordre de création décroissante. |
-| `/dsh-remote/v1/serveurs` | `GET` | Liste des Macs du tailnet, **découverte par l'hôte** — c'est ce qui donne une liste à l'iPhone. |
+| `/dsh-remote/v1/serveurs` | `GET` | Liste des machines du tailnet qui peuvent héberger DSH, **découverte par l'hôte** — c'est ce qui donne une liste à l'iPhone. |
 | `/dsh-remote/v1/session/<id>` | `POST` | Une page du journal d'une session. |
 | `/dsh-remote/v1/session/<id>/prompt` | `POST` | Envoyer un prompt. Reprend la session si elle est froide. |
 | `/dsh-remote/v1/session/<id>/annuler` | `POST` | Interrompre le tour en cours, **file d'attente conservée**. |
@@ -517,11 +517,25 @@ découvre**, et l'application qui **lit** le résultat par une route authentifi�
   peut donner : sur iPhone, l'appareil qui interroge n'est évidemment pas celui qui
   répond.
 - `diagnostic` n'est renseigné que lorsque la liste est vide, et il dit **pourquoi** :
-  binaire introuvable, Tailscale muet, délai dépassé, aucun Mac dans le tailnet. Quatre
-  causes qui ne se corrigent pas de la même façon. Une liste vide sans raison est
+  binaire introuvable, Tailscale muet, délai dépassé, aucune machine dans le tailnet.
+  Quatre causes qui ne se corrigent pas de la même façon. Une liste vide sans raison est
   indébogable.
-- Seules les machines **macOS** sont retenues. Proposer un PC Windows ou un iPhone comme
-  serveur DSH serait une promesse que l'installation ne peut pas tenir.
+- **Seules les machines qui PEUVENT héberger DSH sont retenues** — macOS, Windows,
+  Linux. La règle disait `macOS` seulement, et elle était **fausse** : « proposer un PC
+  Windows ou un iPhone comme serveur DSH serait une promesse que l'installation ne peut
+  pas tenir ». Le propriétaire a relevé la confusion — « il y a un serveur windows qui
+  n'est pas listé, or le serveur DSH est universel non ? c'est juste le remote qui est
+  macOS ou iOS ». DSH est un harness **Node** : il tourne aussi sur Windows (le harness
+  publie un bac à sable Windows ACL) et sur Linux. C'est l'**application** qui est macOS
+  et iOS, pas l'hôte.
+- Ce qui reste écarté, ce sont les systèmes qui **ne peuvent pas exécuter de
+  processus** : iOS, iPadOS, Android, tvOS. Un iPhone ne peut pas héberger DSH. La liste
+  est donc une **liste blanche** — un système inconnu n'est pas proposé — et elle est
+  identique à celle du client (`DecouverteServeurs.systemesQuiHebergent`) : deux listes
+  qui divergeraient feraient apparaître une machine d'un côté et pas de l'autre.
+- **Elle ne promet pas qu'une machine serve DSH** : elle dit qu'elle *pourrait*
+  l'héberger. C'est la sonde du client qui tranche, et une machine qui ne répond pas
+  s'affiche « pas de DSH ».
 
 ### Ce qui a été mesuré, et qui a coûté du temps
 
@@ -703,7 +717,8 @@ limite la surface de casse.
 |---|---|
 | Une route nommée échappe à l'authentification navigateur | `200` sans cookie sur `/dsh-remote-probe/ping` (sonde), là où `/` répond `401` |
 | Le tailnet atteint la route | `200` via le nom MagicDNS du Mac (`tailscale serve`) |
-| L'hôte publie la liste du tailnet | instance neuve : `GET /v1/serveurs` → 3 Macs, `local: true` sur celui qui répond, et **NI** le PC Windows **NI** l'iPhone |
+| L'hôte publie la liste du tailnet | instance neuve : `GET /v1/serveurs` → 3 Macs, `local: true` sur celui qui répond, et **NI** l'iPhone (iOS ne peut pas héberger DSH) |
+| Un PC Windows EST proposé | `analyserTailnet` sur la sortie réelle de `tailscale status --json` : `MiBook` (`OS: windows`) apparaît, l'iPhone (`OS: iOS`) non — règle corrigée le 13 septembre 2026, voir « Découverte des serveurs » |
 | L'hôte publie ses espaces de travail | instance neuve : `GET /v1/espaces` → 7 espaces, du plus récent au plus ancien (`creeLe` décroissant), avec l'appartenance des sessions |
 | La découverte ne lit rien avant l'authentification | sur cette route : `401` sans jeton, `403` avec `Origin`, `405` en `POST` |
 | Le CHEMIN du binaire décide du succès | `/usr/local/bin/tailscale` (lien symbolique) échoue « The current bundleIdentifier is unknown to the registry » ; `/Applications/Tailscale.app/Contents/MacOS/Tailscale` rend l'état complet |
