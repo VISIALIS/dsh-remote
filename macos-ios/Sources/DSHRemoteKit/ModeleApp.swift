@@ -1369,15 +1369,6 @@ public final class ModeleApp {
     if let jetonAmorce { jetonSaisi = jetonAmorce }
   }
 
-  /// Exemple d'adresse à montrer dans le champ vide, selon la plateforme.
-  public var adresseExemple: String {
-    #if os(macOS)
-      return "http://127.0.0.1:3080"
-    #else
-      return "http://mon-mac.mon-tailnet.ts.net"
-    #endif
-  }
-
   /// Vrai si un jeton est disponible, sans jamais le révéler.
   public var jetonDisponible: Bool { !jetonSaisi.isEmpty }
 
@@ -1409,10 +1400,21 @@ public final class ModeleApp {
   ///
   /// La forme est un FAIT VÉRIFIABLE (`randomBytes(32)` encodé en base64url),
   /// pas une supposition : le plugin hôte produit exactement cela.
-  public var jetonBienForme: Bool {
-    jetonSaisi.count == 43 && jetonSaisi.allSatisfy { caractere in
-      caractere.isLetter || caractere.isNumber || caractere == "-" || caractere == "_"
-    }
+  public var jetonBienForme: Bool { ModeleApp.jetonBienForme(jetonSaisi) }
+
+  /// La MÊME règle, en fonction pure d'une chaîne.
+  ///
+  /// POURQUOI ELLE EXISTE SÉPARÉMENT. La feuille « Adresse » juge le jeton
+  /// qu'elle est en train de recevoir, AVANT de l'avoir confié au modèle : elle
+  /// ne peut donc pas interroger `jetonSaisi`, qui décrit encore l'hôte
+  /// précédent. Deux copies de cette règle auraient fini par diverger sur ce
+  /// qu'est un jeton « complet » — et c'est la seule chose qui distingue une
+  /// faute de collage d'un vrai refus du service.
+  public nonisolated static func jetonBienForme(_ valeur: String) -> Bool {
+    valeur.count == 43
+      && valeur.allSatisfy { caractere in
+        caractere.isLetter || caractere.isNumber || caractere == "-" || caractere == "_"
+      }
   }
 
   // MARK: - Jeton

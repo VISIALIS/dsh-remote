@@ -382,8 +382,15 @@ public enum ErreurRemote: Error, CustomStringConvertible {
       // le trousseau ne contient pas de jeton (première installation), il en
       // contient un devenu faux (le coffre du harness a été tourné depuis), ou
       // le jeton a été tronqué au collage.
+      //
+      // LE RENVOI A ÉTÉ CORRIGÉ, ET C'ÉTAIT LE DÉFAUT. Il disait « collez-le
+      // dans Réglages » — une feuille qui ne contient plus AUCUN champ de jeton
+      // depuis que chaque hôte a le sien. Le remède prescrit menait donc à un
+      // écran vide, sur un iPhone neuf où c'était le seul remède écrit. Les deux
+      // endroits qui portent réellement le champ sont nommés, et le premier est
+      // celui qu'on a sous les yeux quand on lit ce message.
       return
-        "jeton refusé (401) — le jeton d'appareil est absent, révoqué ou faux. Recopiez le jeton affiché par le harness, puis collez-le dans Réglages."
+        "jeton refusé (401) — le jeton d'appareil est absent, révoqué ou faux. Recopiez celui qu'affiche le harness, puis collez-le dans le champ « Jeton d'appareil » : sur la page de cette machine, ou dans la feuille « Adresse » quand vous saisissez une adresse à la main."
     case .origineRefusee:
       return "origine refusée (403) — un client natif ne doit jamais envoyer d'en-tête Origin"
     case let .versionIncompatible(recue, supportee):
