@@ -136,11 +136,11 @@ public struct VuePrincipale: View {
       }
       modele.relireEtatTailscale()
       let debutDemarrage = Date()
-      print("[demarrage] debut, adresse=\(modele.adresse)")
+      Trace.siActive("[demarrage] debut, adresse=\(modele.adresse)")
       // UN SEUL point d'entrée : il choisit une machine joignable AVANT de se
       // connecter. `demarrerDecouverte` reste pour le rafraîchissement manuel.
       await modele.demarrer()
-      print("[demarrage] demarrer() : \(Int(Date().timeIntervalSince(debutDemarrage) * 1000)) ms")
+      Trace.siActive("[demarrage] demarrer() : \(Int(Date().timeIntervalSince(debutDemarrage) * 1000)) ms")
       if serveurParArgument, modele.serveurOuvert == nil {
         // `--serveur=macmini` ouvre UNE machine nommée ; `--serveur` seul ouvre
         // celle qui est visée. La forme nommée est ce qui permet de capturer la

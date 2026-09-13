@@ -444,7 +444,7 @@ public final class ModeleApp {
     // affiché pendant qu'on le rafraîchit ; il n'est remis à « inconnu » que
     // lorsqu'il n'y en a jamais eu.
     let debutSonde = Date()
-    print("[sonde] debut : \(candidats.count) candidat(s), deja annulee=\(Task.isCancelled)")
+    Trace.siActive("[sonde] debut : \(candidats.count) candidat(s), deja annulee=\(Task.isCancelled)")
 
     let verdict = await sondeur.interroger(candidats, jeton: jeton)
     // ── UNE SONDE ANNULÉE N'EST PAS UN VERDICT ──────────────────────────────
@@ -459,11 +459,11 @@ public final class ModeleApp {
     // On ne publie donc un résultat que si la sonde est allée au bout.
     let duree = Int(Date().timeIntervalSince(debutSonde) * 1000)
     guard !Task.isCancelled else {
-      print("[sonde] ANNULEE apres \(duree) ms — verdict non publie")
+      Trace.siActive("[sonde] ANNULEE apres \(duree) ms — verdict non publie")
       return
     }
     sonde = .connue(verdict)
-    print(
+    Trace.siActive(
       "[sonde] fin : \(verdict.serventDsh.count) serveur(s) DSH sur \(candidats.count) en \(duree) ms, "
         + "\(verdict.causes.count) cause(s) connue(s)")
   }
@@ -774,10 +774,10 @@ public final class ModeleApp {
     guard hoteEstJoint else { return }
     guard let liste = try? await transport.serveursDeLhote(adresse: adresse, jeton: jetonDeLaCible())
     else {
-      print("[demarrage] liste des serveurs : ECHEC")
+      Trace.siActive("[demarrage] liste des serveurs : ECHEC")
       return
     }
-    print("[demarrage] liste des serveurs : \(liste.serveurs.count)")
+    Trace.siActive("[demarrage] liste des serveurs : \(liste.serveurs.count)")
     appliquerServeursDeLhote(liste, vu: generationDuDepart())
     relireEtatTailscale()
     // On demande à chaque Mac s'il sert DSH, plutôt que de le supposer.
@@ -1560,7 +1560,7 @@ public final class ModeleApp {
       // verte — sinon l'application s'ouvrirait sur une liste de faux rappels.
       self.observerLesFinsDeTour()
     }
-    print("[demarrage] connecter \(adresseVisee) : \(Int(Date().timeIntervalSince(debutConnexion) * 1000)) ms, erreur=\(erreur == nil ? "non" : "OUI")")
+    Trace.siActive("[demarrage] connecter \(adresseVisee) : \(Int(Date().timeIntervalSince(debutConnexion) * 1000)) ms, erreur=\(erreur == nil ? "non" : "OUI")")
     if erreur == nil {
       // La cible a répondu : plus rien ne justifie de basculer ailleurs.
       consigner(nil)

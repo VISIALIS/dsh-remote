@@ -25,6 +25,46 @@ L'application réutilise **exactement** la bibliothèque du tool : les vues ne p
 jamais au réseau, elles observent `ModeleApp`. Remplacer le transport ne demande donc
 aucune retouche d'interface.
 
+### Où vit quoi : cinq pièces, et une seule porte sur le disque
+
+`ModeleApp` portait **2 198 lignes et 66 états** : l'état observable, les transitions,
+l'orchestration réseau, les trois boucles, la persistance, le trousseau et la lecture du
+coffre. Quatre tranches en sont sorties, chacune avec ses tests — et `ModeleApp` fait
+aujourd'hui **1 867 lignes**.
+
+| Fichier | Ce qu'il porte | Ce qu'il ne fait pas |
+|---|---|---|
+| `ModeleApp` | l'état observable, les transitions, les règles qui les entourent | parler HTTP, écrire sur disque, lire le trousseau |
+| `Connexion` | **comment** on parle à une machine : quels appels, quels délais, dans quel ordre | garder un état |
+| `Sonde` | poser LA question (« sers-tu DSH ? ») et rassembler le verdict **et ses causes** | décider s'il faut publier le verdict |
+| `Persistance` | ce qui survit à l'application : adresse, préférences, amorçage, diagnostic | connaître le réseau |
+| `Jeton` | **où** le jeton est gardé (trousseau, mémoire) et **où** on le trouve (coffre) | décider lequel envoyer |
+| `ClientDSH` | le PORT : les sept appels que le modèle utilise réellement | être un miroir de `RemoteClient` |
+
+POURQUOI CES DÉCOUPAGES ONT ÉTÉ FAITS, ET PAS PAR GOÛT. Deux règles de la politique de
+connexion avaient coûté cher sans être vérifiables — un plafond unique de huit secondes qui
+a refusé une connexion valide après **8055 ms**, et l'ordre des deux questions qui décide
+qu'on échoue en cinq secondes ou en trente-cinq. La fabrique de clients s'injecte : les
+tests **voient le délai demandé pour chaque appel**, ce que le réseau ne permettait pas
+d'observer. Ces pièces sont passées de **zéro test à quinze**.
+
+### Voir ce que fait l'application : les traces s'allument à la demande
+
+Une application lancée depuis le Dock n'a pas de terminal, et ses lignes de mesure étaient
+donc écrites dans le vide — ou pire, lues comme du bruit. Elles sont **éteintes par défaut**
+et se rallument d'un mot :
+
+```bash
+DSH_REMOTE_TRACE=1 "/Applications/DSH Remote.app/Contents/MacOS/DSHRemoteMac"
+```
+
+Quatre mesures de cette session en sont venues : le verdict de la sonde (16 à 183 ms), la
+durée d'une connexion (**23,7 s** sur un harness fraîchement redémarré, contre 4,3 s à
+chaud), la liste reçue de l'hôte, et l'oscillation d'adresse entre deux machines — celle qui
+a révélé que « choisi » et « visé » étaient cinq champs écrits par dix-sept endroits.
+
+Vérifié : **0 ligne** sans la variable, les quatre traces avec.
+
 Une seule structure d'interface sert les deux plateformes : `NavigationSplitView`, que
 SwiftUI replie en pile sur iPhone. La seule différence réelle est la provenance du jeton
 — coffre du harness sur le Mac, trousseau sur iPhone — et elle est confinée à `ModeleApp`.
