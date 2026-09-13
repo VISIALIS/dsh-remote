@@ -193,7 +193,20 @@ public struct VuePrincipale: View {
   }
 }
 
-/// Colonne de gauche : Tailscale, les serveurs, puis les sessions groupées.
+/// Colonne de gauche : les serveurs, puis les sessions groupées par espace de travail.
+///
+/// POURQUOI TAILSCALE N'Y A PLUS SA PLACE. La colonne s'ouvrait sur une carte
+/// d'état de Tailscale — « connecté », « installé », « pas installé » — avec son
+/// action. Le propriétaire l'a fait retirer : « la partie Tailscale n'est plus
+/// utile car intégrée dans le détail de la page serveur ». C'est exact : l'état
+/// de CET APPAREIL est la PREMIÈRE étape du parcours de chaque machine, avec la
+/// même mesure et la même action (ouvrir Tailscale, ou l'installer), et elle est
+/// dite là où elle sert — au moment où une machine ne répond pas.
+///
+/// CE QUI ÉTAIT LA SEULE VOIE NE L'EST PLUS : sur un appareil neuf, la carte
+/// portait l'unique bouton « Installer Tailscale ». La page « Ajouter un
+/// serveur » porte la même action, et elle est désormais offerte depuis la liste
+/// VIDE — l'état où Tailscale est justement le suspect (voir `ServeursVides`).
 ///
 /// Liste des sessions, destinée à l'emplacement LATÉRAL d'un `NavigationSplitView`.
 ///
@@ -259,21 +272,6 @@ struct VueListeSessions: View {
     // La List occupe DIRECTEMENT cet emplacement : c'est la condition pour que la
     // sélection pilote la navigation sur iOS.
     List(selection: $selection) {
-      // ── Tailscale ──────────────────────────────────────────────────────────
-      //
-      // POURQUOI EN PREMIER. Sans Tailscale, l'application ne joint rien du
-      // tout — et la cause est INVISIBLE : un tailnet déconnecté ressemble à un
-      // serveur éteint, et l'utilisateur cherche la panne du mauvais côté. La
-      // carte porte donc l'explication ET l'action, avant tout le reste.
-      Section {
-        CarteTailscale(modele: modele)
-          .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 8, trailing: 0))
-          .listRowBackground(Color.clear)
-          .sansSeparateurMac()
-      } header: {
-        EnteteSection("TailScale")
-      }
-
       // ── Serveurs ───────────────────────────────────────────────────────────
       //
       // On choisit une MACHINE, pas une adresse. L'adresse en découle : personne
@@ -287,7 +285,7 @@ struct VueListeSessions: View {
           // « Saisir une adresse » ouvre la SAISIE D'ADRESSE, et non les
           // réglages généraux : c'est une machine qu'on vise, pas un réglage de
           // l'application.
-          ServeursVides(modele: modele) { adresseOuverte = true }
+          ServeursVides(modele: modele, surAdresse: { adresseOuverte = true }, surAjout: surAjout)
             .sansSeparateurMac()
         } else {
           CarrouselServeurs(
@@ -394,10 +392,18 @@ struct VueListeSessions: View {
           }
         }
       } header: {
-        // « Workspaces », comme la version web : c'est ce que la section liste,
-        // et le nombre de sessions reste visible à côté.
+        // « ESPACES DE TRAVAIL », ET NON « Workspaces ». Le titre avait été
+        // recopié de l'interface web pour que les deux se répondent ; le
+        // propriétaire a tranché : « et en français, Workspaces = Espaces de
+        // travail ». La RÈGLE #1 du dépôt le demandait déjà — le reste de
+        // l'application est en français, et un titre anglais au milieu se lit
+        // comme un terme du protocole, ce qu'il n'est pas : « Workspaces » ne
+        // nomme ici qu'un dossier de travail.
+        //
+        // Le protocole, lui, garde son nom : `/v1/espaces` est déjà français, et
+        // `workspaceRegistry` reste l'API du harness.
         EnteteSection(
-          "Workspaces",
+          "Espaces de travail",
           detail: "\(modele.sessionsFiltrees.count) session\(modele.sessionsFiltrees.count > 1 ? "s" : "")")
       }
     }
@@ -500,145 +506,6 @@ struct EnteteSection: View {
       if let detail {
         Text(detail).foregroundStyle(.secondary)
       }
-    }
-  }
-}
-
-// MARK: - Tailscale
-
-/// La carte d'état de Tailscale : icône, titre, raison d'être, action.
-///
-/// La carte ENTIÈRE est la cible, avec un chevron : c'est la convention iOS pour
-/// « cette ligne mène quelque part ». Le verbe de l'action est écrit dans la
-/// description, pour qu'aucun appui ne soit un pari sur ce qui va s'ouvrir.
-///
-/// POURQUOI PAS UN BOUTON TEXTE. Deux dispositions ont été essayées sur le
-/// prototype et écartées POUR UNE RAISON MESURÉE À L'ÉCRAN : un bouton pleine
-/// largeur sous la carte (60 points de hauteur pour redire ce que la carte
-/// venait de dire, et plus aucune session visible), puis un bouton capsule à
-/// droite du titre (« Tailscale est connecté » se cassait sur deux lignes).
-///
-/// UN PIÈGE DE `Link` : sa teinte s'applique à TOUT son contenu. Dans l'état
-/// « à installer », le titre et la description viraient au bleu du système, et
-/// la carte se lisait comme une phrase cliquable au lieu d'un avertissement.
-/// Chaque texte porte donc explicitement sa couleur, et la teinte ne colore que
-/// le chevron — qui est l'affordance.
-struct CarteTailscale: View {
-  @Bindable var modele: ModeleApp
-
-  private var etat: EtatTailscale { modele.etatTailscale }
-
-  var body: some View {
-    Button {
-      switch etat {
-      case .absent:
-        // Seul cas où l'on ouvre Tailscale : quand il n'est pas INSTALLÉ, le
-        // lien mène à l'App Store, et un appui sans effet serait un mensonge.
-        if !modele.ouvrirTailscale() {
-          modele.signaler(
-            "L'App Store n'a pas pu être ouvert. Cherchez « Tailscale » à la main.")
-        }
-      case .installe:
-        // L'APPUI N'OUVRE PAS TAILSCALE, ET C'EST UN DÉFAUT CORRIGÉ.
-        //
-        // `tailscale://` fonctionne — mais son gestionnaire, dans l'application
-        // Tailscale, déclenche un flux d'ENREGISTREMENT D'APPAREIL. Sur l'iPhone
-        // du propriétaire, il a affiché « Could not sign device : unable to
-        // verify deeplink » : notre bouton jetait l'utilisateur dans un
-        // cul-de-sac d'une autre application. L'appui relit donc l'état, et la
-        // carte dit quoi faire.
-        modele.relireEtatTailscale()
-        Task { await modele.synchroniserServeurs() }
-      case .connecte:
-        modele.relireEtatTailscale()
-        Task { await modele.synchroniserServeurs() }
-      }
-    } label: {
-      contenu
-    }
-    .buttonStyle(.plain)
-    .tint(teinte)
-  }
-
-  private var contenu: some View {
-    HStack(spacing: 12) {
-      // L'ICÔNE EST CENTRÉE VERTICALEMENT SUR TOUTE LA CARTE, et ce n'est pas
-      // cosmétique : sans le `maxHeight: .infinity`, SwiftUI la centrait sur sa
-      // seule ligne, qui est plus courte que la description — l'icône
-      // descendait donc d'une dizaine de points, et le dessin du bouton
-      // « Rafraîchir » ne tombait plus à la même hauteur que celui des serveurs.
-      // Défaut vu sur deux captures du Mac.
-      Image(systemName: symbole)
-        .font(.system(size: 28, weight: .semibold))
-        .foregroundStyle(teinte)
-        .frame(width: 34, height: 68)
-      VStack(alignment: .leading, spacing: 3) {
-        Text(titre)
-          .font(.headline)
-          .foregroundStyle(Color.primary)
-        Text(detail)
-          .font(.footnote)
-          .foregroundStyle(Color.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      Spacer(minLength: 4)
-      Image(systemName: "chevron.right")
-        .font(.footnote.weight(.semibold))
-    }
-    .padding(14)
-    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
-    .overlay {
-      RoundedRectangle(cornerRadius: 16)
-        .strokeBorder(teinte.opacity(0.25), lineWidth: 1)
-    }
-  }
-
-  private var teinte: Color {
-    switch etat {
-    case .connecte: return .green
-    case .installe: return .orange
-    case .absent: return .blue
-    }
-  }
-
-  private var symbole: String {
-    switch etat {
-    case .connecte: return "checkmark.seal.fill"
-    case .installe: return "arrow.up.forward.app"
-    case .absent: return "arrow.down.circle"
-    }
-  }
-
-  private var titre: String {
-    switch etat {
-    case .connecte: return "Tailscale est connecté"
-    case .installe: return "Tailscale est installé"
-    case .absent: return "Tailscale n'est pas installé"
-    }
-  }
-
-  private var detail: String {
-    switch etat {
-    case .absent:
-      return
-        "Touchez pour l'installer : c'est lui qui relie cet appareil au Mac, sans câble ni configuration réseau."
-    case .installe:
-      // On dit QUOI FAIRE plutôt que d'ouvrir une autre application de force :
-      // c'est la leçon du deep link qui échouait.
-      return
-        "Ouvrez Tailscale depuis vos apps et connectez-vous : sans le tailnet, aucun Mac n'est joignable. Touchez ici pour relire l'état."
-    case .connecte:
-      // L'état « connecté » ne dépend plus d'un serveur en ligne : il vient de
-      // l'adresse de tailnet portée par l'appareil. Il faut donc distinguer le
-      // cas où aucun Mac ne publie DSH — sinon la carte annoncerait « 0 Mac
-      // répond » comme si c'était une panne de Tailscale.
-      let enLigne = modele.serveurs.filter(\.enLigne).count
-      if enLigne == 0 {
-        return
-          "Cet appareil est bien sur le tailnet. Touchez pour chercher les Macs qui publient DSH — la liste peut être vide si aucun n'est allumé."
-      }
-      return
-        "Touchez pour vérifier : \(enLigne) Mac\(enLigne > 1 ? "s" : "") répond\(enLigne > 1 ? "ent" : "") sur le tailnet."
     }
   }
 }
@@ -948,10 +815,21 @@ struct ContenuAjouter: View {
 /// distincte de celle d'une machine.
 struct PageAjoutServeur: Hashable {}
 
-/// Ce qu'on voit quand aucun Mac n'a été trouvé : la cause ET l'action.
+/// Ce qu'on voit quand aucun Mac n'a été trouvé : la cause, ET les voies qui en sortent.
+///
+/// POURQUOI « AJOUTER UN SERVEUR » EST ICI. La page d'ajout est le seul endroit
+/// qui liste le travail à faire pour qu'un Mac devienne un serveur — dont
+/// l'installation de Tailscale, quand il manque. Or elle n'était atteignable que
+/// par la vignette du carrousel… qui ne s'affiche PAS quand la liste est vide :
+/// l'appareil neuf, celui qui a le plus besoin des quatre étapes, n'y avait donc
+/// aucun accès. C'était déjà un trou ; le retrait de la carte Tailscale l'aurait
+/// rendu visible, puisque c'est elle qui portait le bouton « Installer ».
 struct ServeursVides: View {
   let modele: ModeleApp
-  let ouvrirReglages: () -> Void
+  /// Ouvre la saisie manuelle d'une adresse.
+  let surAdresse: () -> Void
+  /// Ouvre la page « Ajouter un serveur ».
+  let surAjout: () -> Void
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -959,14 +837,42 @@ struct ServeursVides: View {
         .font(.callout)
         .foregroundStyle(.orange)
         .fixedSize(horizontal: false, vertical: true)
-      HStack(spacing: 12) {
+
+      // LES VOIES SORTENT DE L'IMPASSE, dans l'ordre où elles servent : la page
+      // qui EXPLIQUE (elle marche sans rien savoir de la machine), la saisie
+      // d'une adresse connue, puis la recherche.
+      //
+      // Elles sont empilées et non alignées : trois libellés côte à côte ne
+      // tiennent pas sur un iPhone, et la colonne latérale y est plus étroite
+      // encore qu'ailleurs.
+      VStack(alignment: .leading, spacing: 8) {
+        #if os(iOS)
+          // Même mécanique que la vignette « Ajouter » du carrousel : sur iPhone,
+          // la page s'EMPILE.
+          NavigationLink(value: PageAjoutServeur()) {
+            Label("Ajouter un serveur", systemImage: "plus.square.dashed")
+              .font(.callout)
+          }
+          .buttonStyle(.borderedProminent)
+          .simultaneousGesture(TapGesture().onEnded { surAjout() })
+        #else
+          Button {
+            surAjout()
+          } label: {
+            Label("Ajouter un serveur", systemImage: "plus.square.dashed")
+              .font(.callout)
+          }
+          .buttonStyle(.borderedProminent)
+        #endif
+
         Button {
-          ouvrirReglages()
+          surAdresse()
         } label: {
           Label("Saisir une adresse", systemImage: "keyboard")
             .font(.callout)
         }
         .buttonStyle(.bordered)
+
         // Le bouton n'apparaît que là où il peut agir : sur iPhone, la
         // découverte locale est impossible, et un bouton sans effet est un
         // mensonge d'interface.

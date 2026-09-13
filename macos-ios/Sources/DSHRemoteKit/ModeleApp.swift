@@ -780,8 +780,8 @@ public final class ModeleApp {
         // processus lancé avant la connexion : on ne l'écrase pas.
         guard self.sourceServeurs != .hote else { return }
         self.appliquerServeursDuTailnet(trouvees, diagnostic: raison)
-        // La liste vient d'arriver : c'est le moment de dire si le tailnet
-        // fonctionne, et non seulement si Tailscale est installé.
+        // La liste vient d'arriver : c'est le moment de refaire les constats
+        // locaux sur Tailscale, qui décident de la première étape du parcours.
         self.relireEtatTailscale()
         // La sonde ne part PAS d'ici : à cet instant la liste vient d'être
         // posée, mais la vue n'a pas encore été réévaluée. C'est
@@ -1122,16 +1122,14 @@ public final class ModeleApp {
 
   // MARK: - Tailscale
 
-  /// État de Tailscale, relu à la demande et jamais deviné.
-  public private(set) var etatTailscale: EtatTailscale = .absent
-
   /// CET APPAREIL est-il sur le tailnet ? Une CONSTATATION : il porte une adresse
   /// dans `100.64.0.0/10`.
   ///
-  /// POURQUOI CE N'EST PAS `etatTailscale == .connecte`. Cet état-là se contente
-  /// d'un serveur en ligne comme preuve indirecte — et un serveur en ligne peut
+  /// POURQUOI CE N'EST PAS « un serveur est en ligne ». Un serveur en ligne peut
   /// venir de la liste publiée par un AUTRE hôte, qui ne dit rien de cet
-  /// appareil-ci. La première étape du parcours mérite la mesure directe.
+  /// appareil-ci ; et un Mac éteint ne dit rien de Tailscale. La première étape
+  /// du parcours mérite la mesure directe.
+  ///
   /// `nil` TANT QU'ON N'A PAS MESURÉ, et ce n'est pas un détail : un `false` par
   /// défaut affichait « à faire » pour une étape que personne n'avait constatée.
   /// Constaté sur une capture, où l'ancre `--page-seule` court-circuite le
@@ -1146,42 +1144,35 @@ public final class ModeleApp {
 
   /// Relit l'état de Tailscale.
   ///
-  /// TROIS SOURCES, ET ELLES NE DISENT PAS LA MÊME CHOSE :
+  /// DEUX CONSTATATIONS, ET AUCUNE DÉDUCTION :
   ///
-  ///   1. l'application Tailscale répond-elle à son schéma d'URL ? C'est le
-  ///      seul test d'installation possible sur iOS, qui ne publie pas la liste
-  ///      des applications installées ;
+  ///   1. l'application Tailscale répond-elle à son schéma d'URL ? C'est le seul
+  ///      test d'installation possible sur iOS, qui ne publie pas la liste des
+  ///      applications installées ;
   ///   2. CET APPAREIL porte-t-il une adresse `100.64.0.0/10` ? C'est la plage
   ///      des adresses de tailnet : sa présence prouve que Tailscale est
-  ///      CONNECTÉ, sans rien ouvrir et sans dépendre d'un serveur. Ce test
-  ///      remplace l'ancien critère « un serveur répond », qui laissait la carte
-  ///      proposer « Ouvrir » — et ce bouton déclenchait le flux
-  ///      d'enregistrement d'appareil de Tailscale, qui échouait ;
-  ///   3. au moins un serveur est-il en ligne ? C'est ce qui se voit dans la
-  ///      liste, mais cela ne dit rien de l'état de Tailscale : le Mac peut être
-  ///      éteint alors que le tailnet fonctionne.
+  ///      CONNECTÉ, sans rien ouvrir et sans dépendre d'un serveur.
+  ///
+  /// Un troisième état vivait ici — « l'application est là, mais aucun serveur ne
+  /// répond » —, et il est parti avec la CARTE qui seule le lisait : ce que ce
+  /// cas décrivait n'était pas l'état de Tailscale, mais celui de la liste des
+  /// Macs, que le panneau latéral montre déjà (`resumeServeurs`, la légende de
+  /// chaque vignette).
   public func relireEtatTailscale() {
-    // LES DEUX CONSTATATIONS SONT RETENUES, et pas seulement l'état de la carte :
-    // le parcours d'un serveur a besoin de savoir si CET APPAREIL est sur le
-    // tailnet (première étape) et si l'application y est installée (pour dire
-    // quoi faire). Les recalculer dans la vue les ferait diverger de la carte.
+    // LES DEUX CONSTATATIONS SONT RETENUES, et elles servent toutes les deux : le
+    // parcours d'un serveur a besoin de savoir si CET APPAREIL est sur le tailnet
+    // (première étape) et si l'application y est installée (pour dire quoi faire
+    // quand elle ne l'est pas). Les recalculer dans la vue les ferait diverger.
     tailscaleInstalle = DetectionTailscale.applicationInstallee()
     tailnetDeLAppareil = DetectionTailscale.adresseDeTailnetPresente()
-    guard tailscaleInstalle else {
-      etatTailscale = .absent
-      return
-    }
-    if tailnetDeLAppareil == true {
-      etatTailscale = .connecte
-      return
-    }
-    etatTailscale = serveurs.contains(where: \.enLigne) ? .connecte : .installe
   }
 
-  /// Exécute l'action de la carte : ouvrir Tailscale, ou son magasin.
+  /// Ouvre Tailscale, ou son magasin quand l'application manque.
   ///
-  /// Rend `false` quand rien n'a pu être ouvert. L'appelant le DIT : un appui
-  /// qui ne produit rien doit s'expliquer, pas rester muet.
+  /// Appelé par la PREMIÈRE étape du parcours d'un serveur — c'est le seul
+  /// endroit qui propose l'action, depuis que la carte du panneau latéral est
+  /// partie. Rend `false` quand rien n'a pu être ouvert : l'appelant le DIT, car
+  /// un appui qui ne produit rien doit s'expliquer, pas rester muet.
   @discardableResult
   public func ouvrirTailscale() -> Bool {
     DetectionTailscale.ouvrir()
@@ -1489,8 +1480,10 @@ public final class ModeleApp {
     // Les espaces venaient du serveur oublié : les garder afficherait l'arbre
     // d'une instance qu'on vient de quitter.
     espacesHote = []
-    // Sans serveur, plus rien ne prouve que le tailnet fonctionne : on retombe
-    // sur « installé », pas sur un état connecté hérité du serveur oublié.
+    // Ce qui reste à relire est une MESURE locale — l'appareil porte-t-il une
+    // adresse de tailnet, l'application est-elle installée —, et elle ne doit
+    // rien au serveur qu'on vient d'oublier. On la refait donc, plutôt que de
+    // garder un constat fait à un autre moment.
     relireEtatTailscale()
     sessions = []
     journal = []

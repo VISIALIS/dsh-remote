@@ -6,51 +6,26 @@ import Foundation
   import AppKit
 #endif
 
-/// État de Tailscale tel que l'application peut le CONNAÎTRE, sans jamais
-/// interroger le réseau.
-///
-/// POURQUOI CE TYPE EXISTE. La carte d'accueil propose trois actions
-/// différentes — installer, ouvrir, vérifier — et se tromper d'action est un
-/// mensonge d'interface : envoyer quelqu'un sur l'App Store pour une
-/// application déjà installée, ou lui proposer « Ouvrir » quand le tailnet est
-/// déjà connecté. Or iOS ne donne AUCUNE API qui réponde à « Tailscale
-/// est-il installé ? » : le système ne publie pas la liste des applications.
-///
-/// Deux faits seulement sont vérifiables depuis une application :
-///
-///   1. **Le schéma d'URL répond-il ?** `canOpenURL("tailscale://")` est le seul
-///      test d'installation possible. Il exige que `tailscale` soit déclaré
-///      dans `LSApplicationQueriesSchemes` de l'Info.plist : sans cette
-///      déclaration, la réponse est TOUJOURS `false` et l'application
-///      proposerait d'installer un Tailscale déjà présent. C'est un piège
-///      silencieux — `canOpenURL` ne lève pas, il rend `false`.
-///   2. **Un serveur du tailnet répond-il ?** C'est ce qui distingue « installé »
-///      de « connecté », et cela ne se lit nulle part ailleurs.
-public enum EtatTailscale: Equatable, Sendable {
-  /// L'application Tailscale ne répond pas à son schéma d'URL.
-  case absent
-  /// Elle est là, mais aucun serveur du tailnet n'a encore répondu.
-  ///
-  /// C'est un état d'ATTENTE, pas un diagnostic : Tailscale peut être connecté
-  /// et le Mac éteint. La carte le dit, et propose d'ouvrir l'application.
-  case installe
-  /// Au moins un serveur du tailnet est en ligne : le tailnet fonctionne.
-  case connecte
-
-  /// Vrai si l'application Tailscale est présente sur CET appareil.
-  public var installe: Bool { self != .absent }
-
-  /// Libellé de l'action proposée — le verbe que l'appui tiendra.
-  public var action: String {
-    switch self {
-    case .absent: return "Installer"
-    case .installe: return "Ouvrir"
-    case .connecte: return "Vérifier"
-    }
-  }
-}
-
 /// Détection de Tailscale, sans processus ni requête sortante.
+///
+/// POURQUOI DEUX CONSTATATIONS, ET NON UN ÉTAT À TROIS CAS. Un `EtatTailscale`
+/// vivait ici — absent / installé / connecté — pour choisir l'action de la carte
+/// d'accueil. Cette carte a été RETIRÉE : l'état de l'appareil est la première
+/// étape du parcours de chaque serveur, et le panneau latéral n'a plus à le
+/// répéter (voir `VueListeSessions`). Le type est parti avec son seul lecteur.
+///
+/// Ce qui reste est exactement ce dont le parcours a besoin :
+///
+///   1. **L'application est-elle là ?** `canOpenURL("tailscale://")` est le seul
+///      test d'installation possible sur iOS, qui ne publie pas la liste des
+///      applications installées. Il exige que `tailscale` soit déclaré dans
+///      `LSApplicationQueriesSchemes` de l'Info.plist : sans cette déclaration,
+///      la réponse est TOUJOURS `false`, et l'application proposerait d'installer
+///      un Tailscale déjà présent. C'est un piège silencieux — `canOpenURL` ne
+///      lève pas, il rend `false`.
+///   2. **Cet appareil est-il sur le tailnet ?** Une adresse `100.64.0.0/10` sur
+///      une de ses interfaces. C'est une MESURE, pas une déduction : elle ne
+///      dépend ni d'un serveur allumé, ni de la liste des Macs.
 ///
 /// La fonction est `@MainActor` parce que `canOpenURL` l'est de fait : elle
 /// touche l'état du système et n'est pas libre de tout contexte.

@@ -443,9 +443,9 @@ un plugin derrière un port fermé.
 
 **ARTEFACT DE SIMULATEUR, ÉCRIT POUR NE PAS TROMPER.** Dans le simulateur iOS,
 l'appareil partage les interfaces du Mac : l'étape 1 y apparaît donc toujours
-franchie, même quand la carte dit « Tailscale n'est pas installé ». Sur un vrai
-iPhone sans Tailscale, elle passe bien à « à franchir » — c'est la logique
-qu'éprouvent les tests, pas la capture.
+franchie, alors que Tailscale n'y est pas installé. Sur un vrai iPhone sans
+Tailscale, elle passe bien à « à franchir » — c'est la logique qu'éprouvent les
+tests, pas la capture.
 
 **CE QU'ON MONTRE QUAND ON NE SAIT PAS.** Trois états par étape : franchie, à
 franchir, ou **inconnue**. Une machine hors ligne ne dit rien de son port : on
@@ -666,6 +666,43 @@ POURQUOI CE DÉPLACEMENT. Le panneau latéral portait l'état des machines **et*
 diagnostic entier, jusqu'aux commandes destinées à l'autre Mac. Le message le plus long
 prenait la place des sessions, et il fallait faire défiler pour voir son propre travail.
 Le diagnostic appartient à la MACHINE : il vit donc sur sa page.
+
+##### Tailscale a quitté le panneau latéral, et ce qui restait a été rétabli
+
+La colonne s'ouvrait sur une **carte d'état de Tailscale** — « connecté », « installé »,
+« pas installé » — avec son action. Constat du propriétaire : « la partie Tailscale n'est
+plus utile car intégrée dans le détail de la page serveur ». C'est exact, et c'est la
+conséquence directe du déplacement précédent : l'état de CET APPAREIL est la **première
+étape du parcours de chaque machine**, mesurée deux fois plutôt qu'une (`getifaddrs`,
+plage `100.64.0.0/10`), et l'action — « Ouvrir Tailscale », « Installer Tailscale » — y est
+rendue au même endroit, **au moment où une machine ne répond pas**. La carte, elle,
+occupait le haut de la colonne en permanence, y compris quand tout allait bien.
+
+**CE QUI A FAILLI SE PERDRE, ET QUI ÉTAIT DÉJÀ CASSÉ.** Sur un appareil neuf, la carte
+portait l'unique bouton « Installer Tailscale ». Or la page qui donne les quatre étapes
+n'était atteignable que par la vignette « Ajouter » du carrousel… **qui ne s'affiche pas
+quand la liste est vide** : l'appareil qui a le plus besoin des quatre étapes — celui qui
+n'a rien — n'y avait aucun accès. Le trou existait avant le retrait ; il serait devenu
+visible après. La liste vide offre donc maintenant **« Ajouter un serveur »**, en premier,
+au-dessus de « Saisir une adresse ».
+
+Le type `EtatTailscale` (absent / installé / connecté) est parti avec la carte, son seul
+lecteur, et `relireEtatTailscale()` ne fait plus que les **deux constatations** dont le
+parcours a besoin : l'application est-elle là, et cet appareil est-il sur le tailnet.
+L'état « installé mais aucun serveur en ligne » ne décrivait d'ailleurs pas Tailscale : il
+décrivait la liste des Macs, que le panneau montre déjà (« 1 joignable », la légende de
+chaque vignette).
+
+Vérifié par capture : macOS sans le bloc (la colonne commence aux serveurs) et **iPhone
+neuf** — conteneur vidé, application réinstallée — qui affiche la liste vide avec
+« Ajouter un serveur ».
+
+**« ESPACES DE TRAVAIL », ET NON « WORKSPACES ».** Le titre avait été recopié de
+l'interface web pour que les deux se répondent ; le propriétaire a tranché : « et en
+français, Workspaces = Espaces de travail ». La RÈGLE #1 du dépôt le demandait déjà, et
+« Workspaces » se lisait comme un terme du protocole alors qu'il ne nomme qu'un dossier de
+travail. Le protocole, lui, garde ses noms : `/v1/espaces` était déjà français, et
+`workspaceRegistry` reste l'API du harness.
 
 ##### La page est structurée en quatre bandes, et rien ne s'y répète
 
@@ -1686,6 +1723,8 @@ inactive.
 | **Les étapes suivantes sont grisées** | capture iPhone : frontière (étape 2) avec sa méthode, étapes 3 et 4 grisées avec un cadenas et « après l'étape N », sans détail |
 | **La page d'un serveur est structurée en quatre bandes** | 3 captures macOS (`--page-seule`) : prêt, pas de DSH (MacMini), hors ligne — l'état est dit UNE fois, l'action proposée peut aboutir, les réglages sont repliés |
 | **Les mots de l'état sont partagés** | 2 tests sur `EtatMachine` : la vignette abrège, la page dit la phrase entière, et les deux portent le même ton ; la conclusion suit l'état |
+| **Tailscale a quitté le panneau latéral** | capture macOS (la colonne commence aux serveurs) et capture iPhone NEUF — conteneur vidé : la liste vide offre « Ajouter un serveur », qui porte l'étape 1 et son bouton d'installation |
+| **« Espaces de travail », et non « Workspaces »** | captures macOS et iPhone : le titre de la section est en français, comme le reste de l'interface |
 | **Un jeton n'est accusé que s'il a été présenté** | test : `.incomplete` (« hors ligne ») ne met PAS `jetonRefuse` ; `.jetonInvalide` et un `401` le mettent |
 | **La page « Ajouter un serveur »** | capture iPhone (`--ajout --page-seule`) : étape 1 constatée, étapes 2-4 à faire avec leurs commandes, chacune disant sur quelle machine |
 | **Le parcours d'un serveur, en trois étapes** | captures iPhone : MacMini (étapes 1-3 vertes, 4 à faire + méthode) et un Mac hors ligne (étapes 2 à faire, suivantes « à vérifier ») ; 8 tests |
