@@ -1471,6 +1471,17 @@ neuf puisse ouvrir —, dans une section qui lui est propre :
 | Feuille « Adresse » | saisie manuelle d'une adresse, donc sur un appareil neuf |
 | Page d'une machine | la machine est déjà dans la liste : c'est son jeton, et lui seul |
 
+**Le champ d'une page est celui de la machine AFFICHÉE.** Une page de serveur peut
+s'ouvrir sur un hôte auquel on n'est **pas** connecté — c'est même le cas qui donne
+son sens au remède d'installation. Or la lecture, l'écriture et l'effacement
+passaient tous par la cible : le champ annonçait « Jeton d'appareil de cet hôte »
+et affichait le jeton d'une autre machine, pouvait envoyer vers la cible un jeton
+collé sur la fiche d'un autre, et effaçait le jeton de la cible depuis la page d'une
+autre. Tout passe désormais par l'adresse de la page, et `jetonSaisi` — la valeur la
+plus fraîche, mais qui ne décrit **que** la cible — n'est plus lu pour une autre
+machine. Le rappel du `401` ne s'affiche que sur la page de la machine visée : un
+`401` parle de la connexion en cours, pas d'une fiche qu'on consulte.
+
 Deux détails d'implémentation, et le second est une règle de sécurité :
 
 - le champ de la feuille est **local** (`@State`) et n'est engagé qu'à l'appui sur
@@ -1509,13 +1520,81 @@ Trois décisions d'interface, chacune née d'un défaut réel :
    une coupure réseau **ne crée pas de second message**. Un texte différent, ou un
    envoi déjà acquitté, tire un identifiant neuf.
 
+**Le brouillon appartient à SA session.** Le texte en cours était un champ unique :
+écrire dans une session, changer de session, et le texte suivait — il pouvait donc
+partir vers une autre. Les brouillons sont rangés par couple hôte/session, comme
+les jetons. Revenir à une session retrouve son texte ; changer d'hôte n'en hérite
+pas. Conséquence pour le bouton d'envoi : « vide » veut dire « rien qui puisse
+partir », pas « zéro caractère ».
+
+**L'acquittement ne détruit plus la frappe concurrente.** Le champ reste modifiable
+pendant l'envoi, et l'acquittement faisait `brouillon = ""` après l'attente réseau :
+ce que l'utilisateur écrivait pendant que son message partait était perdu. Ce qui
+est retiré est maintenant ce qui est **parti** — le champ est vidé s'il contient
+encore exactement le texte envoyé, le préfixe envoyé disparaît si la frappe a
+continué, et **rien** n'est touché si le texte a divergé. Deviner quoi garder
+reviendrait à effacer un texte que personne n'a envoyé.
+
+L'acquittement et le refus sont rangés **avec** leur session : un envoi acquitté
+après un changement de session ne s'affiche plus sous une session qui n'a rien
+envoyé. Et changer de session n'efface plus le texte — seulement les messages.
+
 Le mode d'envoi est écrit en clair — **« À la suite »** ou **« Tout de suite
 (interrompt) »** — plutôt que caché derrière une icône : la différence entre tenir
 la file et s'insérer dans un tour en cours ne se devine pas.
 
+**Interrompre un tour se confirme.** Le glyphe rouge était collé au bouton d'envoi,
+à huit points : viser l'un et toucher l'autre arrêtait un travail en cours. Un trait
+les sépare, et la boîte de confirmation dit ce qui est conservé — le travail déjà
+fait et la file d'attente.
+
 L'annulation **conserve la file d'attente** : ce qui n'a pas encore été traité
 reste en attente. Une session froide est refusée (`404`) — il n'y a rien à
 interrompre.
+
+### Le journal dit la vérité sur sa session
+
+Trois défauts, tous visibles à l'écran et aucun à la compilation :
+
+| Défaut | Ce qui a changé |
+|---|---|
+| Une lecture **échouée** laissait l'ancien journal sous le titre de la nouvelle session | le journal vide d'abord, puis se remplit : on lit, on a lu, on a échoué — trois états distincts. `journalPour` porte la session, `appliquerJournal` refuse tout ce qui ne la désigne pas (une réponse en retard ne peut plus s'appliquer), et la vue filtre ce qu'elle affiche |
+| L'échec était **invisible** — le voile de chargement était conditionné à `journal.isEmpty`, donc jamais montré quand un ancien journal traînait | l'échec est nommé POUR CETTE SESSION (la connexion peut aller bien : c'est la lecture de CE journal qui a échoué), avec sa cause et un bouton « Réessayer » |
+| Le journal ne **suivait pas sa fin** | il s'ouvre sur son dernier événement et y reste quand le contenu grandit ; si l'on remonte pour lire, il compte les événements arrivés (« 3 nouveaux événements ») et ramène en bas d'un appui |
+
+Le « suis-je en bas ? » est **mesuré** par `onScrollGeometryChange` quand la
+plateforme sait le dire (iOS 18 / macOS 15), avec un repli déclaré pour iOS 17 : il
+répond « oui », donc le journal suit — le comportement d'un journal qu'on vient
+d'ouvrir, et le moins surprenant quand on ne peut pas mesurer.
+
+**« Développer » suit la troncature réelle.** Le bouton n'apparaissait qu'au-delà de
+120 caractères alors que la ligne en montre QUATRE : un message de six lignes
+courtes — quatre-vingt-dix caractères — était tronqué sans aucun moyen de lire la
+suite. Le seuil compte les lignes, avec une estimation prudente de la largeur
+(40 caractères par ligne, la mesure d'un iPhone étroit) : mieux vaut offrir le
+bouton pour rien que de cacher un texte.
+
+### Ce qui attend remonte en tête
+
+« Qui m'attend ? » est la question qu'on se pose en ouvrant l'application, et la
+réponse était enterrée : il fallait déplier dix espaces et lire des pastilles de
+huit points pour trouver la session bloquée sur une décision.
+
+- une section **« Demande votre attention »** réunit, en tête de liste, les sessions
+  qui attendent une décision ou dont la fin n'a pas été lue. Le tri est celui de
+  l'urgence : une session bloquée *sur vous* passe avant une fin de tour qui vous
+  informe ; à urgence égale, la plus récente d'abord. La session reste aussi à sa
+  place dans son projet — la section précède l'arbre, elle ne le remplace pas ;
+- l'en-tête d'un espace replié dit ce qui y attend — « 6 · 1 en attente », en orange
+  quand quelque chose attend, le nombre seul sinon. Replier un dossier ne cache plus
+  l'information qui comptait ;
+- **les listes vides se disent** : « Aucune session » explique quoi faire, et une
+  recherche sans résultat nomme le terme cherché.
+
+Les trois lectures — pastille, tri d'urgence, compteurs — passent par
+`EtatSession.de`, la règle unique de l'état d'une session listée : un compteur qui
+compterait autrement que ce que la liste montre serait un second vocabulaire pour un
+seul fait.
 
 ### La couche d'adaptation : trois manques, corrigés
 
@@ -1875,6 +1954,11 @@ inactive.
 | **Le remède d'un 401 mène à un champ qui existe** | test : le message ne dit plus « Réglages » (qui n'a plus de champ de jeton) et nomme les deux écrans qui en ont un |
 | **Les étapes grisées restent lisibles** | capture iPhone (`--ajout --page-seule`) : étapes 3 et 4 grisées avec cadenas ET « Voir la méthode » dépliable ; test : aucune étape non franchie d'une liste de travail n'est sans méthode |
 | **Les états sont dits en mots, pas seulement en couleur** | 6 tests : les cinq états de session ont cinq libellés distincts, la ligne annonce titre + état + matière, et une machine en ligne sans DSH n'est plus annoncée « en ligne » |
+| **Le brouillon ne suit plus d'une session à l'autre** | 8 tests : cloisonnement par session et par hôte, changement de session qui ne perd plus le texte, et les trois cas de l'acquittement (vidé / préfixe retiré / texte divergent intact) |
+| **Le jeton d'une page est celui de la machine affichée** | 5 tests sur le cloisonnement par hôte + 1 sur la reconnaissance de la boucle locale — celui-ci a attrapé la forme entre crochets de l'hôte IPv6 |
+| **Un journal honnête** | 7 tests : une réponse en retard ne s'applique pas à la session affichée, l'erreur de lecture ne se montre que sous SA session, et « Développer » apparaît sur six lignes courtes comme sur une ligne de 400 caractères |
+| **Ce qui attend remonte en tête** | 5 tests sur les compteurs d'un espace, leur pluriel, et l'ordre d'urgence ; capture iPhone du nouvel état vide « Aucune session » |
+| **Les listes vides se disent** | capture iPhone : « Espaces de travail » vide affiche « Aucune session » et quoi faire, au lieu d'un « 0 session » qui laisse croire à une panne |
 | **Les Réglages ne contiennent plus rien d'une machine** | capture iPhone : une phrase qui l'explique, puis les deux interrupteurs de sessions (préférences d'affichage, communes à toutes les machines) |
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |

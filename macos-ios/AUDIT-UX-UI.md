@@ -372,9 +372,9 @@ Le plan du § 5 a été exécuté. Ce qui a changé, et la preuve qui l'accompag
 | A3 — Réduire les animations ignoré | l'indicateur relit le réglage et s'arrête net ; les quatre carrés restent affichés | `EtatSession.anime` éprouvé ; le rendu demande un appareil |
 | A4 — cibles tactiles | `cibleTactile()` — 44 pt et `contentShape` — sur copier, coller, effacer un jeton, envoyer, interrompre, effacer la recherche | un seul modificateur, donc une seule règle |
 
-**Ce qui reste ouvert** : A1 (Dynamic Type complet), A5, A6, tout P1 (brouillon par
-session, jeton lié à la machine affichée, journal honnête, états vides), P2 (gestes,
-macOS), P3, P4 — et les vérifications du § 8, qui demandent un appareil.
+**Ce qui reste ouvert** : A1 (Dynamic Type complet), A5, A6, P2 (gestes, macOS), P3,
+P4 — et les vérifications du § 8, qui demandent un appareil. Le P1 est traité au
+§ 11.
 
 **Une correction apportée au rapport lui-même.** Le § 3.2 proposait de conseiller
 l'**IP littérale** (`http://100.x.y.z:3080`), en s'appuyant sur une section du README
@@ -384,3 +384,27 @@ n'écoute que sur la boucle locale, et rien ne répond sur l'IP du tailnet avec 
 retenu est donc le second du § 3.2 — HTTPS pour supprimer le besoin d'exception —, plus
 un conseil qui s'adapte au paquet au lieu d'affirmer.
 
+
+---
+
+## 11. État après les correctifs P1 — la confiance
+
+Le P1 du § 5 est exécuté. Ce qui a changé, et ce qui l'éprouve :
+
+| Point du P1 | Ce qui a été fait | Preuve |
+|---|---|---|
+| E1 — le brouillon commun à toutes les sessions | brouillons rangés par couple hôte/session, comme les jetons ; « vide » veut dire « rien qui puisse partir », pas « zéro caractère » | 8 tests : cloisonnement par session et par hôte, et la régression du changement de session qui perdait le texte |
+| E2 — l'acquittement détruisait la frappe concurrente | ce qui est retiré est ce qui est **parti** : champ vidé s'il est inchangé, préfixe retiré si la frappe a continué, rien touché s'il a divergé. Acquittement et refus rangés avec leur session | les mêmes 8 tests |
+| E3 — le jeton agit sur la cible, pas sur la machine affichée | lecture, écriture, effacement et collage passent par `serveur.adresse` ; `jetonSaisi` ne décrit que la cible ; le rappel du `401` ne s'affiche que sur la page visée ; l'hôte local se reconnaît par son adresse (mesuré : la découverte macOS laisse `estLocal` faux) | 5 tests de cloisonnement + 1 sur la boucle locale, qui a attrapé la forme entre crochets de l'hôte IPv6 |
+| F2 — le journal ne suit pas sa fin | ouverture sur le dernier événement, suivi mesuré (`onScrollGeometryChange`, repli déclaré pour iOS 17), compteur « N nouveaux événements » et retour en bas d'un appui | le défilement demande un appareil |
+| E4 — l'ancien journal sous le nouveau titre | `journalPour` porte la session, vidage AVANT la requête, réponse en retard refusée, échec nommé pour cette session avec sa cause et « Réessayer » | 3 tests |
+| E5 — « Développer » dépendait de 120 caractères | le seuil compte les **lignes** (> 4), avec une estimation prudente de la largeur (40 caractères par ligne) | 4 tests, dont les six lignes courtes du constat |
+| B8 — interruption sans confirmation | trait de séparation entre les deux glyphes, cible de 44 pt, boîte de confirmation qui dit ce qui est conservé | le geste demande un appareil |
+| B6 — l'actionnable est enterré | section « Demande votre attention » en tête, tri par urgence, compteur par état dans les en-têtes d'espace | 5 tests |
+| B5 — pas d'état vide | « Aucune session » qui explique quoi faire, et `ContentUnavailableView.search` qui nomme le terme cherché | capture iPhone |
+
+**Ce qui n'est pas affirmé** : le défilement réel du journal (ouverture en bas, suivi
+d'un flux vivant, bouton de retour), la boîte de confirmation de l'interruption, et la
+section « Demande votre attention » **peuplée** — celle-ci demande une session qui
+attend réellement une décision. Les trois restent à voir sur un appareil, comme le § 8
+le prévoyait.
