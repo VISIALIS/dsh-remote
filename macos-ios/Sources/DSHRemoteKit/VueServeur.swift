@@ -231,9 +231,22 @@ struct VueServeur: View {
 
   // MARK: - Diagnostic
 
+  /// La cause, POUR CETTE MACHINE.
+  private var cause: CauseSansDsh? { modele.causeSansDsh(serveur) }
+
   @ViewBuilder
   private var diagnostic: some View {
-    if let erreur = modele.erreur {
+    // ── LE DIAGNOSTIC APPARTIENT À LA MACHINE, PAS À LA CONNEXION ───────────
+    //
+    // Défaut corrigé : le bloc lisait l'erreur de la CONNEXION EN COURS. Sur la
+    // page de MacMini alors que l'application était connectée ailleurs, il n'y
+    // avait donc AUCUN remède ; et connecté à MacMini, il pouvait en donner un
+    // qui parlait d'une autre cause. La cause vient maintenant de ce qu'on a
+    // mesuré SUR cette machine — la sonde pour celles qu'on ne vise pas, la
+    // connexion pour celle qu'on vise.
+    if cause != nil {
+      remede
+    } else if let erreur = modele.erreur, modele.serveurVise?.id == serveur.id {
       VStack(alignment: .leading, spacing: 12) {
         // LE PAVÉ TECHNIQUE N'EST PAS AFFICHÉ QUAND LA CAUSE EST CONNUE.
         //
@@ -256,50 +269,108 @@ struct VueServeur: View {
         // ligne, pas qu'ils publient DSH. En choisir un qui ne publie rien donne
         // `-1004`, et le propriétaire cherche alors la panne du côté de son
         // jeton — observé en vrai.
-        if modele.serveurSansDsh { remede }
       }
     }
   }
 
-  /// Ce qu'il faut faire SUR CETTE MACHINE, avec les commandes à recopier.
+  /// Ce qu'il faut faire SUR CETTE MACHINE, avec ce qui se recopie.
+  ///
+  /// DEUX CAUSES, DEUX DÉMARCHES — et les confondre envoie chercher la panne au
+  /// mauvais endroit. Mesuré sur MacMini : le port 80 était publié (la racine
+  /// répondait « dsh web authentication required ») mais `/dsh-remote/v1/sante`
+  /// rendait **404** — le plugin n'y était pas chargé. Dans ce cas, donner les
+  /// commandes Tailscale serait à côté : le tailnet et la publication vont bien.
   private var remede: some View {
     VStack(alignment: .leading, spacing: 8) {
-      // LE FAIT DIFFÈRE SELON LE CAS, ET LE TEXTE LE DIT.
-      //
-      // Port vide (`-1004`) : la machine répond, rien n'écoute. Port occupé par
-      // autre chose (un `404` de `tailscale serve`, mesuré sur MacMini) : la
-      // machine répond, mais pas DSH Remote. Écrire « aucun service ne répond »
-      // dans le second cas serait faux — quelque chose a répondu.
+      // `pluginAbsent` : la machine répond, mais pas DSH Remote — c'est le cas
+      // mesuré sur MacMini. Sinon, rien n'écoute sur le port 80.
+      if cause == .pluginAbsent {
+        demarcheDininstallation
+      } else {
+        demarcheDePublication
+      }
+    }
+    .padding(12)
+    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+  }
+
+  /// LE CAS MESURÉ : la machine répond, mais DSH Remote n'y est pas installé.
+  ///
+  /// POURQUOI UNE DÉMARCHE ET PAS UNE PHRASE. « Le plugin n'est pas chargé » ne
+  /// dit pas quoi faire : le charger demande de déposer le dépôt sur la machine,
+  /// de le DÉCLARER dans le profil du harness, puis de RELANCER — et le
+  /// redémarrage n'est pas une formalité, puisque le code d'un plugin n'est pas
+  /// rechargé à chaud (mesuré, et écrit dans le README du plugin).
+  private var demarcheDininstallation: some View {
+    VStack(alignment: .leading, spacing: 8) {
       Label(
-        modele.portOccupeParAutreChose
-          ? "Ce Mac répond, mais pas DSH Remote : le plugin `dsh-remote` n'y est pas chargé (ou `tailscale serve` n'y publie pas l'instance)."
-          : "Aucun service n'écoute sur le port 80 de ce Mac. Le tailnet, lui, fonctionne : la machine répond.",
+        "Le plugin `dsh-remote` n'est pas installé sur ce Mac. DSH y tourne et son port 80 est publié — mais rien n'y expose DSH Remote.",
+        systemImage: "puzzlepiece.extension"
+      )
+      .font(.footnote)
+      .foregroundStyle(.orange)
+      .fixedSize(horizontal: false, vertical: true)
+
+      Text("1. Avoir le dépôt `dsh-plugins` sur ce Mac, et y prendre `plugins/dsh-remote`.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      Text("2. Déclarer le plugin dans `~/.dsh/profiles/web/cordis.patch.yml` :")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      // LE CHEMIN EST UN ESPACE RÉSERVÉ, ET C'EST DIT : sur l'autre Mac, le dépôt
+      // n'est pas au même endroit. Un chemin d'exemple recopié tel quel ferait
+      // échouer le chargement sans dire pourquoi.
+      LigneCommande(
+        commande: """
+          - insert:
+              - id: dsh-remote
+                name: 'file:///CHEMIN/DU/DEPOT/plugins/dsh-remote/dynamic/host.js'
+                config:
+                  journaliser: true
+          """,
+        libelle: "bloc")
+
+      Text("3. Relancer le harness sur ce Mac — ici `dsh web`. Le CODE d'un plugin n'est pas rechargé à chaud : sans redémarrage, l'ancien processus continue de répondre.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      LigneCommande(commande: "dsh web")
+
+      // LA VÉRIFICATION EST FOURNIE, ET ELLE MARCHE SANS JETON : mesuré, la route
+      // répond 401 quand aucun jeton n'est présenté, et 200 quand il l'est. Les
+      // deux prouvent que le plugin est chargé — ce qui est la question ici.
+      Text("Vérifiez sur ce Mac : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal).")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      LigneCommande(
+        commande: "curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3080/dsh-remote/v1/sante")
+
+      Text("Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de ce Mac ne vaudra pas pour un autre.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  /// L'AUTRE CAS : rien n'écoute sur le port 80 — c'est la publication qui manque.
+  private var demarcheDePublication: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Label(
+        "Aucun service n'écoute sur le port 80 de ce Mac. Le tailnet, lui, fonctionne : la machine répond.",
         systemImage: "network.slash"
       )
       .font(.footnote)
       .foregroundStyle(.orange)
       .fixedSize(horizontal: false, vertical: true)
 
-      // LES COMMANDES SE COPIENT, ELLES NE SE LISENT PAS.
-      //
-      // Elles sont destinées à être tapées sur l'AUTRE Mac — celui qui ne publie
-      // rien. Les afficher en texte monospace obligeait à les sélectionner à la
-      // main, sur un téléphone, au milieu d'un paragraphe.
-      //
-      // LA COMMANDE A ÉTÉ CORRIGÉE, ET VÉRIFIÉE : l'ancienne
-      // (`tailscale serve --bg 80 http://127.0.0.1:3080`) était fausse — `--bg`
-      // ne prend pas de port, et `serve` n'accepte qu'une cible. Celle-ci a été
-      // passée sur cette machine et `tailscale serve status --json` est resté
-      // IDENTIQUE avant et après.
-      //
-      // LE PLUGIN FAIT PARTIE DE LA RÉPONSE, ET C'EST MESURÉ AINSI : sur MacMini,
-      // le port 80 était bien publié (la racine répondait « dsh web
-      // authentication required ») mais `/dsh-remote/v1/sante` rendait `404` —
-      // le plugin n'y était pas chargé.
-      Text("Le plugin `dsh-remote` doit aussi y être chargé (voir le README du plugin) : publier DSH ne suffit pas.")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+      // LES COMMANDES SE COPIENT, ELLES NE SE LISENT PAS : elles sont destinées à
+      // être tapées sur l'AUTRE Mac. La commande a été vérifiée sur cette
+      // machine — `tailscale serve status --json` est resté IDENTIQUE avant et
+      // après.
       Text("Sur ce Mac-là, publiez l'instance DSH :")
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -308,12 +379,14 @@ struct VueServeur: View {
         .font(.caption)
         .foregroundStyle(.secondary)
       LigneCommande(commande: "tailscale serve status")
+      Text("Le plugin `dsh-remote` doit AUSSI y être chargé : publier DSH ne suffit pas. S'il manque, la page de ce Mac donnera sa démarche d'installation.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
       Text("Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de ce Mac ne vaudra pas pour un autre.")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
     }
-    .padding(12)
-    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
   }
 }

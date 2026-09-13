@@ -88,3 +88,19 @@ func effacerUnSeul() {
   modele.choisir(autreDistant)
   #expect(modele.jetonSaisi == jetonDeux, "effacer l'un ne doit pas toucher l'autre")
 }
+
+@MainActor
+@Test("Le jeton DU CHAMP est utilisé, même sans liste de machines ni gardien")
+func leJetonDuChampCompte() {
+  // RÉGRESSION MESURÉE, ET CORRIGÉE. En rendant le jeton « par hôte », la
+  // fonction qui choisit le jeton à envoyer ne consultait plus le champ : ni le
+  // gardien ni le coffre ne connaissaient la valeur, et l'application démarrait
+  // en 0 ms sans rien tenter — « aucun jeton » alors que le champ en contenait
+  // un. C'est le cas d'un fichier d'amorçage (simulateur) et de toute saisie
+  // qui n'a pas encore été soumise.
+  let modele = ModeleApp(gardien: GardienEnMemoire())
+  modele.definirAdresse("http://127.0.0.1:59999")
+  modele.jetonSaisi = jetonUn
+
+  #expect(modele.jetonDeLaCible() == jetonUn)
+}

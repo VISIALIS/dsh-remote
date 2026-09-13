@@ -327,6 +327,23 @@ public struct Sante: Sendable, Decodable {
 }
 
 /// Erreur de transport ou de protocole, avec assez de contexte pour agir.
+/// POURQUOI UNE MACHINE NE SERT PAS DSH — la cause, pas le symptôme.
+///
+/// POURQUOI CE TYPE EXISTE. La page d'une machine affichait le remède de la
+/// CONNEXION EN COURS, pas celui de la machine REGARDÉE : sur la page de
+/// MacMini, quand l'application était connectée ailleurs, il n'y avait donc
+/// aucun remède — et quand elle y était connectée, le remède parlait de la
+/// mauvaise cause si les deux différaient. La cause est maintenant une valeur
+/// attachée à la machine, tirée de ce qu'on a MESURÉ sur elle.
+public enum CauseSansDsh: Equatable, Sendable {
+  /// La machine répond, mais pas DSH Remote : le plugin n'y est pas chargé.
+  /// C'est le cas mesuré sur MacMini — port 80 publié, `/dsh-remote/v1/sante`
+  /// en `404`.
+  case pluginAbsent
+  /// Rien n'écoute sur le port 80 : c'est la publication qui manque.
+  case rienNEcoute
+}
+
 public enum ErreurRemote: Error, CustomStringConvertible {
   case jetonRefuse
   case origineRefusee
@@ -343,6 +360,19 @@ public enum ErreurRemote: Error, CustomStringConvertible {
   case adresseInvalide(String)
   case transport(String)
   case decodage(String)
+
+  /// La CAUSE de l'absence de DSH, quand cette erreur l'explique.
+  ///
+  /// Rend `nil` pour les erreurs qui ne disent rien de l'installation : un jeton
+  /// refusé, une origine refusée ou une version incompatible signifient que le
+  /// service EST là. Ne pas conclure est ici la bonne réponse.
+  public var causeSansDsh: CauseSansDsh? {
+    switch self {
+    case .reponseInattendue: return .pluginAbsent
+    case let .transport(detail): return detail.contains("-1004") ? .rienNEcoute : nil
+    default: return nil
+    }
+  }
 
   public var description: String {
     switch self {

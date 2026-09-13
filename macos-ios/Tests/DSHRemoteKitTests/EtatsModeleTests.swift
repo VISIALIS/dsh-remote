@@ -35,7 +35,7 @@ func verdictConservePendantLeRafraichissement() {
   // l'ancien verdict reste lisible. Il était remis à zéro à chaque essai, et les
   // légendes repartaient à « vérification… » toutes les quinze secondes.
   let modele = ModeleApp()
-  modele.remplacerSondePourEssai(.connue([enLigne.id]))
+  modele.remplacerSondePourEssai(.connue(VerdictSonde(serventDsh: [enLigne.id])))
 
   #expect(modele.sertDsh(enLigne) == true)
   // Une sonde qui démarre sans verdict connu passe par « en cours »…
@@ -52,7 +52,7 @@ func verdictVide() {
   // « Personne ne sert DSH » est une conclusion, et elle doit être distinguable
   // de « on ne sait pas » — sinon une liste sans serveur restait en attente.
   let modele = ModeleApp()
-  modele.remplacerSondePourEssai(.connue([]))
+  modele.remplacerSondePourEssai(.connue(VerdictSonde()))
   #expect(modele.sertDsh(enLigne) == false)
 }
 

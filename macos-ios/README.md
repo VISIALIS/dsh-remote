@@ -302,6 +302,54 @@ liste arrivée en retard n'écrase pas la nouvelle. Écrits, ils ont d'ailleurs 
 erreur de ma part : le résumé d'une session est **aplati** dans l'objet par le plugin, et ma
 fixture l'imbriquait — l'identifiant décodé était « (inconnu) ».
 
+#### Quand la machine répond mais n'a pas le plugin : le dire, et donner la démarche
+
+Demande du propriétaire : « il faut dire dans remote que le plugin n'est pas installé et
+donner la démarche ». Deux choses, donc — un CONSTAT nommé, et une PROCÉDURE.
+
+Le cas mesuré sur MacMini : son port 80 est publié (la racine répond « dsh web authentication
+required »), mais `/dsh-remote/v1/sante` rend **404**. Ce n'est ni le tailnet, ni
+`tailscale serve`, ni le jeton : c'est le plugin qui n'y est pas chargé. La page l'annonce
+ainsi, puis donne les trois étapes :
+
+1. avoir le dépôt `dsh-plugins` sur ce Mac, et y prendre `plugins/dsh-remote` ;
+2. le **déclarer** dans `~/.dsh/profiles/web/cordis.patch.yml` — le bloc YAML se copie d'un
+   appui, avec `CHEMIN/DU/DEPOT` en espace réservé (sur l'autre Mac, le dépôt n'est pas au
+   même endroit, et un chemin d'exemple recopié tel quel échouerait sans dire pourquoi) ;
+3. **relancer** le harness — ici `dsh web`. Le code d'un plugin n'est pas rechargé à chaud :
+   sans redémarrage, l'ancien processus continue de répondre.
+
+Et la vérification qui marche **sans jeton** : `curl` sur `/dsh-remote/v1/sante` rend **401**
+quand aucun jeton n'est présenté, **200** quand il l'est. Les deux prouvent que le plugin est
+chargé — ce qui est la question. Mesuré sur cette machine.
+
+##### Le diagnostic appartient à la MACHINE, pas à la connexion
+
+DÉFAUT TROUVÉ EN VÉRIFIANT. Le bloc de diagnostic lisait l'erreur de la **connexion en
+cours** : sur la page de MacMini alors que l'application était connectée ailleurs, il n'y
+avait donc **aucun remède** — et connecté à MacMini, il pouvait en afficher un qui parlait
+d'une autre cause. La cause est maintenant une valeur attachée à la machine :
+
+- la **sonde** retient, pour chaque machine qui ne sert pas DSH, la cause observée (`404` →
+  plugin absent, `-1004` → rien n'écoute) ;
+- la page rend cette cause-là pour la machine qu'elle montre, et la mesure de la connexion
+  seulement si c'est bien elle qu'on visait.
+
+`--serveur=<fragment>` est l'ancre de vérification correspondante : elle ouvre la page d'une
+machine **nommée**, ce qui est le seul moyen de capturer le cas d'une machine à laquelle on
+n'est PAS connecté. Elle a d'ailleurs révélé un second défaut : avec `--page-seule`, le
+panneau latéral n'existe pas, donc l'ancre `--serveur=` qui y vivait ne s'exécutait jamais, et
+la capture montrait le MacBook Air quand on avait demandé MacMini. La résolution de la machine
+est désormais **la même** pour les deux formes.
+
+##### Une régression que j'ai introduite, et que le test tient
+
+En rendant le jeton « par hôte », j'ai fait que `jetonDeLaCible()` ne consultait plus le champ
+de saisie — seulement le gardien et le coffre. Or le champ porte la valeur la PLUS FRAÎCHE.
+Résultat mesuré : l'application démarrait en **0 ms** sans rien tenter, avec « aucun jeton »
+alors que le champ en contenait un. Le champ est désormais consulté en premier, et un test le
+verrouille (« le jeton du champ est utilisé, même sans liste de machines ni gardien »).
+
 #### Le jeton est gardé PAR HÔTE — et le coffre local ne parle que de la machine locale
 
 Le jeton d'appareil est tiré par **chaque** hôte (mesuré). Le client n'en gardait pourtant
@@ -1368,6 +1416,8 @@ inactive.
 | **Les Réglages ne contiennent plus rien d'une machine** | capture iPhone : une phrase qui l'explique, puis les deux interrupteurs de sessions (préférences d'affichage, communes à toutes les machines) |
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
+| **La page dit que le plugin manque, et donne la démarche** | capture iPhone de la page de MacMini (alors que l'app vise une autre machine) : constat nommé, 3 étapes, bloc `cordis.patch.yml` copiable, vérification `curl` |
+| **Le diagnostic appartient à la machine** | `404` observé par la sonde → procédure d'installation ; `-1004` → procédure de publication ; vérifié par capture sur une machine NON visée |
 | **Une réponse en vol n'écrit pas dans une autre cible** | 2 tests : la bascule invalide le vol, une liste en retard est refusée ; 87 tests au total |
 | **Le jeton est par hôte** | 3 tests : chaque hôte rappelle le sien, celui de l'hôte local n'est pas recopié, effacer n'efface que le sien |
 | **Deux délais, mesurés** | `sante` 1,6-4,1 ms → plafond 5 s ; liste 4,06 s à froid → plafond 30 s ; un plafond unique de 8 s avait refusé une connexion valide à 8055 ms |

@@ -22,6 +22,10 @@ import SwiftUI
 /// ajouté, pas d'indentation : une commande collée dans un terminal s'exécute.
 struct LigneCommande: View {
   let commande: String
+  /// Ce qu'on appelle ce qu'on copie — « commande », « bloc ». Sert aux
+  /// libellés d'accessibilité : annoncer « copier la commande » pour un bloc de
+  /// configuration serait faux.
+  var libelle: String = "commande"
 
   @State private var copie = false
 
@@ -39,8 +43,8 @@ struct LigneCommande: View {
           .font(.caption)
       }
       .buttonStyle(.borderless)
-      .help(copie ? "Commande copiée" : "Copier la commande")
-      .accessibilityLabel(copie ? "Commande copiée" : "Copier la commande \(commande)")
+      .help(copie ? "\(libelle.capitalisee) copiée" : "Copier \(libelle)")
+      .accessibilityLabel(copie ? "\(libelle.capitalisee) copiée" : "Copier \(libelle)")
     }
     .padding(.horizontal, 8)
     .padding(.vertical, 6)
@@ -59,6 +63,14 @@ struct LigneCommande: View {
       try? await Task.sleep(nanoseconds: 1_800_000_000)
       copie = false
     }
+  }
+}
+
+extension String {
+  /// « commande » → « Commande », pour les libellés.
+  fileprivate var capitalisee: String {
+    guard let premiere = first else { return self }
+    return premiere.uppercased() + dropFirst()
   }
 }
 

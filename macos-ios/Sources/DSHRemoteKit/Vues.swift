@@ -24,6 +24,33 @@ public struct VuePrincipale: View {
   /// premier serveur au lancement, ce qui permet de la CAPTURER sans piloter la
   /// souris. Même rôle que `--reglages` et `--deplier` : aucun effet sans
   /// l'argument, jamais transmis par un lancement depuis le Dock.
+  /// Le nom demandé par `--serveur=<fragment>`, s'il y en a un.
+  /// La machine désignée par `--serveur=<fragment>`, si elle existe dans la liste.
+  private var machineNommee: ServeurMac? {
+    guard let demande = VuePrincipale.nomDeMachineDemande else { return nil }
+    return modele.serveurs.first { machine in
+      machine.nom.lowercased().contains(demande) || machine.nomDNS.lowercased().contains(demande)
+    }
+  }
+
+  /// La machine que `--page-seule` affiche.
+  ///
+  /// ELLE RÉSOUT ELLE-MÊME, ET C'EST UNE CORRECTION : avec `--page-seule`, le
+  /// panneau latéral n'est pas rendu — donc l'ancre `--serveur=` qui y vit ne
+  /// s'exécutait jamais, et la page affichée était toujours celle du serveur
+  /// visé. La capture montrait le MacBook Air quand on avait demandé MacMini.
+  private var machineDeLaPageSeule: ServeurMac? {
+    machineNommee ?? modele.serveurChoisi ?? modele.serveurs.first
+  }
+
+  private static var nomDeMachineDemande: String? {
+    for argument in ProcessInfo.processInfo.arguments where argument.hasPrefix("--serveur=") {
+      let valeur = argument.dropFirst("--serveur=".count).lowercased()
+      if !valeur.isEmpty { return valeur }
+    }
+    return nil
+  }
+
   private var serveurParArgument: Bool {
     ProcessInfo.processInfo.arguments.contains("--serveur")
   }
@@ -59,7 +86,7 @@ public struct VuePrincipale: View {
 
   public var body: some View {
     Group {
-      if pageSeuleParArgument, let serveur = modele.serveurChoisi ?? modele.serveurs.first {
+      if pageSeuleParArgument, let serveur = machineDeLaPageSeule {
         // Ancre de vérification : la page seule, pour la capturer.
         NavigationStack {
           VueServeur(modele: modele, serveur: serveur) { reglagesOuverts = true }
@@ -114,10 +141,12 @@ public struct VuePrincipale: View {
       // connecter. `demarrerDecouverte` reste pour le rafraîchissement manuel.
       await modele.demarrer()
       print("[demarrage] demarrer() : \(Int(Date().timeIntervalSince(debutDemarrage) * 1000)) ms")
-      if serveurParArgument, modele.serveurOuvert == nil,
-        let premier = modele.serveurChoisi ?? modele.serveurs.first
-      {
-        modele.ouvrirPage(premier)
+      if serveurParArgument, modele.serveurOuvert == nil {
+        // `--serveur=macmini` ouvre UNE machine nommée ; `--serveur` seul ouvre
+        // celle qui est visée. La forme nommée est ce qui permet de capturer la
+        // page d'une machine à laquelle on n'est PAS connecté — le cas même du
+        // remède d'installation, qui n'a de sens que là.
+        if let cible = machineDeLaPageSeule { modele.ouvrirPage(cible) }
       }
     }
     // ── POURQUOI UNE ERREUR FORCE LA PAGE DU SERVEUR ───────────────────────
