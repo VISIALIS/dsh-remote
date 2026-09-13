@@ -30,6 +30,13 @@ struct ParcoursDesEtapes<Methode: View>: View {
 
   let etapes: [EtapesServeur.Etape]
   var mode: Mode = .diagnostic
+  /// Dessiner la carte (fond et rembourrage), ou seulement les lignes ?
+  ///
+  /// POURQUOI CE DRAPEAU. Sur la page d'un serveur, la CONCLUSION du diagnostic
+  /// appartient au même bloc que les constats : c'est une seule carte, et c'est
+  /// donc la page qui la dessine. La page « Ajouter un serveur », elle, n'a pas
+  /// de conclusion à y mettre et garde sa carte ici.
+  var encadre: Bool = true
   /// La méthode à afficher pour une étape non franchie.
   ///
   /// Elle reçoit l'ÉTAPE, et pas seulement son numéro : la page a besoin de son
@@ -38,13 +45,21 @@ struct ParcoursDesEtapes<Methode: View>: View {
   @ViewBuilder var methode: (EtapesServeur.Etape) -> Methode
 
   var body: some View {
+    if encadre {
+      contenu
+        .padding(12)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+    } else {
+      contenu
+    }
+  }
+
+  private var contenu: some View {
     VStack(alignment: .leading, spacing: 14) {
       ForEach(etapes, id: \.numero) { etape in
         ligne(etape)
       }
     }
-    .padding(12)
-    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
   }
 
   private func ligne(_ etape: EtapesServeur.Etape) -> some View {
@@ -80,7 +95,25 @@ struct ParcoursDesEtapes<Methode: View>: View {
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
-        methode(etape)
+        // LA MÉTHODE DE LA FRONTIÈRE EST OUVERTE ; CELLES DES AUTRES SE DÉPLIENT.
+        //
+        // POURQUOI. Un diagnostic DIT tout, mais il n'OUTILLE qu'une chose à la
+        // fois : trois jeux de commandes à l'écran noient celle qui est
+        // exécutable maintenant, et les deux autres supposent de toute façon la
+        // première franchie. Les constats restent donc tous visibles — c'est la
+        // règle, et elle ne bouge pas —, seule la marche à suivre se replie.
+        if mode == .diagnostic, etape.numero != EtapesServeur.premiereAEtapesFranchir(etapes) {
+          DisclosureGroup {
+            methode(etape)
+              .padding(.top, 6)
+          } label: {
+            Text("Méthode")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        } else {
+          methode(etape)
+        }
       }
     }
   }

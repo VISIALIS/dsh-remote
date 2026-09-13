@@ -455,8 +455,10 @@ qu'avec la méthode complète. De même, une erreur qui n'explique rien (délai,
 ne fait pas conclure que le port est fermé.
 
 **ON N'OUTILLE QUE CE QUI RESTE.** Une étape franchie n'affiche ni explication ni
-commande : elles noieraient celle qui bloque. Chaque étape non franchie porte sa
-méthode, avec les commandes qui se copient d'un appui.
+commande : elles noieraient celle qui bloque. Et parmi les étapes non franchies, seule la
+PREMIÈRE porte sa méthode dépliée : c'est la seule exécutable maintenant, les autres
+supposent la précédente franchie. Leur marche à suivre existe toujours, derrière
+« Méthode » — trois jeux de commandes à l'écran noyaient celle qui compte.
 
 **UNE EXPLICATION SUIT SON ÉTAT.** Les quatre explications étaient écrites au présent de
 l'étape FRANCHIE, et les deux copies de la liste — appareil hors tailnet, machine jugée —
@@ -587,7 +589,11 @@ des champs **corrélés** dont les combinaisons invalides étaient représentabl
 
 ```swift
 enum EtatSonde { case inconnue, enCours, connue(Set<String>) }
-enum EtatConnexion { case inconnue, enCours, jointe(Sante, reponses: Int), echec(ErreurRemote), incomplete(String) }
+enum EtatConnexion {
+  case inconnue, enCours, jointe(Sante, reponses: Int), echec(ErreurRemote)
+  case incomplete(String)     // on n'a pas tenté, et CE N'EST PAS le jeton
+  case jetonInvalide(String)  // le jeton manque, est tronqué, ou a été refusé
+}
 ```
 
 - **`EtatSonde`** rend inécrivable le « verdict vide + drapeau vrai » qui a produit le faux
@@ -596,8 +602,15 @@ enum EtatConnexion { case inconnue, enCours, jointe(Sante, reponses: Int), echec
 - **`EtatConnexion`** remplace cinq champs. Le texte de l'erreur est **dérivé** de son type
   (`erreur`, `erreurType`), `etatAdresse` est une **vue** de la connexion, `capacites` et
   `serveurJoint` aussi : ils ne peuvent plus dire autre chose qu'elle. Le cas
-  `.incomplete` distingue ce qui empêche de TENTER (jeton absent ou tronqué) d'un échec
-  réseau — le remède n'est pas au même endroit.
+  `.incomplete` distingue ce qui empêche de TENTER d'un échec réseau — le remède n'est pas au
+  même endroit.
+- **`.jetonInvalide` A ÉTÉ SÉPARÉ D'`.incomplete`, ET C'EST UN DÉFAUT MESURÉ.** Un seul cas
+  portait les deux, et `jetonRefuse` le prenait en bloc : la page d'un Mac **éteint**
+  affichait donc « Le service a refusé ce jeton. Collez celui de CET hôte » — deux
+  avertissements de jeton en tête d'une page qui n'avait jamais rien joint, dont le remède
+  était faux. Constaté sur capture. `.incomplete` garde ce qui n'est pas le jeton (« cette
+  machine est hors ligne », une action locale en échec), `.jetonInvalide` ce qui se répare
+  dans le champ. Un état qui mélange deux causes produit un remède faux.
 
 **5 tests d'invariants** (77 au total) tiennent ces propriétés sans réseau, via deux crochets
 compilés en `DEBUG` seulement : une sonde inconnue ne conclut pas, un verdict connu survit au
@@ -645,7 +658,7 @@ la transition, ce texte faux partait en production.
 #### La page d'un serveur, et ce qu'elle retire du panneau latéral
 
 **Toucher une icône de machine ouvre SA page** dans la colonne de droite : son état, son
-adresse, ses actions (Se connecter, Tester), **le jeton d'appareil**, et — quand la machine
+adresse, son action, **le jeton d'appareil**, et — quand la machine
 ne publie rien — le diagnostic complet avec les commandes à recopier. Le panneau latéral
 garde ce qui se lit d'un coup d'œil : la pastille, la légende, le nom.
 
@@ -653,6 +666,73 @@ POURQUOI CE DÉPLACEMENT. Le panneau latéral portait l'état des machines **et*
 diagnostic entier, jusqu'aux commandes destinées à l'autre Mac. Le message le plus long
 prenait la place des sessions, et il fallait faire défiler pour voir son propre travail.
 Le diagnostic appartient à la MACHINE : il vit donc sur sa page.
+
+##### La page est structurée en quatre bandes, et rien ne s'y répète
+
+Constat du propriétaire : « la page détail des serveurs est moche, tu peux faire quelque
+chose ? À commencer par mieux structurer. » Le constat était juste, et la cause était
+**structurelle**, pas esthétique : six blocs de même poids s'empilaient dans l'ordre où le
+code avait grandi — en-tête, adresse, jeton, interrupteurs, bandeau d'erreur, diagnostic —,
+si bien que le DIAGNOSTIC, raison d'être de la page, se lisait en dernier : sur un iPhone,
+il fallait faire défiler le jeton d'un hôte et deux réglages pour savoir ce qui n'allait
+pas. Le même fait y était dit quatre fois (« hors ligne » sous le titre, dans le bandeau
+rouge, dans le résumé du parcours, et par le titre de l'étape 2), et deux avertissements de
+jeton passaient avant toute information sur la machine — dont un **faux**, puisque l'état
+« hors ligne » était pris pour un jeton refusé (voir `.jetonInvalide`).
+
+L'ordre suit maintenant les questions qu'on se pose, et rien d'autre :
+
+| Bande | Contenu | Ce qu'elle règle |
+|---|---|---|
+| 1. Identité | nom, **une** pastille d'état, adresse copiable, **une** action | l'état se dit une fois, et l'action proposée peut aboutir |
+| 2. Diagnostic | la conclusion, puis les quatre constats | la démonstration, avec **une seule** méthode dépliée : celle de l'étape qui bloque |
+| 3. Réglages de cette machine | jeton, suivi, filtre — **repliés** | chaque réglage reste à l'endroit qui le rend vrai, sans s'interposer entre l'adresse et le verdict |
+| 4. Détail technique | l'erreur brute — **repliée**, et seulement si rien ne l'explique | une phrase en français n'est pas un détail technique |
+
+**UNE SEULE PASTILLE, ET UN SEUL VOCABULAIRE.** La page disait l'état de la machine à
+quatre endroits, et avec d'autres mots que le panneau latéral — « hors ligne sur le
+tailnet » d'un côté, « hors ligne » de l'autre ; « en ligne · pas de DSH » ici, « pas de
+DSH » là. Les mots vivent maintenant dans `EtatMachine`, que les deux endroits emploient :
+la vignette ABRÈGE (« DSH · hôte ») parce qu'elle tient en 68 points, la page dit la phrase
+entière (« DSH · hôte interrogé »), mais ce sont **les mêmes mots** — et 2 tests
+l'éprouvent. La conclusion du diagnostic est calculée là aussi (`EtatMachine.conclusion`) :
+elle décidait de trois choses à la fois — texte, symbole, gravité —, et une fonction pure
+se teste, une vue non.
+
+**L'ACTION PRINCIPALE CHANGE AVEC L'ÉTAT.** « Se connecter » était offert à toutes les
+machines, y compris celles dont on sait déjà qu'elles ne répondront pas : le garde-fou
+local évitait la requête, mais le seul résultat possible restait un message disant que la
+machine est éteinte. La page propose donc « Choisir <un autre Mac> » quand la machine est
+hors ligne et qu'une autre répond — sinon « Rafraîchir la liste » —, « Se connecter » ou
+« Reconnecter » quand DSH y répond, « Revérifier » quand il reste à savoir. **Le bouton
+« Tester » a disparu** : il testait l'adresse VISÉE par le modèle, pas celle de la page
+ouverte — proposé sur la page d'une autre machine, il aurait testé la mauvaise, et un
+bouton qui agit ailleurs est pire qu'un bouton absent.
+
+**LE BLOC TECHNIQUE N'EST PLUS UN PAVÉ.** Il affichait en rouge, avec un triangle
+d'alerte, une phrase en français — `messageHorsLigne` — que le garde-fou local range dans
+le même champ que les erreurs : ce n'est pas un détail technique, et c'était la troisième
+fois que la page disait la même chose. Il est maintenant replié, et il ne contient que les
+erreurs que **rien n'explique** — celles-là seules valent un bloc à part.
+
+Vérifié par capture macOS (`--page-seule`), sur les trois états qui comptent :
+
+| État | Ce que la capture montre |
+|---|---|
+| **prêt** (MacBook Air, hôte interrogé) | pastille verte « DSH · hôte interrogé », « Reconnecter », « Ce serveur est prêt. », quatre constats verts — **la page entière tient sans défiler** |
+| **pas de DSH** (MacMini) | pastille orange « pas de DSH », « Il reste une étape : « Le plugin `dsh-remote` est installé » », étapes 1-3 vertes, étape 4 avec la démarche d'installation dépliée |
+| **hors ligne** (MacBook Pro de Camille) | pastille « hors ligne », action « Choisir MacBook », « Rien ne peut être joint sur cette machine… », étape 2 avec `tailscale status` / `tailscale up` — et l'explication « Il est hors ligne sur le tailnet : la découverte ne le propose donc pas » |
+
+**PAS DE CAPTURE IPHONE CETTE FOIS**, et c'est un manque assumé : sur un simulateur
+neuf, `--page-seule` n'a **pas de serveur courant** à montrer, et cet environnement
+n'injecte pas l'appui qui ouvrirait la page. L'ancre a donc reçu la sonde qu'elle
+n'exécutait pas (voir plus bas), mais pas la liste des machines, qui vient de l'hôte.
+
+**L'ANCRE `--page-seule` LANCE DÉSORMAIS LA SONDE.** Le panneau latéral est ce qui la
+lançait ; sans lui, les étapes 3 et 4 restaient à « vérification… », et **les deux états
+qui comptent le plus — port fermé, plugin absent — n'étaient pas capturables** : la
+capture de MacMini montrait « vérification… » au lieu de « pas de DSH ». Constaté en
+essayant de capturer la page refaite.
 
 **L'appui OUVRE la page ET se connecte.** Un geste, deux effets, et c'est délibéré : on
 touche une machine pour s'y connecter, et la page est ce qui EXPLIQUE le résultat — état,
@@ -1492,8 +1572,13 @@ Sources/
 │   ├── FluxSession.swift  # WebSocket temps réel
 │   ├── RemoteClient.swift
 │   ├── ModeleApp.swift    # état de l'application — la vue ne parle jamais au réseau
+│   ├── EtatMachine.swift  # l'état d'une machine : MÊMES MOTS au panneau latéral et sur sa page
 │   ├── Vues.swift         # liste des sessions
 │   ├── VueJournal.swift   # journal d'une session
+│   ├── VueServeur.swift   # page d'un serveur — quatre bandes : identité, diagnostic, réglages, détail
+│   ├── ParcoursDesEtapes.swift  # les quatre constats, en diagnostic ou en objectifs
+│   ├── Demarches.swift    # publier le port, installer le plugin : les deux procédures partagées
+│   ├── VueAjoutServeur.swift  # page « Ajouter un serveur »
 │   ├── VueEcriture.swift  # composeur (écrire, interrompre)
 │   └── VueReglages.swift  # réglages (adresse, jeton, suivi)
 ├── DSHRemoteCtl/          # tool de validation (macOS)
@@ -1599,6 +1684,9 @@ inactive.
 | **La page dit que le plugin manque, et donne la démarche** | capture iPhone de la page de MacMini (alors que l'app vise une autre machine) : constat nommé, 3 étapes, bloc `cordis.patch.yml` copiable, vérification `curl` |
 | **Le diagnostic de santé d'un serveur** | captures iPhone : conclusion (« Il reste une étape : « … » ») puis les quatre constats, sans verrou ; sur un Mac hors ligne, l'étape 2 avec ses commandes et les suivantes « à vérifier » |
 | **Les étapes suivantes sont grisées** | capture iPhone : frontière (étape 2) avec sa méthode, étapes 3 et 4 grisées avec un cadenas et « après l'étape N », sans détail |
+| **La page d'un serveur est structurée en quatre bandes** | 3 captures macOS (`--page-seule`) : prêt, pas de DSH (MacMini), hors ligne — l'état est dit UNE fois, l'action proposée peut aboutir, les réglages sont repliés |
+| **Les mots de l'état sont partagés** | 2 tests sur `EtatMachine` : la vignette abrège, la page dit la phrase entière, et les deux portent le même ton ; la conclusion suit l'état |
+| **Un jeton n'est accusé que s'il a été présenté** | test : `.incomplete` (« hors ligne ») ne met PAS `jetonRefuse` ; `.jetonInvalide` et un `401` le mettent |
 | **La page « Ajouter un serveur »** | capture iPhone (`--ajout --page-seule`) : étape 1 constatée, étapes 2-4 à faire avec leurs commandes, chacune disant sur quelle machine |
 | **Le parcours d'un serveur, en trois étapes** | captures iPhone : MacMini (étapes 1-3 vertes, 4 à faire + méthode) et un Mac hors ligne (étapes 2 à faire, suivantes « à vérifier ») ; 8 tests |
 | **Le diagnostic appartient à la machine** | `404` observé par la sonde → procédure d'installation ; `-1004` → procédure de publication ; vérifié par capture sur une machine NON visée |

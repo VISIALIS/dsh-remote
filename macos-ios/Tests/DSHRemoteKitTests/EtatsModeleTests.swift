@@ -70,10 +70,22 @@ func erreurEtSonTexte() {
   #expect(modele.serveurJoint == false)
 
   // Un refus local n'est pas une panne réseau, et il porte son texte aussi.
-  modele.remplacerConnexionPourEssai(.incomplete("jeton incomplet : 12 caractères"))
+  modele.remplacerConnexionPourEssai(.jetonInvalide("jeton incomplet : 12 caractères"))
   #expect(modele.erreur == "jeton incomplet : 12 caractères")
   #expect(modele.erreurType == nil)
   #expect(modele.jetonRefuse)
+  // Mais le SERVICE n'a rien refusé : personne ne lui a rien présenté. La page ne
+  // doit donc pas dire « le service a refusé ce jeton », qui enverrait chercher
+  // un problème d'hôte là où il n'y a qu'un champ incomplet.
+  #expect(modele.jetonRefuseParLeService == false)
+
+  // MAIS UN ÉTAT INCOMPLET QUI N'EST PAS LE JETON NE L'ACCUSE PAS. Défaut
+  // constaté sur capture : la page reprochait son jeton à un Mac ÉTEINT, parce
+  // que `.incomplete` portait aussi le message « hors ligne ». Le remède affiché
+  // était alors faux — on recopie un secret qui n'a rien à se reprocher.
+  modele.remplacerConnexionPourEssai(.incomplete("« MacMini » est hors ligne sur le tailnet."))
+  #expect(modele.erreur?.contains("hors ligne") == true)
+  #expect(modele.jetonRefuse == false)
 
   // Une connexion réussie n'a NI erreur NI texte résiduel.
   modele.remplacerConnexionPourEssai(.inconnue)
@@ -96,4 +108,5 @@ func etatAdresseDerive() {
     Issue.record("une erreur typée doit se lire « injoignable » dans le test d'adresse")
   }
   #expect(modele.jetonRefuse)
+  #expect(modele.jetonRefuseParLeService)
 }

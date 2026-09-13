@@ -104,8 +104,14 @@ public struct VuePrincipale: View {
         let _ = modele.relireEtatTailscale()
         // Ancre de vérification : la page seule, pour la capturer.
         NavigationStack {
-          VueServeur(modele: modele, serveur: serveur) { reglagesOuverts = true }
+          VueServeur(modele: modele, serveur: serveur)
         }
+        // LA SONDE PART AUSSI D'ICI, et pour la même raison que la mesure
+        // ci-dessus : sans le panneau latéral, aucune sonde n'est lancée, donc
+        // les étapes 3 et 4 restaient à « vérification… » — les deux états qui
+        // comptent le plus (port fermé, plugin absent) n'étaient PAS capturables,
+        // et la capture d'une page saine était impossible. Constaté en essayant.
+        .task { await modele.sonderLesServeurs() }
       } else {
         contenu
       }
@@ -140,7 +146,7 @@ public struct VuePrincipale: View {
       } else if ajoutOuvert {
         VueAjoutServeur(modele: modele) { adresseOuverte = true }
       } else if let serveur = serveurDeLaPage ?? serveurDUneErreur {
-        VueServeur(modele: modele, serveur: serveur) { reglagesOuverts = true }
+        VueServeur(modele: modele, serveur: serveur)
       } else {
         ContentUnavailableView(
           "Aucune session ouverte",
@@ -430,7 +436,7 @@ struct VueListeSessions: View {
       // La destination des icônes de serveur, déclarée DANS la colonne qui
       // l'affiche : sur iPhone elle s'empile, sur iPad elle remplit le détail.
       .navigationDestination(for: ServeurMac.self) { serveur in
-        VueServeur(modele: modele, serveur: serveur) { reglagesOuverts = true }
+        VueServeur(modele: modele, serveur: serveur)
       }
       .navigationDestination(for: PageAjoutServeur.self) { _ in
         VueAjoutServeur(modele: modele) { adresseOuverte = true }
@@ -856,13 +862,16 @@ struct IconeServeur: View {
   }
 
   /// Légende sous le nom : ce qui RESTE à savoir après l'état de la machine.
+  ///
+  /// LES MOTS VIENNENT D'`EtatMachine`, comme ceux de la pastille de la page : les
+  /// deux endroits disaient le même fait avec des mots différents — « hors ligne »
+  /// ici, « hors ligne sur le tailnet » là —, et deux vocabulaires pour un fait
+  /// obligent le lecteur à traduire. Ici la forme est ABRÉGÉE : la vignette tient
+  /// en 68 points.
   private var legende: String {
-    guard serveur.enLigne else { return "hors ligne" }
-    switch sertDsh {
-    case true: return serveur.estLocal ? "DSH · hôte" : "DSH"
-    case false: return "pas de DSH"
-    case nil: return "vérification…"
-    }
+    EtatMachine.decrire(
+      enLigne: serveur.enLigne, sertDsh: sertDsh, estLocal: serveur.estLocal, court: true
+    ).texte
   }
 }
 

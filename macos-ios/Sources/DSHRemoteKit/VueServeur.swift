@@ -1,50 +1,53 @@
 import DSHRemoteKit
 import SwiftUI
 
-/// La page d'un serveur : ce qu'il est, ce qu'on peut faire avec lui, et quoi
-/// faire quand il ne publie rien.
+/// La page d'un serveur : ce qu'il est, ce qu'on peut en faire, et pourquoi quand
+/// il ne répond pas.
 ///
-/// POURQUOI CETTE PAGE EXISTE, ET CE QU'ELLE DÉPLACE. Le panneau latéral portait
-/// l'état des machines **et** le diagnostic complet, jusqu'aux commandes à
-/// recopier sur l'autre Mac. Résultat : une colonne encombrée, où le message le
-/// plus long prenait la place des sessions — il fallait faire défiler pour voir
-/// son propre travail.
+/// POURQUOI CETTE PAGE A ÉTÉ RESTRUCTURÉE EN QUATRE BANDES. Elle empilait six
+/// blocs de même poids dans l'ordre où le code avait grandi — en-tête, adresse,
+/// jeton, interrupteurs, bandeau d'erreur, diagnostic —, si bien que le
+/// DIAGNOSTIC, qui est la raison d'être de la page, se lisait en dernier : sur un
+/// iPhone, il fallait faire défiler le jeton d'un hôte et deux réglages pour
+/// savoir ce qui n'allait pas. Le même fait y était dit quatre fois (« hors
+/// ligne » sous le titre, dans le bandeau rouge, dans le résumé du parcours, et
+/// par le titre de l'étape 2), et deux avertissements de jeton passaient avant
+/// toute information sur la machine — dont un FAUX, puisque l'état « hors ligne »
+/// était pris pour un jeton refusé.
 ///
-/// Le diagnostic appartient à la MACHINE : il vit donc sur SA page, qu'on ouvre
-/// en touchant son icône. Le panneau latéral garde ce qui se lit d'un coup
-/// d'œil : la pastille, la légende, le nom.
+/// L'ordre suit maintenant les questions qu'on se pose, et rien d'autre :
+///
+///   1. QUELLE MACHINE, ET DANS QUEL ÉTAT ? — le nom, UNE pastille d'état, son
+///      adresse, et UNE action : celle qui peut aboutir dans cet état ;
+///   2. POURQUOI PAS, ET QUE FAIRE ? — la conclusion, puis les quatre constats.
+///      Tous restent visibles (un diagnostic ne cache rien), mais seule l'étape
+///      qui bloque porte sa méthode dépliée : c'est la seule exécutable
+///      maintenant, et trois jeux de commandes noient celle qui compte ;
+///   3. SES RÉGLAGES — jeton, suivi, filtre, repliés. Rien de tout cela n'est une
+///      raison d'ouvrir la page ; tout y reste pourtant, parce que chaque réglage
+///      vit à l'endroit qui le rend vrai (le jeton est propre à chaque hôte, le
+///      suivi vaut pour cette machine) ;
+///   4. LE DÉTAIL TECHNIQUE — l'erreur brute, quand elle apprend quelque chose, et
+///      elle seule : une phrase en français n'est pas un détail technique.
 struct VueServeur: View {
   @Bindable var modele: ModeleApp
   /// La machine affichée, résolue à chaque rendu par `VuePrincipale`.
   let serveur: ServeurMac
-  var ouvrirReglages: () -> Void
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 20) {
-        enTete
-        adresseEtActions
-        session
-        // La bascule de serveur se DIT : changer la machine de l'utilisateur
-        // sans le prévenir serait une substitution silencieuse. L'avis est ici
-        // plutôt qu'à gauche : il concerne une machine, et c'est sa page.
-        if let ajuste = modele.choixAjuste {
-          Label(ajuste, systemImage: "arrow.triangle.swap")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        // LE PAVÉ TECHNIQUE reste disponible : c'est le seul diagnostic quand
-        // aucune cause n'est connue, et il est aussi écrit dans `diagnostic.json`.
-        paveTechnique
-        // LA CONCLUSION D'ABORD : « ce serveur est-il utilisable ? » est la
-        // question ; les quatre étapes sont la démonstration.
-        resumeDuParcours
-        parcours
+      VStack(alignment: .leading, spacing: 18) {
+        identite
+        carteDiagnostic
+        reglagesDeLaMachine
+        detailTechnique
       }
       .padding(24)
       .frame(maxWidth: 680, alignment: .leading)
-      .frame(maxWidth: .infinity, alignment: .leading)
+      // CENTRÉE, ET NON COLLÉE À GAUCHE. Sur macOS, la colonne de détail est
+      // large : une colonne de texte de 680 points tassée contre le bord laissait
+      // une bande grise vide à droite, et l'œil ne savait plus où était la page.
+      .frame(maxWidth: .infinity, alignment: .center)
     }
     .navigationTitle(serveur.nom)
     #if os(iOS)
@@ -52,90 +55,193 @@ struct VueServeur: View {
     #endif
   }
 
-  // MARK: - En-tête
+  // MARK: - 1. Identité, état, action
 
-  private var enTete: some View {
-    HStack(alignment: .center, spacing: 14) {
-      Image(systemName: serveur.symbole)
-        .font(.system(size: 34))
-        .foregroundStyle(serveur.enLigne ? Color.accentColor : Color.secondary)
-        .frame(width: 46)
-      VStack(alignment: .leading, spacing: 3) {
-        Text(serveur.nom).font(.title2)
-        Text(etatLisible)
-          .font(.callout)
-          .foregroundStyle(serveur.enLigne ? Color.green : Color.secondary)
-      }
-      Spacer()
-      if modele.serveurChoisi == serveur {
-        Label("serveur courant", systemImage: "checkmark.circle.fill")
-          .font(.caption)
-          .foregroundStyle(Color.accentColor)
-      }
-    }
+  /// L'ÉTAT DE LA MACHINE, dit dans les mots partagés avec le panneau latéral.
+  private var etat: EtatMachine.Description {
+    EtatMachine.decrire(
+      enLigne: serveur.enLigne,
+      sertDsh: modele.sertDsh(serveur),
+      estLocal: serveur.estLocal,
+      court: false)
   }
 
-  /// L'état en clair, avec ce qui est SU et ce qui ne l'est pas.
-  ///
-  /// « Vérification… » n'est pas une décoration : tant que la sonde n'a pas
-  /// rendu son verdict, on ne sait pas si la machine sert DSH, et le dire est
-  /// plus honnête que de laisser croire à un « non ».
-  private var etatLisible: String {
-    guard serveur.enLigne else { return "hors ligne sur le tailnet" }
-    switch modele.sertDsh(serveur) {
-    case true: return serveur.estLocal ? "en ligne · DSH · hôte interrogé" : "en ligne · DSH"
-    case false: return "en ligne · pas de DSH"
-    case nil: return "en ligne · vérification en cours"
-    }
-  }
+  private var identite: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack(alignment: .center, spacing: 14) {
+        Image(systemName: serveur.symbole)
+          .font(.system(size: 30))
+          .foregroundStyle(serveur.enLigne ? Color.accentColor : Color.secondary)
+          .frame(width: 40)
+        VStack(alignment: .leading, spacing: 6) {
+          Text(serveur.nom).font(.title2)
+          PastilleDeMachine(description: etat)
+        }
+        Spacer(minLength: 8)
+        if modele.serveurChoisi == serveur {
+          Label("serveur courant", systemImage: "checkmark.circle.fill")
+            .font(.caption)
+            .foregroundStyle(Color.accentColor)
+        }
+      }
 
-  // MARK: - Adresse et actions
+      // L'ADRESSE SE COPIE. Elle est faite pour voyager — la saisir sur un autre
+      // appareil, la donner à `curl` — et le composant des commandes fait
+      // exactement cela, libellé d'accessibilité compris (« Copier adresse »).
+      // Le titre « Adresse » disparaît : une URL sous un nom de machine se lit
+      // sans étiquette, et chaque mot retiré est un mot de moins à parcourir.
+      LigneCommande(commande: serveur.adresse, libelle: "adresse")
 
-  private var adresseEtActions: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      Text("Adresse")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      Text(serveur.adresse)
-        .font(.callout.monospaced())
-        .textSelection(.enabled)
-        .fixedSize(horizontal: false, vertical: true)
-
-      HStack(spacing: 12) {
+      HStack(spacing: 10) {
         Button {
-          Task { await modele.choisirEtConnecter(serveur) }
+          actionPrincipale.geste()
         } label: {
-          Label("Se connecter", systemImage: "bolt.horizontal")
+          Label(actionPrincipale.titre, systemImage: actionPrincipale.symbole)
         }
         .buttonStyle(.borderedProminent)
-        .disabled(modele.enChargement)
-
-        Button {
-          Task { await modele.testerAdresse() }
-        } label: {
-          Label("Tester", systemImage: "stethoscope")
-        }
         .disabled(modele.enChargement)
 
         if modele.enChargement { ProgressView().controlSize(.small) }
       }
 
-      jeton
+      // La bascule de serveur se DIT : changer la machine de l'utilisateur sans
+      // le prévenir serait une substitution silencieuse.
+      if let ajuste = modele.choixAjuste {
+        Label(ajuste, systemImage: "arrow.triangle.swap")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
     }
+  }
+
+  /// L'ACTION PRINCIPALE — celle qui peut ABOUTIR dans l'état où est la machine.
+  ///
+  /// POURQUOI ELLE CHANGE, ET PAS SEULEMENT SON LIBELLÉ. « Se connecter » était
+  /// offert à toutes les machines, y compris celles dont on sait déjà qu'elles ne
+  /// répondront pas : le garde-fou local évite la requête, mais le seul résultat
+  /// possible restait un message disant que la machine est éteinte. Une page qui
+  /// met en avant une action sans issue fait douter de tout ce qu'elle affiche.
+  private var actionPrincipale: (titre: String, symbole: String, geste: () -> Void) {
+    guard serveur.enLigne else {
+      if let autre = autreMacJoignable {
+        return (
+          "Choisir \(autre.premierMot)", "arrow.triangle.swap",
+          { Task { await modele.choisirEtConnecter(autre) } }
+        )
+      }
+      // Aucun autre Mac joignable : la seule chose utile est de redemander la
+      // liste — le Mac a pu être rallumé depuis la dernière découverte.
+      return (
+        "Rafraîchir la liste", "arrow.clockwise",
+        { Task { await modele.synchroniserServeurs() } }
+      )
+    }
+    switch modele.sertDsh(serveur) {
+    case true:
+      let dejaVise = modele.serveurChoisi == serveur
+      return (
+        dejaVise ? "Reconnecter" : "Se connecter", "bolt.horizontal",
+        { Task { await modele.choisirEtConnecter(serveur) } }
+      )
+    case false, nil:
+      // LA MACHINE RÉPOND, mais rien ne dit encore que DSH y est. Deux gestes,
+      // selon qu'elle est ou non celle que l'application VISE : si c'est elle, on
+      // reteste son adresse — seul moyen de vérifier une adresse saisie à la
+      // main, que la sonde ne voit pas puisqu'elle ne parcourt que le tailnet ;
+      // sinon on redemande son verdict à la sonde, sans changer de cible.
+      if ModeleApp.vise(modele.adresse, serveur) {
+        return ("Revérifier", "stethoscope", { Task { await modele.testerAdresse() } })
+      }
+      return ("Revérifier", "stethoscope", { Task { await modele.sonderLesServeurs() } })
+    }
+  }
+
+  /// Un AUTRE Mac joignable, s'il y en a un.
+  ///
+  /// On préfère celui dont la sonde a dit qu'il sert DSH : envoyer l'utilisateur
+  /// vers une machine « en ligne » qui ne publie rien remplacerait une impasse
+  /// par une autre.
+  private var autreMacJoignable: ServeurMac? {
+    let autres = modele.serveurs.filter { $0.id != serveur.id && $0.enLigne }
+    return autres.first { modele.sertDsh($0) == true } ?? autres.first
+  }
+
+  // MARK: - 2. Le diagnostic
+
+  /// La cause, POUR CETTE MACHINE.
+  private var cause: CauseSansDsh? { modele.causeSansDsh(serveur) }
+
+  /// Les étapes de CETTE machine, recalculées à chaque rendu : la sonde peut
+  /// rendre son verdict entre deux affichages.
+  private var etapes: [EtapesServeur.Etape] {
+    EtapesServeur.etapes(
+      tailnetDeLAppareil: modele.tailnetDeLAppareil,
+      enLigne: serveur.enLigne,
+      sertDsh: modele.sertDsh(serveur),
+      cause: cause)
+  }
+
+  /// LA CARTE DU DIAGNOSTIC — conclusion, puis constats.
+  ///
+  /// La carte est dessinée ICI et non par `ParcoursDesEtapes` (`encadre: false`) :
+  /// la conclusion appartient au même bloc que les constats, et deux cartes
+  /// voisines auraient redit la même séparation que le texte.
+  private var carteDiagnostic: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Diagnostic")
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(.secondary)
+
+      Label(conclusion.texte, systemImage: conclusion.symbole)
+        .font(.callout.weight(.medium))
+        .foregroundStyle(conclusion.ton.couleur)
+        .fixedSize(horizontal: false, vertical: true)
+
+      ParcoursDesEtapes(etapes: etapes, mode: .diagnostic, encadre: false) { etape in
+        methodologie(pour: etape.numero, connue: etape.etat == .aFaire)
+      }
+    }
+    .padding(14)
+    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+  }
+
+  private var conclusion: EtatMachine.Description {
+    EtatMachine.conclusion(enLigne: serveur.enLigne, etapes: etapes)
+  }
+
+  // MARK: - 3. Les réglages de cette machine
+
+  /// REPLIÉS, MAIS SUR CETTE PAGE. Deux règles se rencontrent ici : un réglage
+  /// vit à l'endroit qui le rend vrai — le jeton est propre à chaque hôte, le
+  /// suivi décide si l'on interroge CE serveur —, et rien de tout cela n'est une
+  /// raison d'ouvrir la page. Un bloc replié satisfait les deux : il est là sans
+  /// s'interposer entre l'adresse et le verdict.
+  private var reglagesDeLaMachine: some View {
+    DisclosureGroup {
+      VStack(alignment: .leading, spacing: 16) {
+        jeton
+        Divider()
+        suiviEtFiltre
+      }
+      .padding(.top, 10)
+    } label: {
+      Label("Réglages de cette machine", systemImage: "slider.horizontal.3")
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(.secondary)
+    }
+    .padding(14)
+    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
   }
 
   /// Le suivi et le filtre de CETTE machine.
   ///
   /// POURQUOI ICI ET NON DANS LES RÉGLAGES GÉNÉRAUX — le propriétaire l'a
   /// demandé, et il a raison : les deux portent sur la connexion à une machine.
-  /// Le suivi décide si l'on interroge CE serveur toutes les trois secondes ; le
-  /// filtre décide ce qu'on affiche de SA liste. Les garder globaux faisait
-  /// hériter chaque serveur des choix faits pour le précédent.
-  ///
-  /// La note dit aussi ce qui se passe si la machine n'est pas celle à laquelle
-  /// on est connecté : le réglage est enregistré, et s'appliquera à la
-  /// connexion. Un interrupteur doit dire quand il agit.
-  private var session: some View {
+  /// Le suivi décide si l'on interroge CE serveur ; le filtre décide ce qu'on
+  /// affiche de SA liste. Les garder globaux faisait hériter chaque serveur des
+  /// choix faits pour le précédent.
+  private var suiviEtFiltre: some View {
     VStack(alignment: .leading, spacing: 10) {
       Toggle(
         "Suivre l'activité",
@@ -167,9 +273,7 @@ struct VueServeur: View {
   /// par CHAQUE hôte et rangé dans son coffre : deux Macs qui hébergent le plugin
   /// ont deux jetons distincts, et celui d'une machine ne vaut pas pour une
   /// autre. Un réglage « général » qui ne vaut que pour un hôte serait un
-  /// mensonge d'endroit. C'est aussi la première chose qu'on soupçonne quand une
-  /// machine répond mais refuse — et l'avoir soupçonné à tort a déjà coûté du
-  /// temps.
+  /// mensonge d'endroit.
   private var jeton: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text("Jeton d'appareil de cet hôte")
@@ -206,19 +310,25 @@ struct VueServeur: View {
           .accessibilityLabel("Effacer le jeton")
         }
       }
-      Label(
-        modele.jetonBienForme
-          ? "jeton complet (43 caractères)"
-          : "jeton incomplet : \(modele.longueurJeton) caractères au lieu de 43",
-        systemImage: modele.jetonBienForme ? "checkmark.seal" : "exclamationmark.triangle"
-      )
-      .font(.caption)
-      .foregroundStyle(modele.jetonBienForme ? Color.green : Color.orange)
+
+      // ON NE JUGE QUE CE QUI A ÉTÉ SAISI. « jeton incomplet : 0 caractères au
+      // lieu de 43 » s'affichait sur une page où RIEN n'avait été tapé : un
+      // reproche pour un champ vide, avant même le premier mot sur la machine.
+      if modele.jetonDisponible {
+        Label(
+          modele.jetonBienForme
+            ? "jeton complet (43 caractères)"
+            : "jeton incomplet : \(modele.longueurJeton) caractères au lieu de 43",
+          systemImage: modele.jetonBienForme ? "checkmark.seal" : "exclamationmark.triangle"
+        )
+        .font(.caption)
+        .foregroundStyle(modele.jetonBienForme ? Color.green : Color.orange)
+      }
 
       // Un `401` propose l'action qui RÉPARE, à portée de pouce : le champ est
       // juste au-dessus. Le rappel n'apparaît que pour cette cause-là — une
-      // adresse injoignable ne se règle pas ici.
-      if modele.jetonRefuse {
+      // adresse injoignable ne se règle pas ici, et une machine ÉTEINTE non plus.
+      if modele.jetonRefuseParLeService {
         Label(
           "Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien.",
           systemImage: "key"
@@ -235,115 +345,47 @@ struct VueServeur: View {
     }
   }
 
-  // MARK: - Le parcours
+  // MARK: - 4. Le détail technique
 
-  /// La cause, POUR CETTE MACHINE.
-  private var cause: CauseSansDsh? { modele.causeSansDsh(serveur) }
-
-  /// LE PAVÉ TECHNIQUE — l'erreur brute de la connexion en cours.
+  /// L'ERREUR BRUTE — quand elle apprend quelque chose.
   ///
-  /// POURQUOI IL RESTE. Quand la cause est connue (port fermé, plugin absent), le
-  /// parcours dit tout en une ligne ET répare : le pavé (`NSURLErrorDomain …
-  /// CAUSE: rien n'écoute sur cet hôte et ce port`) ne fait que le répéter en
-  /// charabia. Quand aucune cause n'est connue, en revanche, il est le SEUL
-  /// diagnostic disponible — et il est aussi écrit dans `diagnostic.json`.
+  /// POURQUOI ELLE EST REPLIÉE, ET PAS SEULEMENT DÉPLACÉE. Le « pavé technique »
+  /// affichait en rouge, avec un triangle d'alerte, une phrase en français —
+  /// `messageHorsLigne` — que le garde-fou local range dans le même champ que les
+  /// erreurs. Ce n'est pas un détail technique, et c'était la troisième fois que
+  /// la page disait la même chose. Ne restent donc que les erreurs que RIEN
+  /// n'explique : celles-là seules valent un bloc à part, et elles sont aussi
+  /// écrites dans `diagnostic.json`.
   @ViewBuilder
-  private var paveTechnique: some View {
-    if cause == nil, let erreur = modele.erreur, modele.serveurVise?.id == serveur.id {
-      Label(erreur, systemImage: "exclamationmark.triangle")
-        .foregroundStyle(.red)
-        .font(.callout)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
-  /// LE PARCOURS : trois étapes, et la méthode pour celles qui restent.
-  ///
-  /// POURQUOI UN PARCOURS PLUTÔT QU'UN DIAGNOSTIC. Le bloc précédent disait
-  /// « voici l'erreur, voici le remède » — utile quand on sait ce qu'on cherche,
-  /// inutile quand on ne sait pas OÙ on en est. Le propriétaire a demandé une
-  /// « ligne de goal à franchir » : trois étapes dans l'ordre où elles se
-  /// franchissent, chacune avec sa méthode.
-  ///
-  /// L'ÉTAPE EN COURS EST CELLE QUI DÉBLOQUE LES SUIVANTES : inutile de publier
-  /// un port sur un Mac éteint, inutile d'installer un plugin dont le port sera
-  /// fermé. Le calcul des états vit dans `EtapesServeur`, où il est éprouvé.
-  /// La conclusion du diagnostic, en une ligne.
-  private var resumeDuParcours: some View {
-    let pret = etapes.allSatisfy { $0.etat == .franchie }
-    return Label(EtapesServeur.resume(etapes), systemImage: pret ? "checkmark.seal.fill" : "stethoscope")
-      .font(.callout.weight(.medium))
-      .foregroundStyle(pret ? Color.green : Color.orange)
-      .fixedSize(horizontal: false, vertical: true)
-  }
-
-  /// Les étapes de CETTE machine, recalculées à chaque rendu : la sonde peut
-  /// rendre son verdict entre deux affichages.
-  private var etapes: [EtapesServeur.Etape] {
-    EtapesServeur.etapes(
-      tailnetDeLAppareil: modele.tailnetDeLAppareil,
-      enLigne: serveur.enLigne,
-      sertDsh: modele.sertDsh(serveur),
-      cause: cause)
-  }
-
-  private var parcours: some View {
-    // LA MISE EN PAGE EST PARTAGÉE, et la règle du verrou avec : une seule
-    // frontière à la fois, les suivantes grisées.
-    // DIAGNOSTIC DE SANTÉ : on constate, on ne verrouille rien. Le propriétaire
-    // a tranché — ces lignes disent l'état de la machine, elles ne listent pas
-    // des objectifs. Chaque étape non franchie porte donc sa méthode, et
-    // l'utilisateur voit d'un coup tout ce qui manque.
-    ParcoursDesEtapes(etapes: etapes, mode: .diagnostic) { etape in
-      methodologie(pour: etape.numero, connue: etape.etat == .aFaire)
-    }
-  }
-
-  @ViewBuilder
-  private func etapeAffichee(_ etape: EtapesServeur.Etape) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Image(systemName: symboleDeLEtat(etape.etat))
-          .foregroundStyle(couleurDeLEtat(etape.etat))
-        Text("\(etape.numero). \(etape.titre)")
-          .font(.callout.weight(etape.etat == .franchie ? .regular : .medium))
-          .foregroundStyle(etape.etat == .franchie ? Color.secondary : Color.primary)
-          .fixedSize(horizontal: false, vertical: true)
-        Spacer(minLength: 4)
-        if etape.etat == .inconnue {
-          Text("à vérifier")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-      }
-
-      // ON N'EXPLIQUE ET N'OUTILLE QUE CE QUI RESTE À FAIRE. Une étape franchie
-      // n'a pas besoin de mode d'emploi, et l'afficher noierait celle qui bloque.
-      if etape.etat != .franchie {
-        Text(etape.explication)
-          .font(.caption)
+  private var detailTechnique: some View {
+    if let erreur = erreurInexpliquee {
+      DisclosureGroup {
+        Text(erreur)
+          .font(.caption.monospaced())
           .foregroundStyle(.secondary)
+          .textSelection(.enabled)
           .fixedSize(horizontal: false, vertical: true)
-        methodologie(pour: etape.numero, connue: etape.etat == .aFaire)
+          .padding(.top, 8)
+      } label: {
+        Label("Détail technique", systemImage: "text.alignleft")
+          .font(.subheadline.weight(.semibold))
+          .foregroundStyle(.secondary)
       }
+      .padding(14)
+      .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
   }
 
-  private func symboleDeLEtat(_ etat: EtapesServeur.Etat) -> String {
-    switch etat {
-    case .franchie: return "checkmark.circle.fill"
-    case .aFaire: return "circle"
-    case .inconnue: return "questionmark.circle"
+  private var erreurInexpliquee: String? {
+    guard cause == nil, modele.serveurVise?.id == serveur.id, let erreur = modele.erreur else {
+      return nil
     }
+    // « Hors ligne » a sa conclusion, plus haut : la répéter ici en charabia
+    // rouge n'apprendrait rien.
+    return erreur == ModeleApp.messageHorsLigne(serveur) ? nil : erreur
   }
 
-  private func couleurDeLEtat(_ etat: EtapesServeur.Etat) -> Color {
-    switch etat {
-    case .franchie: return .green
-    case .aFaire: return .orange
-    case .inconnue: return .secondary
-    }
-  }
+  // MARK: - La méthode, pour l'étape qui bloque
 
   /// LA MÉTHODE POUR FRANCHIR L'ÉTAPE — ou pour la VÉRIFIER quand on ne sait pas.
   ///

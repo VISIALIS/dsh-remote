@@ -67,10 +67,19 @@ public final class ModeleApp {
     /// qu'il a rendues, qui est ce que le test d'adresse annonce.
     case jointe(Sante, reponses: Int)
     case echec(ErreurRemote)
-    /// On n'a même pas TENTÉ : il manque quelque chose AVANT la requête — jeton
-    /// absent, jeton tronqué. Distinct d'un échec réseau, parce que le remède
-    /// n'est pas sur le réseau : il est dans la saisie.
+    /// On n'a même pas TENTÉ, et ce n'est PAS le jeton : la machine est hors
+    /// ligne, ou une action locale a échoué (`openURL`). Le remède est ailleurs.
     case incomplete(String)
+    /// Le jeton manque, est tronqué, ou a été refusé — le remède est dans la
+    /// SAISIE, et c'est ce que la page doit proposer.
+    ///
+    /// POURQUOI CE CAS EXISTE, ALORS QUE `.incomplete` LE COUVRAIT. `.incomplete`
+    /// servait aux deux, et `jetonRefuse` le prenait donc en bloc : la page
+    /// affichait « Le service a refusé ce jeton » sur un Mac **éteint**, dont le
+    /// jeton n'avait jamais été présenté à personne. Constaté sur capture, sous
+    /// la forme de deux avertissements de jeton en tête d'une page qui n'avait
+    /// rien joint. Un état qui mélange deux causes produit un remède faux.
+    case jetonInvalide(String)
   }
 
   public private(set) var connexion: EtatConnexion = .inconnue
@@ -205,6 +214,7 @@ public final class ModeleApp {
     switch connexion {
     case let .echec(erreur): return String(describing: erreur)
     case let .incomplete(detail): return detail
+    case let .jetonInvalide(detail): return detail
     default: return nil
     }
   }
@@ -520,6 +530,22 @@ public final class ModeleApp {
     return serveurs.first { serveur in
       RemoteClient.normaliser(serveur.adresse).trimmingCharacters(in: CharacterSet(charactersIn: "/")) == visee
     }
+  }
+
+  /// L'adresse courante désigne-t-elle CETTE machine ?
+  ///
+  /// Version PURE de « `serveurVise` est ce serveur », qui répond AUSSI pour une
+  /// adresse saisie à la main — celle-là n'est dans aucune liste, donc
+  /// `serveurVise` vaut `nil` et la comparaison échouerait. Sert à la page d'un
+  /// serveur : « Revérifier » reteste l'adresse quand c'est bien elle que
+  /// l'application vise — c'est le seul moyen de vérifier une adresse hors
+  /// tailnet —, et redemande sinon le verdict de la sonde, sans risque de tester
+  /// une AUTRE machine.
+  nonisolated static func vise(_ adresse: String, _ serveur: ServeurMac) -> Bool {
+    let gauche = RemoteClient.normaliser(adresse).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    let droite = RemoteClient.normaliser(serveur.adresse).trimmingCharacters(
+      in: CharacterSet(charactersIn: "/"))
+    return gauche == droite
   }
 
   /// D'où vient la liste affichée.
@@ -1183,9 +1209,27 @@ public final class ModeleApp {
     // Un 401 : le service a répondu, le jeton est refusé.
     case .echec(.jetonRefuse): return true
     // Jeton absent ou tronqué : on n'a même pas tenté.
-    case .incomplete: return true
+    case .jetonInvalide: return true
+    // ET RIEN D'AUTRE, désormais. `.incomplete` portait AUSSI des messages sans
+    // aucun rapport avec le jeton — « cette machine est hors ligne », ou une
+    // action locale en échec —, si bien que la page reprochait son jeton à un Mac
+    // éteint. Le remède proposé était alors faux, ce qui est pire que pas de
+    // remède : on recopie un secret qui n'a rien à se reprocher.
     default: return false
     }
+  }
+
+  /// Le SERVICE a refusé le jeton — un `401`, et rien d'autre.
+  ///
+  /// POURQUOI CE N'EST PAS `jetonRefuse`. Les deux mènent au même endroit — le
+  /// champ du jeton —, mais ils ne disent pas la même chose : un `401` accuse le
+  /// SECRET (celui d'un autre hôte, par exemple), tandis qu'un jeton absent ou
+  /// tronqué accuse la SAISIE. La page ne propose le rappel « chaque machine a le
+  /// sien » que dans le premier cas : l'afficher pour un champ vide expliquerait
+  /// un refus qui n'a pas eu lieu.
+  public var jetonRefuseParLeService: Bool {
+    if case .echec(.jetonRefuse) = connexion { return true }
+    return false
   }
 
   /// Le serveur choisi est joignable, mais RIEN n'y écoute.
@@ -1271,6 +1315,7 @@ public final class ModeleApp {
     case let .jointe(_, reponses): return .joignable(reponses: reponses)
     case let .echec(erreur): return .injoignable(String(describing: erreur))
     case let .incomplete(detail): return .injoignable(detail)
+    case let .jetonInvalide(detail): return .injoignable(detail)
     }
   }
 
@@ -1287,11 +1332,11 @@ public final class ModeleApp {
     enChargement = true
     let jeton = jetonDeLaCible()
     guard !jeton.isEmpty else {
-      connexion = .incomplete("aucun jeton : collez-le d'abord")
+      connexion = .jetonInvalide("aucun jeton : collez-le d'abord")
       return
     }
     guard jeton.count == 43 else {
-      connexion = .incomplete("jeton incomplet : \(jeton.count) caractères au lieu de 43")
+      connexion = .jetonInvalide("jeton incomplet : \(jeton.count) caractères au lieu de 43")
       return
     }
     do {
@@ -1560,14 +1605,14 @@ public final class ModeleApp {
     }
     let jeton = jetonDeLaCible()
     guard !jeton.isEmpty else {
-      connexion = .incomplete(
+      connexion = .jetonInvalide(
         "Aucun jeton d'appareil. Récupérez-le dans la sortie du harness sur le Mac, au premier chargement du plugin.")
       return
     }
     // Un jeton tronqué enverrait une requête vouée au 401, en accusant le
     // serveur à tort : on le dit avant, avec le compte exact.
     guard jeton.count == 43 else {
-      connexion = .incomplete("jeton incomplet : \(jeton.count) caractères au lieu de 43. Recopiez-le en entier.")
+      connexion = .jetonInvalide("jeton incomplet : \(jeton.count) caractères au lieu de 43. Recopiez-le en entier.")
       return
     }
     // TRACE TEMPORAIRE : ou passe le temps au demarrage.
