@@ -28,6 +28,10 @@ public final class ModeleApp {
   /// fichier d'amorçage, diagnostic. Injectée, donc éprouvable sans disque.
   private let persistance: Persistance
 
+  /// COMMENT on demande à une machine si elle sert DSH. La mécanique vit
+  /// là-bas ; le modèle garde l'état du verdict et les règles qui l'entourent.
+  private let sondeur: Sonde
+
   /// COMMENT on parle à une machine, et avec quelle patience. La politique vit
   /// là-bas (`Connexion`) ; le modèle garde l'état et les transitions.
   private let transport: Connexion
@@ -359,25 +363,7 @@ public final class ModeleApp {
     /// Une sonde est en vol, et on ne savait rien avant elle.
     case enCours
     /// Verdict : les machines qui ont répondu, ET pourquoi les autres non.
-    case connue(VerdictSonde)
-  }
-
-  /// Ce qu'une sonde a appris : qui sert DSH, et la cause pour les autres.
-  ///
-  /// POURQUOI LES CAUSES SONT GARDÉES. Un ensemble de noms suffisait à colorer
-  /// une vignette, pas à REMÉDIER : dire « le plugin n'est pas installé » exige
-  /// de savoir si la machine a répondu autre chose (`404`) ou rien du tout
-  /// (`-1004`). Sans cela, la page d'une machine non visée n'avait aucun
-  /// remède — et celle d'une machine visée pouvait en donner un faux.
-  public struct VerdictSonde: Equatable, Sendable {
-    public var serventDsh: Set<String> = []
-    /// La cause, par identifiant de machine — pour celles qui ne servent pas DSH.
-    public var causes: [String: CauseSansDsh] = [:]
-
-    public init(serventDsh: Set<String> = [], causes: [String: CauseSansDsh] = [:]) {
-      self.serventDsh = serventDsh
-      self.causes = causes
-    }
+    case connue(Sonde.Verdict)
   }
 
   public private(set) var sonde: EtatSonde = .inconnue
@@ -429,7 +415,7 @@ public final class ModeleApp {
     guard jeton.count == 43 else {
       // Sans jeton, aucune sonde n'est possible : ce n'est pas « on ne sait
       // pas », c'est « on sait qu'on ne peut pas » — un verdict vide.
-      sonde = .connue(VerdictSonde())
+      sonde = .connue(Sonde.Verdict())
       return
     }
     guard !serveurs.isEmpty else { return }
@@ -442,7 +428,7 @@ public final class ModeleApp {
     let candidats = serveurs.filter(\.enLigne)
     guard !candidats.isEmpty else {
       // Aucune machine joignable : verdict vide, et non « inconnu ».
-      sonde = .connue(VerdictSonde())
+      sonde = .connue(Sonde.Verdict())
       return
     }
     // On ne repasse PAS par « en cours » si un verdict est déjà connu : les
@@ -460,38 +446,7 @@ public final class ModeleApp {
     let debutSonde = Date()
     print("[sonde] debut : \(candidats.count) candidat(s), deja annulee=\(Task.isCancelled)")
 
-    let trouves = await withTaskGroup(of: (String, Bool, CauseSansDsh?).self) { groupe in
-      for serveur in candidats {
-        groupe.addTask {
-          guard let client = try? RemoteClient(adresse: serveur.adresse, jeton: jeton, delai: 2.5)
-          else { return (serveur.id, false, nil) }
-          // `verifierSante` ne rend aucune donnée de session : c'est la poignée
-          // de main. Deux réponses disent que DSH est LÀ : un `200`, et un `401`
-          // — car un jeton refusé prouve que le service a répondu. Toute autre
-          // erreur (délai, connexion refusée, DNS) veut dire « rien au bout ».
-          do {
-            _ = try await client.verifierSante()
-            return (serveur.id, true, nil)
-          } catch ErreurRemote.jetonRefuse {
-            return (serveur.id, true, nil)
-          } catch {
-            // ON RETIENT LA CAUSE, pas seulement l'échec : c'est elle qui permet
-            // à la page de cette machine de dire quoi faire.
-            let type = error as? ErreurRemote
-            return (serveur.id, false, type?.causeSansDsh)
-          }
-        }
-      }
-      var verdict = VerdictSonde()
-      for await (identifiant, repond, cause) in groupe {
-        if repond {
-          verdict.serventDsh.insert(identifiant)
-        } else if let cause {
-          verdict.causes[identifiant] = cause
-        }
-      }
-      return verdict
-    }
+    let verdict = await sondeur.interroger(candidats, jeton: jeton)
     // ── UNE SONDE ANNULÉE N'EST PAS UN VERDICT ──────────────────────────────
     //
     // MESURÉ, ET C'EST UN FAUX NÉGATIF. La sonde est relancée à chaque
@@ -507,10 +462,10 @@ public final class ModeleApp {
       print("[sonde] ANNULEE apres \(duree) ms — verdict non publie")
       return
     }
-    sonde = .connue(trouves)
+    sonde = .connue(verdict)
     print(
-      "[sonde] fin : \(trouves.serventDsh.count) serveur(s) DSH sur \(candidats.count) en \(duree) ms, "
-        + "\(trouves.causes.count) cause(s) connue(s)")
+      "[sonde] fin : \(verdict.serventDsh.count) serveur(s) DSH sur \(candidats.count) en \(duree) ms, "
+        + "\(verdict.causes.count) cause(s) connue(s)")
   }
 
   /// Le Mac sert-il DSH, d'après la dernière sonde ?
@@ -689,11 +644,13 @@ public final class ModeleApp {
   public init(
     gardien: GardienDeJetons = GardienParDefaut.faire(),
     persistance: Persistance = Persistance(),
-    transport: Connexion = Connexion()
+    transport: Connexion = Connexion(),
+    sondeur: Sonde = Sonde()
   ) {
     self.gardien = gardien
     self.persistance = persistance
     self.transport = transport
+    self.sondeur = sondeur
     chargerConfiguration()
     chargerPreference()
     chargerPreferencesServeurs()
