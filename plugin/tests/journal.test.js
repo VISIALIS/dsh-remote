@@ -12,10 +12,19 @@
  */
 
 import assert from 'node:assert/strict'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 import zlib from 'node:zlib'
 
-import { analyserLigne, cheminIndicatif, decoderJournal, resumer } from '../dynamic/journal.js'
+import {
+  analyserLigne,
+  cheminIndicatif,
+  decoderJournal,
+  resumer,
+  trouverJournal,
+} from '../dynamic/journal.js'
 
 /** Ce que DSH écrit : une trame zstd par écriture, concaténées. */
 function journal(...ecritures) {
@@ -103,4 +112,27 @@ test('le chemin indicatif est INDICATIF : il ne distingue pas un tiret d’un s�
   // tout chemin absolu `/Users/…`, même fictif (RÈGLE #0 — un chemin réel fuit un
   // nom de compte). La règle éprouvée est la même sous `/srv`.
   assert.equal(cheminIndicatif('--srv-projets-dsh-plugins--'), '/srv/projets/dsh/plugins')
+})
+
+test('les DEUX noms de journal sont essayés — 39 sessions en dépendaient', async () => {
+  // MESURÉ : sur cette machine, 118 sessions ont un journal `session.v3.jsonl.zstd`
+  // et 39 un journal `session.jsonl.zstd`. Le plugin ne cherchait QUE le premier
+  // nom : les 39 autres n'existaient pas pour l'application, alors que leur
+  // journal se décode parfaitement.
+  const dossier = await mkdtemp(join(tmpdir(), 'essai-journal-'))
+  try {
+    // Aucun des deux : rien, et surtout pas une exception.
+    assert.equal(await trouverJournal(dossier), null)
+
+    // Le nom historique seul est trouvé.
+    await writeFile(join(dossier, 'session.jsonl.zstd'), 'peu importe')
+    assert.equal(await trouverJournal(dossier), join(dossier, 'session.jsonl.zstd'))
+
+    // Et quand LES DEUX existent, c'est le v3 qui fait foi — c'est le nom
+    // courant, celui que DSH écrit aujourd'hui.
+    await writeFile(join(dossier, 'session.v3.jsonl.zstd'), 'peu importe')
+    assert.equal(await trouverJournal(dossier), join(dossier, 'session.v3.jsonl.zstd'))
+  } finally {
+    await rm(dossier, { recursive: true, force: true })
+  }
 })

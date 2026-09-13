@@ -78,6 +78,8 @@ import {
   PLAFOND_DECOMPRESSION,
   analyserLigne,
   cheminIndicatif,
+  entreeDeSession,
+  trouverJournal,
   decoderFinDeJournal,
   decoderJournal,
   resumer,
@@ -89,7 +91,9 @@ export const name = 'dsh-remote'
 export const inject = ['webServer', 'credentials']
 
 const PREFIX = '/dsh-remote'
-const VERSION_PROTOCOLE = 1
+// LA VERSION DU PROTOCOLE EST EXPORTÉE : c'est un terme du CONTRAT avec le
+// client, et le test de contrat la compare au fixture que le client décode.
+export const VERSION_PROTOCOLE = 1
 
 // Bornes de lecture. Un journal de session peut être énorme ; on refuse de
 // décompresser sans limite plutôt que de faire enfler la mémoire du harness.
@@ -354,7 +358,10 @@ export function apply(ctx, config) {
       for (const sous of sousDossiers) {
         if (!sous.isDirectory()) continue
         const dossier = join(dossierProjet, sous.name)
-        const fichier = join(dossier, 'session.v3.jsonl.zstd')
+        // DEUX NOMS DE JOURNAL EXISTENT, et n'en lire qu'un faisait disparaître
+        // 39 sessions sur 148 (mesuré). Voir `trouverJournal`.
+        const fichier = await trouverJournal(dossier)
+        if (fichier === null) continue
         let information
         try {
           information = await stat(fichier)
@@ -385,21 +392,26 @@ export function apply(ctx, config) {
             faits = { illisible: 'lecture impossible: ' + (erreur.code ?? erreur.message) }
           }
         }
-        resultats.push({
-          projet: projet.name,
-          cwdIndicatif: cheminIndicatif(projet.name),
-          dossier,
-          fichier,
-          octets: information.size,
-          modifieLe: information.mtimeMs,
-          vivante: estVivante(faits?.id),
-          statut: statutDe(faits?.id),
-          // Le harness attend-il une DECISION de l'utilisateur pour cette
-          // session ? C'est l'information la plus actionnable de la liste : une
-          // session bloquee sur une question ne repartira pas toute seule.
-          attendReponse: attendUneReponse(faits?.id),
-          ...faits,
-        })
+        // LA MISE EN FORME VIT DANS `journal.js`, ET C'EST LE CONTRAT : c'est
+        // cette fonction que le test de contrat compare au fixture que le client
+        // Swift décode. Construite ici en ligne, elle ne pouvait être éprouvée
+        // que par un vrai client branché sur un vrai harness.
+        resultats.push(
+          entreeDeSession({
+            projet: projet.name,
+            dossier,
+            fichier,
+            octets: information.size,
+            modifieLe: information.mtimeMs,
+            vivante: estVivante(faits?.id),
+            statut: statutDe(faits?.id),
+            // Le harness attend-il une DECISION de l'utilisateur pour cette
+            // session ? C'est l'information la plus actionnable de la liste : une
+            // session bloquee sur une question ne repartira pas toute seule.
+            attendReponse: attendUneReponse(faits?.id),
+            faits,
+          }),
+        )
       }
     }
     resultats.sort((a, b) => (b.dernierEvenementLe ?? b.modifieLe) - (a.dernierEvenementLe ?? a.modifieLe))
@@ -510,7 +522,8 @@ export function apply(ctx, config) {
   const attendUneReponse = (identifiant) =>
     typeof identifiant === 'string' && identifiant.length > 0 && attentes.has(identifiant)
 
-  /** Une session est vivante si le harness la connait encore dans ce processus. */  const estVivante = (identifiant) => {
+  /** Une session est vivante si le harness la connait encore dans ce processus. */
+  const estVivante = (identifiant) => {
     if (typeof identifiant !== 'string' || identifiant.length === 0) return false
     try {
       if (sessions !== undefined && sessions !== null && typeof sessions.get === 'function') {
@@ -543,7 +556,9 @@ export function apply(ctx, config) {
     }
     for (const projet of projets) {
       if (!projet.isDirectory()) continue
-      const fichier = join(racine, projet.name, identifiant, 'session.v3.jsonl.zstd')
+      const fichier = await trouverJournal(join(racine, projet.name, identifiant))
+      // Aucun des deux noms n'existe : ce projet ne porte pas cette session.
+      if (fichier === null) continue
       try {
         const information = await stat(fichier)
         if (information.isFile()) return { fichier, information, projet: projet.name }

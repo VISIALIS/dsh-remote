@@ -1,0 +1,40 @@
+{
+  "protocole": 1,
+  "total": 117,
+  "sessions": [
+    {
+      "projet": "--srv-projets-dsh-plugins--",
+      "cwdIndicatif": "/srv/projets/dsh/plugins",
+      "dossier": "/srv/projets/dsh-plugins/--srv-projets-dsh-plugins--/2026-09-13T08-12-44-abc",
+      "fichier": "/srv/projets/dsh-plugins/--srv-projets-dsh-plugins--/2026-09-13T08-12-44-abc/session.v3.jsonl.zstd",
+      "octets": 40960,
+      "modifieLe": 1789000000000,
+      "vivante": true,
+      "statut": "running",
+      "attendReponse": false,
+      "id": "2026-09-13T08-12-44-abc",
+      "cwd": "/srv/projets/dsh-plugins",
+      "creeLe": 1789000000000,
+      "preset": "danger-full-access",
+      "profondeurDelegation": 0,
+      "seme": false,
+      "titre": "Reprise de la découverte des serveurs",
+      "dernierEvenementLe": 1789000300000,
+      "dernierSeq": 412,
+      "nbEnregistrements": 413,
+      "tronque": false
+    },
+    {
+      "projet": "--srv-projets-phoenix-0--",
+      "cwdIndicatif": "/srv/projets/phoenix/0",
+      "dossier": "/srv/projets/phoenix-0/--srv-projets-phoenix-0--/2026-09-12T21-04-02-def",
+      "fichier": "/srv/projets/phoenix-0/--srv-projets-phoenix-0--/2026-09-12T21-04-02-def/session.v3.jsonl.zstd",
+      "octets": 8192,
+      "modifieLe": 1788900000000,
+      "vivante": false,
+      "statut": null,
+      "attendReponse": true,
+      "illisible": "journal trop volumineux (536870912 octets)"
+    }
+  ]
+}

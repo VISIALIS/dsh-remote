@@ -80,9 +80,10 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 | `dynamic/journal.js` | la lecture d'un journal de session : trames zstd concaténées, lignes JSONL, résumé |
 | `tests/tailscale.test.js` | les règles de la découverte, éprouvées sans lancer Tailscale |
 | `tests/journal.test.js` | les règles de lecture du journal, éprouvées avec de vraies trames zstd |
+| `tests/contrat.test.js` | le contrat avec le client : le plugin produit exactement les clés du fixture |
 
 ```bash
-node --test plugins/dsh-remote/tests/     # 15 tests, aucune dépendance
+node --test plugins/dsh-remote/tests/     # 20 tests, aucune dépendance
 ```
 
 POURQUOI LE JOURNAL A DES TESTS, ET CE QU'ILS ONT ATTRAPÉ. Un journal DSH est une
@@ -228,6 +229,28 @@ marchera jamais » :
 annulation, il faut revenir au Mac et la fonction perd son intérêt. L'annulation conserve
 la file d'attente (`keepInbox`) : ce qui n'a pas encore été traité reste en attente. Une
 session froide est refusée en `404` — il n'y a rien à interrompre.
+
+### Deux noms de journal — et 39 sessions qui n'existaient pas
+
+DSH a écrit ses journaux sous `session.jsonl.zstd`, puis sous
+`session.v3.jsonl.zstd`. Le plugin ne cherchait **que le second** : mesuré sur
+cette machine, **118 sessions au nom v3 et 39 au nom historique**. Les 39 autres
+n'existaient donc pas pour l'application — invisibles, sans erreur, sans
+avertissement.
+
+Elles se décodent pourtant parfaitement : la première essayée a rendu **6 356
+enregistrements**, en-tête complet, `cwd` et titre présents. Le format de
+concaténation de trames zstd est le même.
+
+`trouverJournal` essaie donc les deux noms, le v3 d'abord — s'il est là, c'est lui
+qui fait foi. Mesuré après correction : **148 sessions** au lieu de 118, aucune
+sans identifiant, et une session au journal historique se lit (20 enregistrements
+sur la première page).
+
+C'est le TEST DE CONTRAT qui a mené là : en écrivant le fixture que les deux
+côtés doivent s'accorder à produire et à décoder, la question « d'où vient ce nom
+de fichier ? » s'est posée — et la vérification sur le disque a montré qu'il était
+faux pour un quart des sessions.
 
 ### « Le service est absent de la composition » : une conclusion fausse, et pourquoi
 

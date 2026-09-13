@@ -18,6 +18,7 @@
  */
 
 import { open, stat } from 'node:fs/promises'
+import { join } from 'node:path'
 import zlib from 'node:zlib'
 
 // Borne de lecture : un journal de session peut être énorme ; on refuse de
@@ -234,4 +235,74 @@ export function resumer(enregistrements) {
     dernierSeq,
     nbEnregistrements: enregistrements.length,
   }
+}
+
+/**
+ * LA MISE EN FORME D'UNE ENTRÉE DE SESSION — le contrat avec le client.
+ *
+ * POURQUOI ELLE EST ICI, ET POURQUOI ELLE EST PURE. Elle était construite en
+ * ligne dans la route : sa forme n'était donc vérifiable qu'avec un vrai harness
+ * et un vrai client. Elle l'est maintenant par un test, et c'est ce qui permet
+ * de tenir le CONTRAT — le client Swift décode exactement ces clés, et un
+ * fixture versionné est éprouvé des deux côtés.
+ *
+ * DEUX ORIGINES, UN SEUL OBJET. Les champs de gauche viennent du SYSTÈME DE
+ * FICHIERS (taille, date, chemins), ceux de droite du JOURNAL (identifiant,
+ * titre, date du dernier événement). Le résumé est ÉTALÉ (`...faits`) et non
+ * imbriqué sous une clé `resume` : c'est la forme que le client attend, et
+ * l'imbriquer a déjà été une erreur — un test Swift a lu « (inconnu) » là où il
+ * attendait un identifiant.
+ *
+ * @param {{projet: string, dossier: string, fichier: string, octets: number,
+ *          modifieLe: number, vivante: boolean, statut: string | null,
+ *          attendReponse: boolean, faits: object}} partie
+ * @returns {object}
+ */
+export function entreeDeSession(partie) {
+  return {
+    projet: partie.projet,
+    cwdIndicatif: cheminIndicatif(partie.projet),
+    dossier: partie.dossier,
+    fichier: partie.fichier,
+    octets: partie.octets,
+    modifieLe: partie.modifieLe,
+    vivante: partie.vivante,
+    statut: partie.statut,
+    attendReponse: partie.attendReponse,
+    ...partie.faits,
+  }
+}
+
+/**
+ * LES NOMS DE JOURNAL, DANS L'ORDRE OÙ ON LES ESSAIE.
+ *
+ * POURQUOI DEUX NOMS. DSH a écrit ses journaux sous `session.jsonl.zstd`, puis
+ * sous `session.v3.jsonl.zstd`. Mesuré sur cette machine : **118 sessions au nom
+ * v3, 39 au nom historique** — et le plugin ne cherchait QUE le v3. Les 39
+ * autres n'existaient donc pas pour l'application, alors que leur journal se
+ * décode parfaitement (6 356 enregistrements lus sur la première essayée, en-tête
+ * complet, cwd et titre présents).
+ *
+ * Le v3 d'abord : c'est le nom courant, et s'il est là c'est lui qui fait foi.
+ */
+export const NOMS_DE_JOURNAL = ['session.v3.jsonl.zstd', 'session.jsonl.zstd']
+
+/**
+ * Le journal d'une session, ou `null` si aucun nom n'existe.
+ *
+ * @param {string} dossier
+ * @returns {Promise<string | null>}
+ */
+export async function trouverJournal(dossier) {
+  for (const nom of NOMS_DE_JOURNAL) {
+    const fichier = join(dossier, nom)
+    try {
+      await stat(fichier)
+      return fichier
+    } catch {
+      // Nom absent : on essaie le suivant. Un dossier sans aucun journal est
+      // simplement ignoré par l'appelant.
+    }
+  }
+  return null
 }
