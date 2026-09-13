@@ -34,7 +34,10 @@ struct VueServeur: View {
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
-        diagnostic
+        // LE PAVÉ TECHNIQUE reste disponible : c'est le seul diagnostic quand
+        // aucune cause n'est connue, et il est aussi écrit dans `diagnostic.json`.
+        paveTechnique
+        parcours
       }
       .padding(24)
       .frame(maxWidth: 680, alignment: .leading)
@@ -229,69 +232,137 @@ struct VueServeur: View {
     }
   }
 
-  // MARK: - Diagnostic
+  // MARK: - Le parcours
 
   /// La cause, POUR CETTE MACHINE.
   private var cause: CauseSansDsh? { modele.causeSansDsh(serveur) }
 
+  /// LE PAVÉ TECHNIQUE — l'erreur brute de la connexion en cours.
+  ///
+  /// POURQUOI IL RESTE. Quand la cause est connue (port fermé, plugin absent), le
+  /// parcours dit tout en une ligne ET répare : le pavé (`NSURLErrorDomain …
+  /// CAUSE: rien n'écoute sur cet hôte et ce port`) ne fait que le répéter en
+  /// charabia. Quand aucune cause n'est connue, en revanche, il est le SEUL
+  /// diagnostic disponible — et il est aussi écrit dans `diagnostic.json`.
   @ViewBuilder
-  private var diagnostic: some View {
-    // ── LE DIAGNOSTIC APPARTIENT À LA MACHINE, PAS À LA CONNEXION ───────────
-    //
-    // Défaut corrigé : le bloc lisait l'erreur de la CONNEXION EN COURS. Sur la
-    // page de MacMini alors que l'application était connectée ailleurs, il n'y
-    // avait donc AUCUN remède ; et connecté à MacMini, il pouvait en donner un
-    // qui parlait d'une autre cause. La cause vient maintenant de ce qu'on a
-    // mesuré SUR cette machine — la sonde pour celles qu'on ne vise pas, la
-    // connexion pour celle qu'on vise.
-    if cause != nil {
-      remede
-    } else if let erreur = modele.erreur, modele.serveurVise?.id == serveur.id {
-      VStack(alignment: .leading, spacing: 12) {
-        // LE PAVÉ TECHNIQUE N'EST PAS AFFICHÉ QUAND LA CAUSE EST CONNUE.
-        //
-        // `-1004` produit une phrase de transport d'une dizaine de lignes
-        // (« NSURLErrorDomain … | sous-jacent: kCFErrorDomainCFNetwork … |
-        // CAUSE: rien n'écoute sur cet hôte et ce port ») qui redisait, en rouge
-        // et en charabia, ce que l'encadré ci-dessous dit en une ligne ET
-        // répare. On l'occulte donc dans ce seul cas : ailleurs, il est le seul
-        // diagnostic disponible — et il reste dans `diagnostic.json`.
-        if !modele.serveurSansDsh {
-          Label(erreur, systemImage: "exclamationmark.triangle")
-            .foregroundStyle(.red)
-            .font(.callout)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-
-        // ── Le piège du Mac qui ne publie rien ─────────────────────────────
-        //
-        // La découverte liste TOUS les Macs du tailnet : elle dit qu'ils sont en
-        // ligne, pas qu'ils publient DSH. En choisir un qui ne publie rien donne
-        // `-1004`, et le propriétaire cherche alors la panne du côté de son
-        // jeton — observé en vrai.
-      }
+  private var paveTechnique: some View {
+    if cause == nil, let erreur = modele.erreur, modele.serveurVise?.id == serveur.id {
+      Label(erreur, systemImage: "exclamationmark.triangle")
+        .foregroundStyle(.red)
+        .font(.callout)
+        .fixedSize(horizontal: false, vertical: true)
     }
   }
 
-  /// Ce qu'il faut faire SUR CETTE MACHINE, avec ce qui se recopie.
+  /// LE PARCOURS : trois étapes, et la méthode pour celles qui restent.
   ///
-  /// DEUX CAUSES, DEUX DÉMARCHES — et les confondre envoie chercher la panne au
-  /// mauvais endroit. Mesuré sur MacMini : le port 80 était publié (la racine
-  /// répondait « dsh web authentication required ») mais `/dsh-remote/v1/sante`
-  /// rendait **404** — le plugin n'y était pas chargé. Dans ce cas, donner les
-  /// commandes Tailscale serait à côté : le tailnet et la publication vont bien.
-  private var remede: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      // `pluginAbsent` : la machine répond, mais pas DSH Remote — c'est le cas
-      // mesuré sur MacMini. Sinon, rien n'écoute sur le port 80.
-      if cause == .pluginAbsent {
-        demarcheDininstallation
-      } else {
-        demarcheDePublication
+  /// POURQUOI UN PARCOURS PLUTÔT QU'UN DIAGNOSTIC. Le bloc précédent disait
+  /// « voici l'erreur, voici le remède » — utile quand on sait ce qu'on cherche,
+  /// inutile quand on ne sait pas OÙ on en est. Le propriétaire a demandé une
+  /// « ligne de goal à franchir » : trois étapes dans l'ordre où elles se
+  /// franchissent, chacune avec sa méthode.
+  ///
+  /// L'ÉTAPE EN COURS EST CELLE QUI DÉBLOQUE LES SUIVANTES : inutile de publier
+  /// un port sur un Mac éteint, inutile d'installer un plugin dont le port sera
+  /// fermé. Le calcul des états vit dans `EtapesServeur`, où il est éprouvé.
+  private var parcours: some View {
+    let etapes = EtapesServeur.etapes(
+      enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur), cause: cause)
+
+    return VStack(alignment: .leading, spacing: 14) {
+      ForEach(etapes, id: \.numero) { etape in
+        etapeAffichee(etape)
       }
     }
     .padding(12)
     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+  }
+
+  @ViewBuilder
+  private func etapeAffichee(_ etape: EtapesServeur.Etape) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Image(systemName: symboleDeLEtat(etape.etat))
+          .foregroundStyle(couleurDeLEtat(etape.etat))
+        Text("\(etape.numero). \(etape.titre)")
+          .font(.callout.weight(etape.etat == .franchie ? .regular : .medium))
+          .foregroundStyle(etape.etat == .franchie ? Color.secondary : Color.primary)
+          .fixedSize(horizontal: false, vertical: true)
+        Spacer(minLength: 4)
+        if etape.etat == .inconnue {
+          Text("à vérifier")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      // ON N'EXPLIQUE ET N'OUTILLE QUE CE QUI RESTE À FAIRE. Une étape franchie
+      // n'a pas besoin de mode d'emploi, et l'afficher noierait celle qui bloque.
+      if etape.etat != .franchie {
+        Text(etape.explication)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        methodologie(pour: etape.numero, connue: etape.etat == .aFaire)
+      }
+    }
+  }
+
+  private func symboleDeLEtat(_ etat: EtapesServeur.Etat) -> String {
+    switch etat {
+    case .franchie: return "checkmark.circle.fill"
+    case .aFaire: return "circle"
+    case .inconnue: return "questionmark.circle"
+    }
+  }
+
+  private func couleurDeLEtat(_ etat: EtapesServeur.Etat) -> Color {
+    switch etat {
+    case .franchie: return .green
+    case .aFaire: return .orange
+    case .inconnue: return .secondary
+    }
+  }
+
+  /// LA MÉTHODE POUR FRANCHIR L'ÉTAPE — ou pour la VÉRIFIER quand on ne sait pas.
+  ///
+  /// Quand l'état est inconnu, on ne donne que la commande de constat : envoyer
+  /// publier un port dont on ignore s'il l'est déjà ferait douter de tout.
+  @ViewBuilder
+  private func methodologie(pour numero: Int, connue: Bool) -> some View {
+    switch numero {
+    case 1:
+      if connue {
+        Text("Allumez ce Mac, et vérifiez que Tailscale y est connecté :")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        LigneCommande(commande: "tailscale status")
+        Text("S'il n'y est pas connecté :")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        LigneCommande(commande: "tailscale up")
+      } else {
+        Text("Vérifiez l'état du tailnet, sur ce Mac ou sur un autre :")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        LigneCommande(commande: "tailscale status")
+      }
+    case 2:
+      if connue {
+        demarcheDePublication
+      } else {
+        Text("Vérifiez sur ce Mac ce qui est publié :")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        LigneCommande(commande: "tailscale serve status")
+      }
+    default:
+      // L'installation du plugin : la démarche complète, avec le bloc à copier.
+      demarcheDininstallation
+    }
   }
 
   /// LE CAS MESURÉ : la machine répond, mais DSH Remote n'y est pas installé.

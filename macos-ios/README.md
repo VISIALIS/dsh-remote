@@ -342,6 +342,36 @@ liste arrivée en retard n'écrase pas la nouvelle. Écrits, ils ont d'ailleurs 
 erreur de ma part : le résumé d'une session est **aplati** dans l'objet par le plugin, et ma
 fixture l'imbriquait — l'identifiant décodé était « (inconnu) ».
 
+#### Le parcours d'un serveur : trois étapes, et la méthode pour chacune
+
+Demande du propriétaire : « une ligne de goal à franchir », avec, pour chaque
+étape non remplie, la méthodologie pour y arriver. La page d'un serveur montre
+donc un **parcours** — et non plus seulement un diagnostic.
+
+| Étape | Ce qu'elle veut dire | D'où vient son état |
+|---|---|---|
+| 1. Ce Mac est visible | il est en ligne sur le tailnet, donc la découverte le propose | un FAIT de Tailscale (`Online`), lu, jamais mesuré par l'application |
+| 2. Le port de DSH est ouvert | quelque chose répond sur son port 80, publié par `tailscale serve` | la sonde : un `404` prouve que le port est ouvert |
+| 3. Le plugin `dsh-remote` est installé | DSH Remote y répond | la sonde : `200` ou `401` |
+
+**CE QU'ON MONTRE QUAND ON NE SAIT PAS.** Trois états par étape : franchie, à
+franchir, ou **inconnue**. Une machine hors ligne ne dit rien de son port : on
+n'envoie donc personne publier un port sur un Mac éteint, et la ligne porte
+« à vérifier » avec la commande de CONSTAT (`tailscale serve status`) plutôt
+qu'avec la méthode complète. De même, une erreur qui n'explique rien (délai, DNS)
+ne fait pas conclure que le port est fermé.
+
+**ON N'OUTILLE QUE CE QUI RESTE.** Une étape franchie n'affiche ni explication ni
+commande : elles noieraient celle qui bloque. Chaque étape non franchie porte sa
+méthode, avec les commandes qui se copient d'un appui.
+
+Vérifié par capture, sur les deux cas qui comptent : MacMini (port ouvert, plugin
+absent → étapes 1 et 2 vertes, étape 3 à faire avec le bloc `cordis.patch.yml` à
+copier) et un Mac hors ligne (étape 1 à faire avec `tailscale status` / `tailscale
+up`, les suivantes « à vérifier »).
+
+7 tests couvrent le calcul des états, dont les trois cas d'ignorance.
+
 #### Quand la machine répond mais n'a pas le plugin : le dire, et donner la démarche
 
 Demande du propriétaire : « il faut dire dans remote que le plugin n'est pas installé et
@@ -1457,6 +1487,7 @@ inactive.
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
 | **La page dit que le plugin manque, et donne la démarche** | capture iPhone de la page de MacMini (alors que l'app vise une autre machine) : constat nommé, 3 étapes, bloc `cordis.patch.yml` copiable, vérification `curl` |
+| **Le parcours d'un serveur, en trois étapes** | captures iPhone : MacMini (étapes 1-2 vertes, 3 à faire + méthode) et un Mac hors ligne (étape 1 à faire, suivantes « à vérifier ») ; 7 tests |
 | **Le diagnostic appartient à la machine** | `404` observé par la sonde → procédure d'installation ; `-1004` → procédure de publication ; vérifié par capture sur une machine NON visée |
 | **Une réponse en vol n'écrit pas dans une autre cible** | 2 tests : la bascule invalide le vol, une liste en retard est refusée ; 87 tests au total |
 | **Le jeton est par hôte** | 3 tests : chaque hôte rappelle le sien, celui de l'hôte local n'est pas recopié, effacer n'efface que le sien |
