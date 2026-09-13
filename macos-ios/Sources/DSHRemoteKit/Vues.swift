@@ -564,7 +564,9 @@ struct CarrouselServeurs: View {
                 Task { await modele.choisirEtConnecter(serveur) }
               })
             .accessibilityLabel(
-              "\(serveur.nom), \(serveur.enLigne ? "en ligne" : "hors ligne")\(serveur.estLocal ? ", hôte interrogé" : "")"
+              EtatMachine.libelleAccessible(
+                nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
+                estLocal: serveur.estLocal)
             )
           #else
             Button {
@@ -585,7 +587,9 @@ struct CarrouselServeurs: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(
-              "\(serveur.nom), \(serveur.enLigne ? "en ligne" : "hors ligne")\(serveur.estLocal ? ", hôte interrogé" : "")"
+              EtatMachine.libelleAccessible(
+                nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
+                estLocal: serveur.estLocal)
             )
           #endif
         }
@@ -913,6 +917,7 @@ struct BarreRecherche: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Effacer la recherche")
+        .cibleTactile()
       }
     }
     .padding(.horizontal, 12)
@@ -941,6 +946,14 @@ struct BarreRecherche: View {
 /// qu'il faut qu'elle se voie.
 struct PastilleEtat: View {
   let etat: EtatSession
+  /// « Réduire les animations », LU ET RESPECTÉ.
+  ///
+  /// POURQUOI CE N'EST PAS UNE OPTION. L'indicateur tournait en boucle
+  /// infinie sur chaque session active, sans jamais consulter le réglage : une
+  /// animation perpétuelle est précisément ce que ce réglage existe pour
+  /// arrêter, et le modèle portait déjà `EtatSession.anime` — que personne ne
+  /// lisait.
+  @Environment(\.accessibilityReduceMotion) private var reduireLesAnimations: Bool
   @State private var phase = 0.0
 
   var body: some View {
@@ -965,11 +978,9 @@ struct PastilleEtat: View {
         }
         .frame(width: 9, height: 9)
         .rotationEffect(.degrees(phase))
-        .onAppear {
-          withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
-            phase = 360
-          }
-        }
+        .onAppear { reglerAnimation() }
+        // Le réglage peut changer PENDANT que l'application vit : on le relit.
+        .onChange(of: reduireLesAnimations) { _, _ in reglerAnimation() }
         .foregroundStyle(Color.orange)
       case .attendReponse:
         // Un point orange PLEIN, et non les carrés : ce n'est pas « ça tourne »,
@@ -990,6 +1001,26 @@ struct PastilleEtat: View {
       }
     }
     .frame(width: 10, height: 10)
+    // L'INDICATEUR EST DÉCORATIF POUR VOIXOVER, et seulement pour lui : la ligne
+    // entière porte l'état en mots (`AfficheLigneSession.libelleAccessible`).
+    // Le laisser parler doublerait l'information — et deux fois la même chose se
+    // lit comme deux choses.
+    .accessibilityHidden(true)
+  }
+
+  /// Démarre — ou arrête net — la rotation, selon le réglage système.
+  ///
+  /// QUAND ON ARRÊTE, L'ÉTAT RESTE VISIBLE : les quatre carrés orange demeurent,
+  /// immobiles. Une animation supprimée ne doit jamais emporter l'information
+  /// avec elle.
+  private func reglerAnimation() {
+    guard etat.anime, !reduireLesAnimations else {
+      phase = 0
+      return
+    }
+    withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
+      phase = 360
+    }
   }
 
   /// Les carrés s'allument en diagonale, ce qui donne une rotation lisible même
@@ -1036,6 +1067,29 @@ struct AfficheLigneSession: Equatable {
     self.age = AgeLisible.texte(session.resume.dernierEvenementLe)
     self.illisible = session.illisible
   }
+
+  /// CE QUE VOIXOVER ANNONCE POUR LA LIGNE — une phrase, pas cinq fragments.
+  ///
+  /// POURQUOI ELLE EST ICI, ET NON DANS LA VUE. Ce type est le seul endroit où
+  /// le contenu d'une ligne est réuni en VALEURS ; la vue ne fait que le
+  /// dessiner. Une phrase se relit et s'éprouve, un `Text` non.
+  ///
+  /// L'ORDRE EST CELUI DE L'IMPORTANCE : le titre, puis l'état — la seule chose
+  /// qui appelle une action —, puis la matière, puis l'âge. « au repos » est tu :
+  /// c'est le cas le plus fréquent, et le silence est ici une information.
+  var libelleAccessible: String {
+    var morceaux = [titre]
+    if etat != .rien { morceaux.append(etat.libelle) }
+    if let evenements {
+      morceaux.append("\(evenements) événement\(evenements > 1 ? "s" : "")")
+    }
+    if let octets {
+      morceaux.append(ByteCountFormatter.string(fromByteCount: Int64(octets), countStyle: .file))
+    }
+    if !age.isEmpty { morceaux.append(age) }
+    if let illisible { morceaux.append(illisible) }
+    return morceaux.joined(separator: ", ")
+  }
 }
 
 /// Une ligne de la liste : point d'état, titre, projet, volume et date.
@@ -1069,5 +1123,9 @@ struct LigneSession: View {
       }
     }
     .padding(.vertical, 2)
+    // UNE LIGNE, UNE PHRASE. Sans cela, VoiceOver énumère cinq fragments sans
+    // jamais dire l'état — la seule information qui demande d'agir.
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(affiche.libelleAccessible)
   }
 }

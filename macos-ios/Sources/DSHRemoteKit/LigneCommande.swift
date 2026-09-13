@@ -43,6 +43,11 @@ struct LigneCommande: View {
           .font(.caption)
       }
       .buttonStyle(.borderless)
+      // LA CIBLE EST ÉLARGIE : le dessin reste une icône de 12 points, la zone
+      // qui répond fait 44 points de côté. C'est le geste le plus fréquent des
+      // pages d'installation — recopier une commande pour la taper ailleurs — et
+      // le plus coûteux à rater.
+      .cibleTactile()
       .help(copie ? "\(libelle.capitalisee) copiée" : "Copier \(libelle)")
       .accessibilityLabel(copie ? "\(libelle.capitalisee) copiée" : "Copier \(libelle)")
     }

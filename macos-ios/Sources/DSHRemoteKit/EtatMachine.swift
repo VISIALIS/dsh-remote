@@ -57,6 +57,24 @@ enum EtatMachine {
     }
   }
 
+  /// CE QUE VOIXOVER ANNONCE POUR UNE MACHINE — le nom, puis l'état ENTIER.
+  ///
+  /// POURQUOI IL EST ICI. Le libellé de la vignette disait « en ligne » ou
+  /// « hors ligne » et s'arrêtait là : une machine EN LIGNE qui ne sert PAS DSH
+  /// était donc annoncée « MacMini, en ligne » — soit l'inverse de ce qu'il faut
+  /// savoir avant d'appuyer, puisque l'appui ne donnera rien. Le verdict
+  /// existait pourtant déjà, mais en couleur et en abrégé, deux choses qu'un
+  /// lecteur d'écran ne rend pas.
+  ///
+  /// La phrase est construite À PARTIR DE `decrire` : elle ne peut donc pas
+  /// diverger des mots affichés, et elle s'éprouve sans rendre une vue.
+  static func libelleAccessible(
+    nom: String, enLigne: Bool, sertDsh: Bool?, estLocal: Bool
+  ) -> String {
+    let etat = decrire(enLigne: enLigne, sertDsh: sertDsh, estLocal: estLocal, court: false)
+    return "\(nom), \(etat.texte)"
+  }
+
   /// LA CONCLUSION DU DIAGNOSTIC, en une phrase.
   ///
   /// POURQUOI ELLE EST ICI, ET NON DANS LA VUE. Elle décide de trois choses à la

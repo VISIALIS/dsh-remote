@@ -55,7 +55,9 @@ struct ComposeurEcriture: View {
           .buttonStyle(.plain)
           .foregroundStyle(modele.brouillon.trimmingCharacters(in: .whitespaces).isEmpty ? Color.secondary : Color.accentColor)
           .disabled(modele.brouillon.trimmingCharacters(in: .whitespaces).isEmpty)
+          .cibleTactile()
           .help("Envoyer")
+          .accessibilityLabel("Envoyer le message")
         }
 
         if modele.estEnCours(session.id), modele.annulationPossible {
@@ -66,7 +68,9 @@ struct ComposeurEcriture: View {
           }
           .buttonStyle(.plain)
           .foregroundStyle(Color.red)
+          .cibleTactile()
           .help("Interrompre le tour en cours — la file d'attente est conservée")
+          .accessibilityLabel("Interrompre le tour en cours")
         }
       }
     }
@@ -101,7 +105,13 @@ struct ComposeurEcriture: View {
     }
     .menuStyle(.borderlessButton)
     .fixedSize()
+    .cibleTactile()
     .help(mode == .queue ? "À la suite : forme le prochain tour" : "Tout de suite : remis au tour en cours")
+    // LE MODE COURANT SE DIT AUSSI À VOIXOVER : l'icône change de couleur et de
+    // glyphe, deux choses qu'un lecteur d'écran ne rend pas.
+    .accessibilityLabel(
+      mode == .queue
+        ? "Mode d'envoi : à la suite" : "Mode d'envoi : tout de suite, interrompt le tour en cours")
   }
 
   private func envoyer() {

@@ -299,6 +299,7 @@ struct VueServeur: View {
           Image(systemName: "doc.on.clipboard")
         }
         .buttonStyle(.borderless)
+        .cibleTactile()
         .accessibilityLabel("Coller le jeton depuis le presse-papier")
         if modele.jetonDisponible {
           Button {
@@ -307,6 +308,7 @@ struct VueServeur: View {
             Image(systemName: "xmark.circle")
           }
           .buttonStyle(.borderless)
+          .cibleTactile()
           .accessibilityLabel("Effacer le jeton")
         }
       }

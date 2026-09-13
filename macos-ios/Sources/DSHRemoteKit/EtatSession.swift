@@ -67,4 +67,26 @@ public enum EtatSession: Sendable, Equatable {
 
   /// Vrai si l'indicateur doit s'animer.
   public var anime: Bool { self == .enCours }
+
+  /// L'ÉTAT, DIT EN TOUTES LETTRES — pour VoiceOver, et pour tout ce qui doit
+  /// nommer un état sans le montrer.
+  ///
+  /// POURQUOI CE N'EST PAS DÉCORATIF. La liste portait son information la plus
+  /// actionnable dans une FORME et une COULEUR : quatre carrés orange qui
+  /// tournent, un point orange plein, un point vert, un anneau gris. Un lecteur
+  /// d'écran annonçait donc « 27 évts, 1,2 Mo, il y a 3 minutes » sans jamais
+  /// dire laquelle des sessions l'attend — c'est-à-dire sans dire la seule chose
+  /// qui appelle une action de sa part.
+  ///
+  /// Le vocabulaire est celui des commentaires du type, et pas un synonyme
+  /// inventé ici : « attend votre réponse » dit à qui l'état s'adresse.
+  public var libelle: String {
+    switch self {
+    case .rien: return "au repos"
+    case .enCours: return "tour en cours"
+    case .attendReponse: return "attend votre réponse"
+    case .terminee: return "terminée, pas encore lue"
+    case .inconnue: return "état inconnu"
+    }
+  }
 }
