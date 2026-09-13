@@ -210,6 +210,29 @@ public enum EtapesServeur {
     ]
   }
 
+  /// LA CONCLUSION DU DIAGNOSTIC, en une ligne.
+  ///
+  /// POURQUOI UN RÉSUMÉ. Un diagnostic se lit d'abord par sa conclusion : « ce
+  /// serveur est-il utilisable ? » est la question, et les quatre étapes sont la
+  /// démonstration. Sans cette ligne, il fallait lire quatre lignes pour savoir
+  /// si tout allait bien — et c'est le cas le plus fréquent.
+  ///
+  /// Elle distingue trois situations, parce qu'elles n'appellent pas la même
+  /// réaction : tout est prêt ; il reste du travail ; on ne sait pas encore.
+  public static func resume(_ etapes: [Etape]) -> String {
+    let restantes = etapes.filter { $0.etat != .franchie }
+    if restantes.isEmpty { return "Ce serveur est prêt." }
+    let sures = restantes.filter { $0.etat == .aFaire }
+    if sures.isEmpty { return "Vérification en cours…" }
+    if sures.count == 1, let seule = sures.first {
+      // LE TITRE EST CITÉ TEL QUEL. Le mettre en minuscules abîmait les noms
+      // propres — « Ce Mac est visible » devenait « ce mac est visible »,
+      // constaté sur capture.
+      return "Il reste une étape : « \(seule.titre) »."
+    }
+    return "Il reste \(sures.count) étapes sur \(etapes.count)."
+  }
+
   /// Cette étape est-elle VERROUILLÉE par une précédente non franchie ?
   ///
   /// Demande du propriétaire : « si une étape de goal n'est pas réalisée, les goals

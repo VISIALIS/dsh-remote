@@ -37,6 +37,9 @@ struct VueServeur: View {
         // LE PAVÉ TECHNIQUE reste disponible : c'est le seul diagnostic quand
         // aucune cause n'est connue, et il est aussi écrit dans `diagnostic.json`.
         paveTechnique
+        // LA CONCLUSION D'ABORD : « ce serveur est-il utilisable ? » est la
+        // question ; les quatre étapes sont la démonstration.
+        resumeDuParcours
         parcours
       }
       .padding(24)
@@ -265,6 +268,15 @@ struct VueServeur: View {
   /// L'ÉTAPE EN COURS EST CELLE QUI DÉBLOQUE LES SUIVANTES : inutile de publier
   /// un port sur un Mac éteint, inutile d'installer un plugin dont le port sera
   /// fermé. Le calcul des états vit dans `EtapesServeur`, où il est éprouvé.
+  /// La conclusion du diagnostic, en une ligne.
+  private var resumeDuParcours: some View {
+    let pret = etapes.allSatisfy { $0.etat == .franchie }
+    return Label(EtapesServeur.resume(etapes), systemImage: pret ? "checkmark.seal.fill" : "stethoscope")
+      .font(.callout.weight(.medium))
+      .foregroundStyle(pret ? Color.green : Color.orange)
+      .fixedSize(horizontal: false, vertical: true)
+  }
+
   /// Les étapes de CETTE machine, recalculées à chaque rendu : la sonde peut
   /// rendre son verdict entre deux affichages.
   private var etapes: [EtapesServeur.Etape] {
@@ -278,7 +290,11 @@ struct VueServeur: View {
   private var parcours: some View {
     // LA MISE EN PAGE EST PARTAGÉE, et la règle du verrou avec : une seule
     // frontière à la fois, les suivantes grisées.
-    ParcoursDesEtapes(etapes: etapes) { etape in
+    // DIAGNOSTIC DE SANTÉ : on constate, on ne verrouille rien. Le propriétaire
+    // a tranché — ces lignes disent l'état de la machine, elles ne listent pas
+    // des objectifs. Chaque étape non franchie porte donc sa méthode, et
+    // l'utilisateur voit d'un coup tout ce qui manque.
+    ParcoursDesEtapes(etapes: etapes, mode: .diagnostic) { etape in
       methodologie(pour: etape.numero, connue: etape.etat == .aFaire)
     }
   }

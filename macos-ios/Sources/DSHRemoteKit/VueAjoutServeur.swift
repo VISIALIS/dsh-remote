@@ -56,7 +56,9 @@ struct VueAjoutServeur: View {
   private var parcours: some View {
     // LA MISE EN PAGE EST PARTAGÉE, et la règle du verrou avec : une seule
     // frontière à la fois, les suivantes grisées.
-    ParcoursDesEtapes(etapes: etapes) { etape in
+    // OBJECTIFS : ici, on ne constate pas — on liste un travail à faire, dans
+    // l'ordre. C'est la seule des deux pages où le verrou a un sens.
+    ParcoursDesEtapes(etapes: etapes, mode: .objectifs) { etape in
       methode(pour: etape.numero)
     }
   }

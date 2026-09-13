@@ -172,3 +172,43 @@ func verrouDesEtapes() {
   #expect(!EtapesServeur.estVerrouillee(inconnu[2], dans: inconnu))
   #expect(EtapesServeur.estVerrouillee(inconnu[3], dans: inconnu))
 }
+
+@Test("La conclusion du diagnostic distingue prêt, reste à faire, et pas encore su")
+func resumeDuDiagnostic() {
+  // Un diagnostic se lit par sa conclusion : « ce serveur est-il utilisable ? »
+  // est la question, les quatre étapes sont la démonstration.
+  let pret = EtapesServeur.etapes(
+    tailnetDeLAppareil: true, enLigne: true, sertDsh: true, cause: nil)
+  #expect(EtapesServeur.resume(pret) == "Ce serveur est prêt.")
+
+  // UNE seule étape : on la NOMME — c'est l'information la plus utile, et elle
+  // évite d'avoir à lire la liste pour savoir laquelle.
+  let uneSeule = EtapesServeur.etapes(
+    tailnetDeLAppareil: true, enLigne: true, sertDsh: false, cause: .pluginAbsent)
+  #expect(EtapesServeur.resume(uneSeule).contains("une étape"))
+  #expect(EtapesServeur.resume(uneSeule).contains("plugin"))
+
+  // PLUSIEURS ÉTAPES À FAIRE : la dérivation n'en produit QU'UNE à la fois — les
+  // suivantes sont « inconnue », jamais « à faire » (on ne sait pas encore).
+  // Cette liste est donc construite à la main, pour couvrir la branche le jour où
+  // les règles changeraient.
+  let plusieurs = [
+    EtapesServeur.Etape(numero: 1, titre: "a", explication: "a", etat: .franchie),
+    EtapesServeur.Etape(numero: 2, titre: "b", explication: "b", etat: .aFaire),
+    EtapesServeur.Etape(numero: 3, titre: "c", explication: "c", etat: .aFaire),
+    EtapesServeur.Etape(numero: 4, titre: "d", explication: "d", etat: .inconnue),
+  ]
+  #expect(EtapesServeur.resume(plusieurs) == "Il reste 2 étapes sur 4.")
+
+  // Et la dérivation réelle, elle, ne nomme qu'une étape — c'est la propriété
+  // qu'on vient de découvrir en écrivant ce test.
+  let uneSeuleAFaire = EtapesServeur.etapes(
+    tailnetDeLAppareil: false, enLigne: false, sertDsh: nil, cause: nil)
+  #expect(uneSeuleAFaire.filter { $0.etat == .aFaire }.count == 1)
+
+  // Rien de « à faire » mais rien de franchi : on ne sait pas encore. Annoncer
+  // « prêt » serait faux, annoncer du travail aussi.
+  let enCours = EtapesServeur.etapes(
+    tailnetDeLAppareil: nil, enLigne: true, sertDsh: nil, cause: nil)
+  #expect(EtapesServeur.resume(enCours) == "Vérification en cours…")
+}

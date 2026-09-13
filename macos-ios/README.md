@@ -342,6 +342,25 @@ liste arrivée en retard n'écrase pas la nouvelle. Écrits, ils ont d'ailleurs 
 erreur de ma part : le résumé d'une session est **aplati** dans l'objet par le plugin, et ma
 fixture l'imbriquait — l'identifiant décodé était « (inconnu) ».
 
+**DEUX LECTURES DU MÊME CONTENU.** Le propriétaire a tranché : « en fait les
+étapes pour la page détail, c'est un diagnostic de santé ». Sur la page d'un
+serveur, les quatre lignes **constatent** l'état d'une machine — on veut tout
+savoir d'un coup, rien n'est verrouillé, et chaque étape non franchie porte sa
+méthode. Sur la page « Ajouter un serveur », elles **listent** un travail à faire,
+dans l'ordre.
+
+| Page | Lecture | Verrou |
+|---|---|---|
+| un serveur | **diagnostic de santé** | aucun : un diagnostic qui cache la moitié de ses conclusions n'en est pas un |
+| « Ajouter un serveur » | **objectifs à réaliser** | les étapes suivant celle qui bloque sont grisées |
+
+Le diagnostic s'ouvre sur sa **conclusion** — « Ce serveur est prêt. » / « Il reste
+une étape : « … » » / « Vérification en cours… » — parce que « ce serveur est-il
+utilisable ? » est la question, et les quatre étapes la démonstration. Le titre de
+l'étape restante est **cité tel quel** : le mettre en minuscules abîmait les noms
+propres (« Ce Mac est visible » devenait « ce mac est visible », constaté sur
+capture).
+
 **UNE SEULE FRONTIÈRE À LA FOIS.** Demande du propriétaire : « si une étape de goal
 n'est pas réalisée, les goals suivants sont grisés (pas besoin de rentrer dans leur
 détail) ». Le parcours affiche donc :
@@ -1561,6 +1580,7 @@ inactive.
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
 | **La page dit que le plugin manque, et donne la démarche** | capture iPhone de la page de MacMini (alors que l'app vise une autre machine) : constat nommé, 3 étapes, bloc `cordis.patch.yml` copiable, vérification `curl` |
+| **Le diagnostic de santé d'un serveur** | captures iPhone : conclusion (« Il reste une étape : « … » ») puis les quatre constats, sans verrou ; sur un Mac hors ligne, l'étape 2 avec ses commandes et les suivantes « à vérifier » |
 | **Les étapes suivantes sont grisées** | capture iPhone : frontière (étape 2) avec sa méthode, étapes 3 et 4 grisées avec un cadenas et « après l'étape N », sans détail |
 | **La page « Ajouter un serveur »** | capture iPhone (`--ajout --page-seule`) : étape 1 constatée, étapes 2-4 à faire avec leurs commandes, chacune disant sur quelle machine |
 | **Le parcours d'un serveur, en trois étapes** | captures iPhone : MacMini (étapes 1-3 vertes, 4 à faire + méthode) et un Mac hors ligne (étapes 2 à faire, suivantes « à vérifier ») ; 8 tests |

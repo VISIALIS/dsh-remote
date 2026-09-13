@@ -1,27 +1,36 @@
 import SwiftUI
 
-/// L'AFFICHAGE D'UN PARCOURS : l'étape qui bloque, et celles qu'on ne peut pas
-/// encore franchir.
+/// L'AFFICHAGE DES ÉTAPES — en DIAGNOSTIC ou en OBJECTIFS.
 ///
-/// POURQUOI CETTE VUE EST PARTAGÉE. La page d'un serveur et la page « Ajouter un
-/// serveur » affichent le même parcours, à la méthode près : l'une juge une
-/// machine connue, l'autre liste le travail pour un Mac qu'on n'a pas encore.
-/// Deux copies de cette mise en page auraient divergé — et c'est précisément ce
-/// que l'utilisateur compare.
+/// DEUX LECTURES DU MÊME CONTENU, et c'est le propriétaire qui a fait la
+/// distinction : « en fait les étapes pour la page détail, c'est un diagnostic de
+/// santé ». Sur la page d'un serveur, les quatre lignes CONSTATENT l'état d'une
+/// machine : on veut tout savoir d'un coup, y compris ce qui ne va pas, et rien
+/// n'est « verrouillé » — un diagnostic qui cache la moitié de ses conclusions
+/// n'est pas un diagnostic.
 ///
-/// LA RÈGLE DEMANDÉE PAR LE PROPRIÉTAIRE : « si une étape de goal n'est pas
-/// réalisée, les goals suivants sont grisés (pas besoin de rentrer dans leur
-/// détail) ». Une seule frontière à la fois, donc :
+/// Sur la page « Ajouter un serveur », elles LISTENT un travail à faire, dans
+/// l'ordre : là, une seule frontière à la fois, et les suivantes grisées —
+/// « si une étape de goal n'est pas réalisée, les goals suivants sont grisés ».
 ///
-///   - les étapes FRANCHIES : leur titre, et rien d'autre ;
-///   - la PREMIÈRE non franchie : son explication et sa méthode — c'est elle
-///     qu'on peut faire maintenant ;
-///   - les SUIVANTES : grisées, sans explication ni commande. Leur mode d'emploi
-///     n'aiderait pas : il suppose la précédente franchie, et l'afficher noierait
-///     celle qui bloque.
+/// POURQUOI LA VUE EST PARTAGÉE MALGRÉ TOUT. Le dessin d'une ligne est identique :
+/// une icône d'état, un titre, une explication, une méthode. Seule la règle de
+/// verrouillage change — et deux copies auraient divergé sur ce que l'utilisateur
+/// compare d'une page à l'autre.
 struct ParcoursDesEtapes<Methode: View>: View {
+
+  /// COMMENT LIRE LES ÉTAPES : ce qu'on constate, ou ce qu'il reste à faire.
+  enum Mode {
+    /// Toutes les étapes sont montrées, avec leur méthode si elles ne sont pas
+    /// franchies. Aucune n'est verrouillée : un diagnostic dit tout.
+    case diagnostic
+    /// Une seule frontière : les suivantes sont grisées, sans méthode.
+    case objectifs
+  }
+
   let etapes: [EtapesServeur.Etape]
-  /// La méthode à afficher pour la seule étape qui n'est pas verrouillée.
+  var mode: Mode = .diagnostic
+  /// La méthode à afficher pour une étape non franchie.
   ///
   /// Elle reçoit l'ÉTAPE, et pas seulement son numéro : la page a besoin de son
   /// état pour choisir entre la méthode complète (« à faire ») et la seule
@@ -39,10 +48,10 @@ struct ParcoursDesEtapes<Methode: View>: View {
   }
 
   private func ligne(_ etape: EtapesServeur.Etape) -> some View {
-    // LE VERROU SE DÉDUIT DE LA LISTE, jamais d'un champ de l'étape : c'est la
-    // même règle pour les deux pages, et elle vit dans `EtapesServeur` où elle
-    // est éprouvée.
-    let verrouillee = EtapesServeur.estVerrouillee(etape, dans: etapes)
+    // LE VERROU SE DÉDUIT DE LA LISTE, jamais d'un champ de l'étape : la règle
+    // vit dans `EtapesServeur`, où elle est éprouvée. Il ne s'applique QU'AUX
+    // OBJECTIFS : un diagnostic n'a pas de frontière.
+    let verrouillee = mode == .objectifs && EtapesServeur.estVerrouillee(etape, dans: etapes)
 
     return VStack(alignment: .leading, spacing: 8) {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
