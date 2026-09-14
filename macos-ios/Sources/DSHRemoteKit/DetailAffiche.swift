@@ -44,23 +44,27 @@ public enum DetailAffiche: Equatable {
   ///     concerne une machine, et sans cette branche elle ne s'afficherait nulle
   ///     part.
   ///   - vise: la machine visée par la connexion (la « cible »).
-  ///   - serveurs: la liste découverte, dans son ordre — en ligne d'abord.
+  ///   - serveursAffiches: les machines dans l'ordre où elles S'AFFICHENT — celui
+  ///     du carrousel (`ModeleApp.serveursAffiches`, joignables d'abord). Le nom
+  ///     dit laquelle des deux listes passer : la règle doit tomber sur la MÊME
+  ///     machine que la première vignette, sinon la vignette mise en avant et la
+  ///     page affichée parlent de deux machines différentes.
   public static func pour(
     session: String?,
     ajout: Bool,
     pageOuverte: ServeurMac?,
     cibleEnErreur: ServeurMac?,
     vise: ServeurMac?,
-    serveurs: [ServeurMac]
+    serveursAffiches: [ServeurMac]
   ) -> DetailAffiche {
     if let session { return .journal(session) }
     if ajout { return .ajout }
     if let serveur = pageOuverte ?? cibleEnErreur ?? vise { return .serveur(serveur) }
-    // LE PREMIER DE LA LISTE, ET PAS « RIEN ». C'est la règle demandée : au
-    // lancement, une machine est sélectionnée, donc une page est affichée. Le cas
-    // se présente quand AUCUNE machine n'est en ligne : il n'y a alors aucune
+    // LE PREMIER DE LA LISTE AFFICHÉE, ET PAS « RIEN ». C'est la règle demandée :
+    // au lancement, une machine est sélectionnée, donc une page est affichée. Le
+    // cas se présente quand AUCUNE machine n'est en ligne : il n'y a alors aucune
     // cible — et c'est justement la page de la première qui explique pourquoi.
-    if let premier = serveurs.first { return .serveur(premier) }
+    if let premier = serveursAffiches.first { return .serveur(premier) }
     // AUCUN SERVEUR : la seule chose utile à montrer est comment en ajouter un.
     return .ajout
   }

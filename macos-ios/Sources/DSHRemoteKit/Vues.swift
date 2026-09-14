@@ -114,6 +114,12 @@ public struct VuePrincipale: View {
   /// POURQUOI ICI, ET PAS DANS LE `switch` DE LA VUE : la vue fournit les faits
   /// (session choisie, page ouverte, cible, liste), la règle décide. C'est ce qui
   /// permet de l'éprouver sans interface.
+  ///
+  /// LA LISTE EST CELLE DU CARROUSEL (`serveursAffiches`), et pas `serveurs` : la
+  /// vignette mise en avant est la première de l'ordre AFFICHÉ, et la page du
+  /// volet de détail doit être celle de cette vignette-là. Deux listes différentes
+  /// feraient parler l'écran de droite d'une autre machine que celle qui est
+  /// entourée à gauche.
   private var detailAAfficher: DetailAffiche {
     DetailAffiche.pour(
       session: sessionSelectionnee?.id,
@@ -121,7 +127,7 @@ public struct VuePrincipale: View {
       pageOuverte: serveurDeLaPage,
       cibleEnErreur: serveurDUneErreur,
       vise: modele.serveurChoisi,
-      serveurs: modele.serveurs)
+      serveursAffiches: modele.serveursAffiches)
   }
 
   /// La machine visée par l'adresse courante, quand une erreur l'attend.
