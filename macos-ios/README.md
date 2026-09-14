@@ -1719,6 +1719,24 @@ alors que l'utilisateur **demande** ce collage. `PasteButton` exprime la même i
 au système, qui accorde l'accès sans bannière. La validation, elle, reste la même des
 deux côtés (`ModeleApp.jetonPlausible`), et le message d'échec n'est écrit qu'une fois.
 
+### Deux points de l'audit qu'on ne corrige PAS, et pourquoi
+
+Ils figuraient au plan d'actions ; ils sont tranchés ici, pour qu'on ne les
+redécouvre pas comme des oublis.
+
+- **L'écran de lancement reste vide** (`UILaunchScreen` sans contenu). La directive
+  demande un écran « presque identique au premier écran », **sans texte ni logo** :
+  le premier écran est une liste sur le fond système, et un dictionnaire vide donne
+  exactement ce fond. Y mettre une image de marque serait une infraction, pas une
+  finition. Ce qui manquait au premier lancement n'était pas là — c'était le
+  **jeton**, et il est traité plus haut.
+- **`PrivacyInfo.xcprivacy` n'est pas livré.** Le manifeste est exigé pour un envoi
+  à l'App Store, et cette application n'est ni signable ni soumise en l'état (aucun
+  compte développeur, cf. « Amorce par fichier »). Livrer un manifeste non éprouvé
+  serait une promesse non tenue — la RÈGLE #5 du dépôt. Il sera écrit le jour où
+  une soumission sera décidée, et il devra alors déclarer `UserDefaults` (raison
+  `CA92.1`) et l'horodatage des fichiers lus.
+
 ### Ce qui reste non prouvé
 
 - **Les gestes eux-mêmes.** Le glissement, l'appui long et le retour haptique sont
@@ -2109,3 +2127,4 @@ inactive.
 | **Deux machines qui partageaient « MacBook » se distinguent** | capture des données réelles : « MacBook Air » et « MacBook Pro », là où deux vignettes disaient « MacBook » — 5 tests sur `NomsCourts` |
 | **L'état de navigation fait un aller-retour** | 2 tests : espaces triés relus par un SECOND modèle sur le même domaine ; une session mémorisée n'est rouverte que si l'hôte la nomme |
 | **Le collage iOS ne lit plus le presse-papiers à l'insu de l'utilisateur** | `PasteButton` des deux côtés (feuille Adresse, page d'une machine) ; compilation iOS complète par `Scripts/construire-app-ios.sh --simulateur` → `BUILD SUCCEEDED` |
+| **La suite de tests ne touche plus aux préférences de la machine** | 33 tests construisaient `ModeleApp()` sur le domaine partagé ; ils sont tous isolés. Mesure : **12 échecs sur 15 exécutions** avant, **0 sur 20** après |
