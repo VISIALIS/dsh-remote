@@ -145,9 +145,9 @@ struct FeuilleAdresse: View {
       // Le dire après coup obligerait à chercher une panne réseau là où le refus
       // était connu d'avance.
       if let avertissement = conseil.avertissement {
-        Label(avertissement, systemImage: "exclamationmark.triangle")
+        Label(avertissement, systemImage: EtatVisuel.attention.symbole)
           .font(.caption)
-          .foregroundStyle(.orange)
+          .foregroundStyle(EtatVisuel.attention.couleur)
           .fixedSize(horizontal: false, vertical: true)
       }
     } header: {
@@ -219,10 +219,10 @@ struct FeuilleAdresse: View {
           jetonComplet
             ? "jeton complet (43 caractères)"
             : "jeton incomplet : \(jeton.count) caractères au lieu de 43",
-          systemImage: jetonComplet ? "checkmark.seal" : "exclamationmark.triangle"
+          systemImage: jetonComplet ? "checkmark.seal" : EtatVisuel.attention.symbole
         )
         .font(.caption)
-        .foregroundStyle(jetonComplet ? Color.green : Color.orange)
+        .foregroundStyle((jetonComplet ? EtatVisuel.pret : .attention).couleur)
       }
 
       // Le rappel du `401` est ICI AUSSI : c'est le message que reçoit un
@@ -230,7 +230,7 @@ struct FeuilleAdresse: View {
       if modele.jetonRefuseParLeService {
         Label { T("Le service a refusé ce jeton. Chaque machine a le sien : recopiez celui de CET hôte.") } icon: { Image(systemName: "key") }
         .font(.caption)
-        .foregroundStyle(.orange)
+        .foregroundStyle(EtatVisuel.attention.couleur)
         .fixedSize(horizontal: false, vertical: true)
       }
     } header: {
@@ -267,14 +267,15 @@ struct FeuilleAdresse: View {
         EmptyView()
       case .enCours:
         Label { T("test de l'adresse…") } icon: { Image(systemName: "hourglass") }.font(.caption)
+          .foregroundStyle(EtatVisuel.attente.couleur)
       case let .joignable(reponses):
-        Label("\(reponses) session(s) — adresse et jeton acceptés", systemImage: "checkmark.circle")
+        Label("\(reponses) session(s) — adresse et jeton acceptés", systemImage: EtatVisuel.pret.symbole)
           .font(.caption)
-          .foregroundStyle(.green)
+          .foregroundStyle(EtatVisuel.pret.couleur)
       case let .injoignable(detail):
-        Label(detail, systemImage: "xmark.circle")
+        Label(detail, systemImage: EtatVisuel.erreur.symbole)
           .font(.caption)
-          .foregroundStyle(.red)
+          .foregroundStyle(EtatVisuel.erreur.couleur)
           .fixedSize(horizontal: false, vertical: true)
       }
     } footer: {

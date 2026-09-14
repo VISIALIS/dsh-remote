@@ -148,10 +148,16 @@ struct ParcoursDesEtapes<Methode: View>: View {
   }
 
   private func couleur(_ etat: EtapesServeur.Etat) -> Color {
+    // LA COULEUR D'UN ÉTAT SE DÉCIDE DANS `EtatVisuel`, jamais ici.
+    etatVisuel(etat).couleur
+  }
+
+  /// L'état d'une étape, dans le vocabulaire commun aux deux surfaces.
+  private func etatVisuel(_ etat: EtapesServeur.Etat) -> EtatVisuel {
     switch etat {
-    case .franchie: return .green
-    case .aFaire: return .orange
-    case .inconnue: return .secondary
+    case .franchie: return .pret
+    case .aFaire: return .attention
+    case .inconnue: return .attente
     }
   }
 

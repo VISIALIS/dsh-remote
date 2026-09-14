@@ -19,17 +19,10 @@ import SwiftUI
 /// ligne sans DSH y est verte avec la légende « pas de DSH ». Les deux lectures
 /// sont voulues, et chacune est écrite là où elle vit.
 enum EtatMachine {
-  /// La gravité, qui décide de la couleur — et elle seule.
-  enum Ton {
-    case pret
-    case attente
-    case inconnu
-  }
-
   struct Description: Equatable {
     let texte: String
     let symbole: String
-    let ton: Ton
+    let ton: EtatVisuel
   }
 
   /// L'état d'une machine, en une ligne.
@@ -41,7 +34,7 @@ enum EtatMachine {
   ///   - court: la forme de la vignette (68 points) plutôt que la phrase entière.
   static func decrire(enLigne: Bool, sertDsh: Bool?, estLocal: Bool, court: Bool) -> Description {
     guard enLigne else {
-      return Description(texte: L("hors ligne"), symbole: "moon.zzz.fill", ton: .attente)
+      return Description(texte: L("hors ligne"), symbole: "moon.zzz.fill", ton: .attention)
     }
     switch sertDsh {
     case true:
@@ -56,9 +49,9 @@ enum EtatMachine {
         ton: .pret)
     case false:
       return Description(
-        texte: L("pas de DSH"), symbole: "exclamationmark.triangle.fill", ton: .attente)
+        texte: L("pas de DSH"), symbole: "exclamationmark.triangle.fill", ton: .attention)
     case nil:
-      return Description(texte: L("vérification…"), symbole: "clock", ton: .inconnu)
+      return Description(texte: L("vérification…"), symbole: "clock", ton: .attente)
     }
   }
 
@@ -93,7 +86,7 @@ enum EtatMachine {
       return Description(
         texte: L("Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet."),
         symbole: "moon.zzz.fill",
-        ton: .attente)
+        ton: .attention)
     }
     if etapes.allSatisfy({ $0.etat == .franchie }) {
       return Description(
@@ -103,23 +96,11 @@ enum EtatMachine {
       return Description(
         texte: EtapesServeur.resume(etapes),
         symbole: "exclamationmark.triangle.fill",
-        ton: .attente)
+        ton: .attention)
     }
     // Ni franchi, ni su : c'est le cas de la sonde en cours, et il ne mérite ni
     // le vert ni l'orange — annoncer l'un ou l'autre serait affirmer.
-    return Description(texte: EtapesServeur.resume(etapes), symbole: "clock", ton: .inconnu)
-  }
-}
-
-extension EtatMachine.Ton {
-  /// La couleur d'un ton. Elle est décidée ICI, une fois : trois vues s'en
-  /// servent, et trois tables de couleurs auraient fini par diverger.
-  var couleur: Color {
-    switch self {
-    case .pret: return .green
-    case .attente: return .orange
-    case .inconnu: return .secondary
-    }
+    return Description(texte: EtapesServeur.resume(etapes), symbole: "clock", ton: .attente)
   }
 }
 

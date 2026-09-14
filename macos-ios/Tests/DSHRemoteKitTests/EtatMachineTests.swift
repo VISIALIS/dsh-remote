@@ -11,12 +11,24 @@ import Testing
 // les deux propriétés qui comptent : les deux formes — vignette et page — disent
 // la MÊME chose, et la conclusion ne peut pas affirmer le contraire de l'état.
 
+// LE VOCABULAIRE A CHANGÉ, ET CES TESTS SUIVENT. `Ton` avait trois cas
+// (`pret`, `attente`, `inconnu`) et vivait sous `EtatMachine` ; la gravité est
+// maintenant portée par `EtatVisuel`, commun à toute l'application, avec cinq
+// cas. La correspondance est EXACTE, et c'est ce qui rend le renommage
+// mécanique : `pret` → `pret`, l'ancien `attente` (orange, « il manque quelque
+// chose ») → `attention`, l'ancien `inconnu` (gris, « on ne sait pas ») →
+// `attente`. Une couleur ne change pas.
+//
+// LE PIÈGE, ET IL A FAILLI ÊTRE SILENCIEUX : les deux mots se ressemblent, et
+// une assertion qui dirait `.attente` là où elle veut dire « orange » passerait
+// en testant le gris. C'est `EtatVisuelTests.correspondanceDesTons` qui l'attrape.
 @Test("Les deux formes disent le même état : la vignette abrège, elle ne traduit pas")
 func vocabulairePartage() {
   let horsLigne = EtatMachine.decrire(enLigne: false, sertDsh: nil, estLocal: false, court: true)
   #expect(horsLigne.texte == L("hors ligne"))
-  // Une machine éteinte n'est pas une panne : c'est une attente, pas un échec.
-  #expect(horsLigne.ton == .attente)
+  // Une machine éteinte n'est pas une panne : c'est un AVERTISSEMENT (orange),
+  // pas un échec — et pas non plus « on ne sait pas » (gris).
+  #expect(horsLigne.ton == .attention)
 
   let hote = EtatMachine.decrire(enLigne: true, sertDsh: true, estLocal: true, court: true)
   #expect(hote.texte == L("DSH · hôte"))
@@ -35,7 +47,7 @@ func vocabulairePartage() {
 
   let inconnu = EtatMachine.decrire(enLigne: true, sertDsh: nil, estLocal: false, court: false)
   #expect(inconnu.texte == L("vérification…"))
-  #expect(inconnu.ton == .inconnu)
+  #expect(inconnu.ton == .attente)
 }
 
 @Test("« Revérifier » sait si la page est celle de la machine VISÉE, même saisie à la main")
@@ -70,7 +82,7 @@ func conclusionDuDiagnostic() {
   let conclusion = EtatMachine.conclusion(enLigne: false, etapes: horsLigne)
   #expect(conclusion.texte.contains(L("hors ligne")))
   #expect(!conclusion.texte.contains("MacBook"))
-  #expect(conclusion.ton == .attente)
+  #expect(conclusion.ton == .attention)
 
   // PRÊT : le vert, et la phrase du parcours — une seule vérité pour les deux.
   let pret = EtapesServeur.etapes(
@@ -82,5 +94,5 @@ func conclusionDuDiagnostic() {
   // RIEN DE SU : ni vert ni orange. Annoncer l'un ou l'autre serait affirmer.
   let enCours = EtapesServeur.etapes(
     tailnetDeLAppareil: nil, enLigne: true, sertDsh: nil, cause: nil)
-  #expect(EtatMachine.conclusion(enLigne: true, etapes: enCours).ton == .inconnu)
+  #expect(EtatMachine.conclusion(enLigne: true, etapes: enCours).ton == .attente)
 }

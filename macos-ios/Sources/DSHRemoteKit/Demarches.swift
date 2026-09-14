@@ -28,7 +28,7 @@ struct DemarcheInstallationPlugin: View {
     VStack(alignment: .leading, spacing: 8) {
       Label { T("Le plugin `dsh-remote` n'est pas installé sur cette machine. DSH y tourne et son port 80 est publié — mais rien n'y expose DSH Remote.") } icon: { Image(systemName: "puzzlepiece.extension") }
       .font(.footnote)
-      .foregroundStyle(.orange)
+      .foregroundStyle(EtatVisuel.attention.couleur)
       .fixedSize(horizontal: false, vertical: true)
 
       T("1. Avoir le dépôt `dsh-plugins` sur cette machine, et y prendre `plugins/dsh-remote`.")
@@ -84,7 +84,7 @@ struct DemarchePublicationPort: View {
     VStack(alignment: .leading, spacing: 8) {
       Label { T("Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond.") } icon: { Image(systemName: "network.slash") }
       .font(.footnote)
-      .foregroundStyle(.orange)
+      .foregroundStyle(EtatVisuel.attention.couleur)
       .fixedSize(horizontal: false, vertical: true)
 
       // LES COMMANDES SE COPIENT, ELLES NE SE LISENT PAS : elles sont destinées à

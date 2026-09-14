@@ -93,7 +93,7 @@ struct VueJournal: View {
             Label(
               modele.enDirect ? "En direct" : "Suivi arrêté",
               systemImage: modele.enDirect ? "dot.radiowaves.left.and.right" : "pause.circle")
-              .foregroundStyle(modele.enDirect ? Color.green : Color.secondary)
+              .foregroundStyle((modele.enDirect ? EtatVisuel.pret : .attente).couleur)
           }
         }
       }
@@ -199,9 +199,9 @@ struct VueJournal: View {
       // ON A ÉCHOUÉ : on le dit, et on offre de recommencer.
       if let erreurDeLecture {
         VStack(alignment: .leading, spacing: 8) {
-          Label { T("Le journal n'a pas pu être lu.") } icon: { Image(systemName: "exclamationmark.triangle") }
+          Label { T("Le journal n'a pas pu être lu.") } icon: { Image(systemName: EtatVisuel.attention.symbole) }
             .font(.callout)
-            .foregroundStyle(.orange)
+            .foregroundStyle(EtatVisuel.attention.couleur)
           Text(erreurDeLecture)
             .font(.caption.monospaced())
             .foregroundStyle(.secondary)

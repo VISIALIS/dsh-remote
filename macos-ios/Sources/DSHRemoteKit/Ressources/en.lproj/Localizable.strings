@@ -70,8 +70,10 @@
 "Effacer la recherche" = "Clear the search";
 "Effacer le jeton" = "Clear the token";
 "Effacer le jeton saisi" = "Clear the entered token";
+"en attente" = "pending";
 "Envoyer" = "Send";
 "Envoyer le message" = "Send the message";
+"erreur" = "error";
 "Espaces de travail" = "Workspaces";
 "Essayer le jeton du coffre" = "Try the vault token";
 "hors ligne" = "offline";
@@ -80,6 +82,7 @@
 "Il est hors ligne sur le tailnet : la découverte ne le propose donc pas." = "It is offline on the tailnet: discovery does not offer it.";
 "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il est gardé au trousseau — jamais dans les préférences — et n'est jamais renvoyé par une route." = "It is shown only once, in the harness output, when the plugin first loads on that machine. It is kept in the keychain — never in the preferences — and is never returned by a route.";
 "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il n'est jamais renvoyé par une route." = "It is shown only once, in the harness output, when the plugin first loads on that machine. It is never returned by a route.";
+"information" = "information";
 "installé" = "installed";
 "Interrompre" = "Interrupt";
 "Interrompre le tour en cours" = "Interrupt the current turn";
@@ -126,6 +129,7 @@
 "Oublier ce serveur" = "Forget this server";
 "Ouvre la page de cette machine" = "Opens this machine's page";
 "pas de DSH" = "no DSH";
+"prêt" = "ready";
 "Rafraîchir" = "Refresh";
 "Rechercher une session" = "Search for a session";
 "Rechercher une session, un projet…" = "Search a session or a project…";

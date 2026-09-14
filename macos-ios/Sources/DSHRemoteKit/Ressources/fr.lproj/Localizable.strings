@@ -70,8 +70,10 @@
 "Effacer la recherche" = "Effacer la recherche";
 "Effacer le jeton" = "Effacer le jeton";
 "Effacer le jeton saisi" = "Effacer le jeton saisi";
+"en attente" = "en attente";
 "Envoyer" = "Envoyer";
 "Envoyer le message" = "Envoyer le message";
+"erreur" = "erreur";
 "Espaces de travail" = "Espaces de travail";
 "Essayer le jeton du coffre" = "Essayer le jeton du coffre";
 "hors ligne" = "hors ligne";
@@ -80,6 +82,7 @@
 "Il est hors ligne sur le tailnet : la découverte ne le propose donc pas." = "Il est hors ligne sur le tailnet : la découverte ne le propose donc pas.";
 "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il est gardé au trousseau — jamais dans les préférences — et n'est jamais renvoyé par une route." = "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il est gardé au trousseau — jamais dans les préférences — et n'est jamais renvoyé par une route.";
 "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il n'est jamais renvoyé par une route." = "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il n'est jamais renvoyé par une route.";
+"information" = "information";
 "installé" = "installé";
 "Interrompre" = "Interrompre";
 "Interrompre le tour en cours" = "Interrompre le tour en cours";
@@ -126,6 +129,7 @@
 "Oublier ce serveur" = "Oublier ce serveur";
 "Ouvre la page de cette machine" = "Ouvre la page de cette machine";
 "pas de DSH" = "pas de DSH";
+"prêt" = "prêt";
 "Rafraîchir" = "Rafraîchir";
 "Rechercher une session" = "Rechercher une session";
 "Rechercher une session, un projet…" = "Rechercher une session, un projet…";

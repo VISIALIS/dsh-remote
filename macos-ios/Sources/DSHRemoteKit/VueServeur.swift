@@ -364,10 +364,10 @@ struct VueServeur: View {
           complet
             ? "jeton complet (43 caractères)"
             : "jeton incomplet : \(modele.longueurJeton(pour: serveur.adresse)) caractères au lieu de 43",
-          systemImage: complet ? "checkmark.seal" : "exclamationmark.triangle"
+          systemImage: complet ? "checkmark.seal" : EtatVisuel.attention.symbole
         )
         .font(.caption)
-        .foregroundStyle(complet ? Color.green : Color.orange)
+        .foregroundStyle((complet ? EtatVisuel.pret : .attention).couleur)
       }
 
       // Un `401` propose l'action qui RÉPARE, à portée de pouce : le champ est
@@ -379,7 +379,7 @@ struct VueServeur: View {
         VStack(alignment: .leading, spacing: 8) {
           Label { T("Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien.") } icon: { Image(systemName: "key") }
           .font(.caption)
-          .foregroundStyle(.orange)
+          .foregroundStyle(EtatVisuel.attention.couleur)
           .fixedSize(horizontal: false, vertical: true)
 
           // LE COFFRE EN SAIT PARFOIS PLUS QUE LE CHAMP. Quand le jeton détenu

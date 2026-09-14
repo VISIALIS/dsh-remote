@@ -41,9 +41,9 @@ struct ComposeurEcriture: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       if let erreur = modele.refusEcriture(pour: session.id) {
-        EtatEcriture(texte: erreur, icone: "exclamationmark.triangle.fill", teinte: .orange)
+        EtatEcriture(texte: erreur, icone: EtatVisuel.attention.symbole, teinte: EtatVisuel.attention.couleur)
       } else if let accuse = modele.acquittement(pour: session.id) {
-        EtatEcriture(texte: accuse, icone: "checkmark.circle.fill", teinte: .green)
+        EtatEcriture(texte: accuse, icone: EtatVisuel.pret.symbole, teinte: EtatVisuel.pret.couleur)
       }
 
       HStack(alignment: .bottom, spacing: 8) {
@@ -104,7 +104,7 @@ struct ComposeurEcriture: View {
             Image(systemName: "stop.circle.fill").font(.title2)
           }
           .buttonStyle(.plain)
-          .foregroundStyle(Color.red)
+          .foregroundStyle(EtatVisuel.erreur.couleur)
           .cibleTactile()
           .help(T("Interrompre le tour en cours — la file d'attente est conservée"))
           .accessibilityLabel(T("Interrompre le tour en cours"))
@@ -171,7 +171,7 @@ struct ComposeurEcriture: View {
     } label: {
       Image(systemName: mode == .queue ? "text.badge.plus" : "bolt.fill")
         .font(.title3)
-        .foregroundStyle(mode == .queue ? Color.secondary : Color.orange)
+        .foregroundStyle((mode == .queue ? EtatVisuel.attente : .attention).couleur)
     }
     .menuStyle(.borderlessButton)
     .fixedSize()

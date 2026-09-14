@@ -502,7 +502,7 @@ struct VueListeSessions: View {
                 Text(modele.resume(espace).texte)
                   .font(.caption2)
                   .foregroundStyle(
-                    modele.resume(espace).enAttente > 0 ? Color.orange : Color.secondary)
+                    (modele.resume(espace).enAttente > 0 ? EtatVisuel.attention : .attente).couleur)
               }
             }
             .sansSeparateurMac()
@@ -1223,7 +1223,7 @@ struct ServeursVides: View {
     VStack(alignment: .leading, spacing: 10) {
       Label(modele.messageListeVide, systemImage: "wifi.exclamationmark")
         .font(.callout)
-        .foregroundStyle(.orange)
+        .foregroundStyle(EtatVisuel.attention.couleur)
         .fixedSize(horizontal: false, vertical: true)
 
       // LES VOIES SORTENT DE L'IMPASSE, dans l'ordre où elles servent : la page
@@ -1410,7 +1410,13 @@ struct PastilleEtat: View {
         .onAppear { reglerAnimation() }
         // Le réglage peut changer PENDANT que l'application vit : on le relit.
         .onChange(of: reduireLesAnimations) { _, _ in reglerAnimation() }
-        .foregroundStyle(Color.orange)
+        // CE N'EST PAS UN `EtatVisuel`, ET C'EST DÉLIBÉRÉ : « un tour s'exécute »
+        // est un marqueur d'ACTIVITÉ, pas un des cinq états (prêt, à vérifier,
+        // erreur, en attente, information). L'interface web a une famille pour
+        // cela — `--dsw-alias-state-business-*` —, et si l'on veut la parité
+        // jusqu'à ce point-là, c'est un sixième cas à ajouter ici, pas une
+        // couleur à choisir sur place.
+        .foregroundStyle(.orange)
       case .attendReponse:
         // UN POINT D'INTERROGATION, et non un point orange de plus.
         //
@@ -1426,12 +1432,12 @@ struct PastilleEtat: View {
         // sens, pas le volume.
         Image(systemName: "questionmark.circle.fill")
           .font(.caption2)
-          .foregroundStyle(Color.orange)
+          .foregroundStyle(EtatVisuel.attention.couleur)
           .accessibilityHidden(true)
       case .terminee:
         // Le rappel de fin : plein et vert. Il s'efface quand la session est
         // ouverte.
-        Circle().fill(Color.green).frame(width: 7, height: 7)
+        Circle().fill(EtatVisuel.pret.couleur).frame(width: 7, height: 7)
         // Pas de glyphe ici : le disque vert est l'état le plus fréquent des deux
         // « pleins », et lui donner un signe de plus encombrerait la liste. Ce qui
         // compte est qu'il ne ressemble PAS au point d'interrogation.
@@ -1563,7 +1569,7 @@ struct LigneSession: View {
       .font(.caption)
       .foregroundStyle(.secondary)
       if let illisible = affiche.illisible {
-        Text(illisible).font(.caption2).foregroundStyle(.orange)
+        Text(illisible).font(.caption2).foregroundStyle(EtatVisuel.attention.couleur)
       }
     }
     .padding(.vertical, 2)
@@ -1607,7 +1613,7 @@ extension View {
             } label: {
               Label { T("Vu") } icon: { Image(systemName: "checkmark.circle") }
             }
-            .tint(.green)
+            .tint(EtatVisuel.pret.couleur)
           }
           Button {
             PressePapiers.ecrire(session.titreAffiche)
