@@ -49,6 +49,9 @@ private func remplir(_ modele: ModeleApp, _ gardien: GardienEnMemoire, _ persist
   modele.enregistrerJeton("JETONFICTIF-un-0000000000000000000000000000000")
   modele.definirModeEnvoi(.steer)
   modele.definirSessionConsultee("session-1")
+  // UNE PAGE EST OUVERTE, et c'est indispensable : sans cela, l'assertion sur la
+  // page après la remise à zéro serait vraie À VIDE — elle ne prouverait rien.
+  modele.ouvrirPage(ServeurMac(nom: "Un", nomDNS: "un.exemple.test", enLigne: true))
   persistance.memoriserAlertes(true)
 }
 
@@ -93,6 +96,13 @@ func modelePropre() async throws {
   // disque à la première écriture venue.
   #expect(modele.navigation == EtatDeNavigation())
   #expect(modele.preferences.isEmpty)
+  // ET LA PAGE OUVERTE AUSSI. Défaut signalé à l'usage : « il y a le même problème
+  // suite à la réinitialisation sur macOS, il faudrait que la page s'actualise ».
+  // La fiche de la machine oubliée restait à l'écran — avec, sous les yeux, un
+  // objet dont plus rien ne subsistait.
+  #expect(
+    modele.serveurOuvert == nil,
+    "la page de la machine oubliée restait ouverte — c'est le défaut signalé sur macOS")
 }
 
 @MainActor

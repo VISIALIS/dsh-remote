@@ -2200,6 +2200,17 @@ public final class ModeleApp {
   public func oublierServeur() {
     arreterSuivi()
     viser(Cible(adresse: ""))
+    // LA PAGE OUVERTE SE REFERME — et c'est une correction signalée à l'usage :
+    // « il y a le même problème suite à la réinitialisation sur macOS, il faudrait
+    // que la page s'actualise ». Elle gardait la fiche de la machine qu'on venait
+    // d'oublier, alors que plus rien de cette machine ne subsiste : ni adresse, ni
+    // jeton, ni session. Une remise à zéro qui laisse l'écran sur l'objet effacé
+    // n'est pas une remise à zéro, c'est un écran périmé.
+    //
+    // ELLE VAUT POUR LES DEUX GESTES, parce qu'ils passent tous deux par ici :
+    // « Oublier » sur une machine, et la réinitialisation complète — qui réutilise
+    // `oublierServeur` exprès, pour n'avoir qu'une seule remise à zéro à éprouver.
+    fermerPage()
     // Une liste venue de l'hôte n'a plus de source : la garder afficherait les
     // machines d'un serveur qu'on vient d'oublier.
     if sourceServeurs == .hote {

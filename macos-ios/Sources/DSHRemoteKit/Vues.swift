@@ -140,7 +140,9 @@ public struct VuePrincipale: View {
         // l'ancre affichait la page de la machine visée et la page d'ajout
         // n'était pas capturable — constaté sur la première capture.
         NavigationStack {
-          FicheServeur(modele: modele, serveur: nil) { adresseOuverte = true }
+          FicheServeur(
+            modele: modele, serveur: nil,
+            surAdresse: { adresseOuverte = true })
         }
       } else if pageSeuleParArgument, let serveur = machineDeLaPageSeule {
         let _ = modele.relireEtatTailscale()
@@ -215,7 +217,13 @@ public struct VuePrincipale: View {
           VueJournal(modele: modele, session: session)
         }
       case .ajout:
-        FicheServeur(modele: modele, serveur: nil) { adresseOuverte = true }
+        // `surAppairage` QUITTE LA PAGE D'AJOUT dès qu'une machine est appairée :
+        // son travail est fini, et la garder à l'écran laissait l'utilisateur
+        // devant un écran qui ne bougeait plus (défaut signalé à l'usage).
+        FicheServeur(
+          modele: modele, serveur: nil,
+          surAdresse: { adresseOuverte = true },
+          surAppairage: { ajoutOuvert = false })
       case let .serveur(serveur):
         FicheServeur(modele: modele, serveur: serveur)
       case let .selection(serveur):
@@ -701,7 +709,15 @@ struct VueListeSessions: View {
         FicheServeur(modele: modele, serveur: serveur)
       }
       .navigationDestination(for: PageAjoutServeur.self) { _ in
-        FicheServeur(modele: modele, serveur: nil) { adresseOuverte = true }
+        // PAS DE `surAppairage` ICI, ET CE N'EST PAS UN OUBLI. Cette page est
+        // POUSSÉE : c'est `FicheServeur` qui la dépile elle-même après un
+        // appairage réussi (`@Environment(\.dismiss)`), et la barre latérale n'a
+        // aucun état de page à changer — `ajoutOuvert` appartient à
+        // `VuePrincipale`, où il décide de la colonne de détail sur iPad et macOS.
+        // L'écrire ici ne compilerait même pas : constaté en construisant pour iOS.
+        FicheServeur(
+          modele: modele, serveur: nil,
+          surAdresse: { adresseOuverte = true })
       }
     #endif
     .toolbar {

@@ -41,6 +41,25 @@ struct FicheServeur: View {
   /// Ouvre la feuille de saisie d'une adresse — la voie manuelle, quand la
   /// découverte ne suffit pas. N'a de sens qu'en mode ajout.
   var surAdresse: () -> Void = {}
+  /// PRÉVIENT QUE LA PAGE D'AJOUT A FINI SON TRAVAIL — l'appelant quitte alors la
+  /// page d'ajout dans la colonne de détail (macOS, iPad).
+  ///
+  /// POURQUOI CE RAPPEL EXISTE, ET CE QU'IL RÉPARE. Constaté à l'usage : « quand je
+  /// scanne le QR code, il faudrait que la page s'actualise ». L'appairage
+  /// réussissait — jeton rangé, connexion faite, sessions chargées — mais la page
+  /// d'ajout RESTAIT à l'écran : rien ne la quittait, et son travail est terminé
+  /// dès qu'une machine est appairée.
+  var surAppairage: () -> Void = {}
+
+  /// LA PAGE POUSSÉE SE DÉPILE ELLE-MÊME (iPhone, iPad).
+  ///
+  /// Deux fermetures pour un seul fait, parce que les deux plateformes ne
+  /// présentent pas la page de la même façon : sur iPhone elle est POUSSÉE dans
+  /// une pile — `dismiss` la dépile —, alors que sur macOS et iPad elle occupe la
+  /// colonne de détail, où c'est l'état de l'application qui décide de ce qu'on
+  /// regarde (`surAppairage`). Sur une vue non présentée, `dismiss` ne fait rien :
+  /// on peut donc appeler les deux sans savoir laquelle s'applique.
+  @Environment(\.dismiss) private var depiler
 
   private var estAjout: Bool { serveur == nil }
 
@@ -626,7 +645,7 @@ struct FicheServeur: View {
   /// le même — appairer à nouveau —, mais la raison, elle, se dit.
   @ViewBuilder
   private var methodeAppairage: some View {
-    BoutonsAppairage(modele: modele, prominent: estAjout)
+    BoutonsAppairage(modele: modele, surSucces: apresAppairage, prominent: estAjout)
 
     T("Sur le Mac : le bouton « DSH Remote », en bas de la barre latérale — il ouvre un QR code et son texte, valables deux minutes.")
       .font(.caption)
@@ -643,5 +662,31 @@ struct FicheServeur: View {
       .foregroundStyle(EtatVisuel.attention.couleur)
       .fixedSize(horizontal: false, vertical: true)
     }
+  }
+
+  /// APRÈS UN APPAIRAGE RÉUSSI — LA PAGE D'AJOUT S'EFFACE.
+  ///
+  /// POURQUOI ELLE, ET PAS LA PAGE D'UNE MACHINE. Sur la fiche d'une machine qu'on
+  /// vient d'appairer, il y a encore à lire : le verdict change, les cinq constats
+  /// passent au vert, et la page se met à jour TOUTE SEULE (le modèle est
+  /// observé). La page d'ajout, elle, a fini son travail : elle n'existe que pour
+  /// amener une machine dans la liste, et la garder à l'écran après coup laissait
+  /// l'utilisateur devant un écran qui ne bougeait plus — le défaut signalé.
+  ///
+  /// ELLE PART AVANT LA CONNEXION, et c'est voulu : `BoutonsAppairage` appelle ce
+  /// rappel entre l'échange du code et `connecter()`. L'écran se libère donc
+  /// pendant que la connexion se fait, et la liste des sessions arrive ensuite
+  /// dans la barre latérale, sans que personne ait à attendre sur une page morte.
+  private func apresAppairage() {
+    guard estAjout else { return }
+    surAppairage()
+    // `depiler` N'EST APPELÉ QUE SUR iOS, et c'est délibéré : c'est la seule
+    // plateforme où la page est POUSSÉE. Sur macOS, elle occupe la colonne de
+    // détail, et `dismiss` y viserait la fenêtre — pas la page. Le geste qui
+    // convient là-bas est celui de l'appelant (`surAppairage`), qui change ce
+    // qu'on regarde au lieu de fermer quelque chose.
+    #if os(iOS)
+      depiler()
+    #endif
   }
 }
