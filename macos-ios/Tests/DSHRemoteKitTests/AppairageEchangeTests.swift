@@ -86,7 +86,8 @@ func motifInconnuAffiche() {
 
 @Test("Un 404 sur l'échange dit « hôte trop ancien », pas « code invalide »")
 func hoteSansRouteDEchange() {
-  let erreur = RemoteClient.erreur(pour: 404, donnees: Data())
+  // `echange: true` : c'est la SEULE route où un 404 accuse le plugin d'en face.
+  let erreur = RemoteClient.erreur(pour: 404, donnees: Data(), echange: true)
   guard case .appairageNonSupporte = erreur else {
     Issue.record("attendu : appairageNonSupporte, obtenu : \(erreur)")
     return
@@ -134,4 +135,24 @@ func autres403Inchanges() {
     Issue.record("attendu : origineRefusee, obtenu : \(muet)")
     return
   }
+}
+
+@Test("Un 404 AILLEURS ne parle pas du plugin : il nomme la session inconnue")
+func sessionInconnueNEstPasUnPluginAncien() {
+  // LE DÉFAUT MESURÉ, ET SON COÛT. `journal <identifiant>` sur une session
+  // inconnue répondait `404` : le client le traduisait en « votre plugin est plus
+  // ancien, mettez-le à jour » — un remède faux, qui envoie chercher au mauvais
+  // endroit. L'hôte, lui, dit exactement ce qui manque : « session inconnue ».
+  let corps = Data(#"{"erreur":"session inconnue"}"#.utf8)
+  let erreur = RemoteClient.erreur(pour: 404, donnees: corps)
+  guard case let .refusServeur(statut, motif, _) = erreur else {
+    Issue.record("attendu : refusServeur(404), obtenu : \(erreur)")
+    return
+  }
+  #expect(statut == 404)
+  #expect(motif.contains("session inconnue"), "le motif de l'hôte doit être montré : \(motif)")
+  // ET LE MESSAGE NE PARLE PAS DU PLUGIN : c'est la propriété qui compte.
+  let phrase = erreur.description
+  #expect(phrase.contains("plugin") == false, "aucun remède qui n'existe pas : \(phrase)")
+  #expect(phrase.contains("404"), "le statut situe la panne : \(phrase)")
 }

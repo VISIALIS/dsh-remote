@@ -99,7 +99,13 @@ public actor RemoteClient {
     return requete
   }
 
-  private func executer(_ requete: URLRequest) async throws -> Data {
+  /// - Parameter echange: `true` UNIQUEMENT pour la route d'échange d'un code
+  ///   d'appairage. Là, et là seulement, un `404` veut dire « ce plugin ne
+  ///   connaît pas la route ». Ailleurs, un `404` veut dire « cette session
+  ///   n'existe pas » : les confondre affichait « votre plugin est trop ancien »
+  ///   à quelqu'un qui avait demandé un journal supprimé — un remède faux, qui
+  ///   envoie mettre à jour un plugin alors qu'il n'y a rien à mettre à jour.
+  private func executer(_ requete: URLRequest, echange: Bool = false) async throws -> Data {
     let donnees: Data
     let reponse: URLResponse
     do {
@@ -148,7 +154,7 @@ public actor RemoteClient {
       throw ErreurRemote.transport("réponse sans statut HTTP")
     }
     if (200...299).contains(http.statusCode) { return donnees }
-    throw RemoteClient.erreur(pour: http.statusCode, donnees: donnees)
+    throw RemoteClient.erreur(pour: http.statusCode, donnees: donnees, echange: echange)
   }
 
   /// UN STATUT ET UN CORPS DEVIENNENT UNE ERREUR TYPÉE.
@@ -164,7 +170,7 @@ public actor RemoteClient {
   /// en **LECTURE SEULE**. Les confondre affichait « un client natif ne doit
   /// jamais envoyer d'en-tête Origin » à quelqu'un dont le jeton lit simplement
   /// sans écrire : un message faux, donc un remède faux.
-  nonisolated static func erreur(pour statut: Int, donnees: Data) -> ErreurRemote {
+  nonisolated static func erreur(pour statut: Int, donnees: Data, echange: Bool = false) -> ErreurRemote {
     switch statut {
     case 401:
       return .jetonRefuse
@@ -186,10 +192,13 @@ public actor RemoteClient {
         return .appairageRefuse(motif: motif, detail: refus.detail)
       }
       return .origineRefusee
-    case 404:
+    case 404 where echange:
       // Une route d'échange INCONNUE : le plugin d'en face est plus ancien que
-      // cette application. Sur les autres routes, un `404` veut dire « session
-      // inconnue » ; ici, il n'y a pas de session en jeu.
+      // cette application. Le `where` n'est pas une coquetterie : sur les AUTRES
+      // routes, un `404` veut dire « session inconnue », et le corps le dit
+      // (`{"erreur":"session inconnue"}`) — il tombe donc dans le cas par défaut,
+      // qui décode le motif. Sans cette condition, un journal supprimé affichait
+      // « mettez le plugin à jour ».
       return .appairageNonSupporte
     default:
       // L'hôte joint un motif STRUCTURÉ à ses refus (`erreur`, `code`, `detail`).
@@ -220,7 +229,7 @@ public actor RemoteClient {
   public func echangerAppairage(nom: String) async throws -> AppareilAppaire {
     let corps = try JSONSerialization.data(withJSONObject: ["nom": nom])
     let donnees = try await executer(
-      try requete("/dsh-remote/v1/appairage/echange", methode: "POST", corps: corps))
+      try requete("/dsh-remote/v1/appairage/echange", methode: "POST", corps: corps), echange: true)
     let appareil = try decoder(AppareilAppaire.self, depuis: donnees)
     guard appareil.protocole == versionProtocoleSupportee else {
       throw ErreurRemote.versionIncompatible(recue: appareil.protocole, supportee: versionProtocoleSupportee)

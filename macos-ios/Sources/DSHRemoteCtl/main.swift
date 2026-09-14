@@ -161,7 +161,16 @@ do {
       let vivante = (session.vivante ?? false) ? "●" : "○"
       let titre = String(session.titreAffiche.prefix(46))
       let evenements = session.resume.nbEnregistrements ?? 0
-      print("\(vivante) \(session.id.prefix(30))  \(titre.padding(toLength: 46, withPad: " ", startingAt: 0))  \(evenements) évts  \(octetsLisibles(session.octets))  \(horodatage(session.resume.dernierEvenementLe))")
+      // L'IDENTIFIANT EST AFFICHÉ EN ENTIER — il était coupé à 30 caractères.
+      //
+      // POURQUOI C'ÉTAIT UN DÉFAUT, ET PAS UNE ÉCONOMIE DE PLACE : cet identifiant
+      // est l'argument de `journal`, `flux`, `prompt` et `annuler`. Tronqué, il ne
+      // désigne RIEN — l'outil imprimait une valeur qu'il refusait ensuite, et
+      // l'hôte répondait `404` (« session inconnue »), ce qui se lisait comme un
+      // plugin trop ancien. Un identifiant d'apparence valide qui ne mène nulle
+      // part coûte plus cher que quatre colonnes de large.
+      // `session-` + un UUID = 44 caractères : la largeur est exacte, pas devinée.
+      print("\(vivante) \(session.id.padding(toLength: 44, withPad: " ", startingAt: 0))  \(titre.padding(toLength: 46, withPad: " ", startingAt: 0))  \(evenements) évts  \(octetsLisibles(session.octets))  \(horodatage(session.resume.dernierEvenementLe))")
     }
 
   case "espaces":

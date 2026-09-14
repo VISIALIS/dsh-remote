@@ -64,7 +64,7 @@ Vérifications : aperçu inspecté jusqu'à 40 px ; dimensions, alpha, bleu exac
 niveaux de gris contrôlés ; dix représentations ICNS réextraites de 16 à 1024 px ;
 paquet macOS reconstruit et signature vérifiée ; compilation du simulateur réussie,
 avec `AppIcon` présent pour les familles iPhone et iPad. Les vérifications du dépôt
-passent : secrets, syntaxe, 120 tests de plugins et 259 tests Swift. Ces commandes
+passent : secrets, syntaxe, 120 tests de plugins et 260 tests Swift. Ces commandes
 ne réinstallent pas les copies déjà présentes sur les appareils.
 
 ### Où vit quoi : cinq pièces, et une seule porte sur le disque
@@ -2232,6 +2232,24 @@ Cette discipline a payé immédiatement : le client attendait du `snake_case` qu
 plugin émet du `camelCase`, et les tests Swift « passaient » parce qu'ils avaient été
 écrits contre la même hypothèse fausse. C'est la comparaison du tool avec la charge utile
 réelle qui l'a révélé — pas les tests.
+
+**Deux défauts du tool lui-même, trouvés en s'en servant.** `sessions` affichait
+l'identifiant **coupé à 30 caractères** — or cet identifiant est l'argument de `journal`,
+`flux`, `prompt` et `annuler` : l'outil imprimait une valeur qu'il refusait ensuite, et
+l'hôte répondait `404`. Il est désormais affiché en entier (`session-` + UUID = 44
+caractères, la largeur est exacte et non devinée).
+
+Et ce `404` se lisait **« cet hôte ne sait pas échanger un code d'appairage : son plugin
+est plus ancien que cette application »** — un remède faux, qui envoie mettre à jour un
+plugin alors que la session demandée n'existe pas. La cartographie des statuts dépend
+maintenant de la route : sur l'échange d'un code, `404` = route inconnue, donc plugin
+trop ancien ; **ailleurs**, `404` = la session n'existe pas, et le message dit ce que
+l'hôte dit :
+
+```text
+$ dsh-remote-ctl http://127.0.0.1:3080 journal session-00000000-0000-4000-8000-000000000000
+erreur : refus de l'hôte : session inconnue (HTTP 404)
+```
 
 ---
 
