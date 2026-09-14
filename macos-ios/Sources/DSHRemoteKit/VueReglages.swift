@@ -5,7 +5,7 @@ import SwiftUI
   import UIKit
 #endif
 
-/// Réglages : ce qui n'est plus sur la page d'accueil.
+/// Réglages : ce qui concerne l'APPLICATION, et non une machine.
 ///
 /// POURQUOI CETTE FEUILLE EXISTE. L'adresse, le jeton, le test d'adresse et les
 /// filtres occupaient plus de la moitié de la hauteur utile de la page
@@ -13,8 +13,8 @@ import SwiftUI
 /// principale est redevenue ce qu'elle doit être : des appareils et des
 /// sessions. Le reste descend d'un cran.
 ///
-/// CE QUI N'A PAS LE DROIT D'ÊTRE PERDU EN CHEMIN. Chaque élément déplacé ici
-/// corrigeait un défaut RÉEL, constaté sur l'iPhone :
+/// CE QUI N'A PAS LE DROIT D'ÊTRE PERDU EN CHEMIN. Chaque élément déplacé sur la
+/// page d'une machine corrigeait un défaut RÉEL, constaté sur l'iPhone :
 ///
 ///   - le champ du jeton est TOUJOURS visible. Il était auparavant masqué dès
 ///     qu'un jeton était présent, c'est-à-dire dès le PREMIER caractère saisi :
@@ -28,41 +28,53 @@ import SwiftUI
 ///   - « Tester l'adresse » dit ce qu'il a trouvé. C'est l'action qui a du sens
 ///     quand on a saisi une adresse à la main, et elle nomme son résultat —
 ///     « rien ne s'est passé » ne doit jamais être une réponse possible.
-struct FeuilleReglages: View {
-  @Bindable var modele: ModeleApp
+///
+/// CET ÉCRAN A LONGTEMPS ÉTÉ VIDE, ET C'ÉTAIT UN DÉFAUT D'INTERFACE. Tout ce qui
+/// dépendait d'une machine étant descendu sur SA page, il ne restait ici qu'une
+/// phrase expliquant qu'il n'y avait rien — derrière un bouton de barre d'outils
+/// qui, lui, existait. Un écran qu'on ouvre pour lire qu'il est vide déçoit à
+/// chaque fois. Il porte donc maintenant ce qui est GLOBAL et vérifiable : l'état
+/// de cet appareil, l'emplacement du diagnostic, et les versions.
+public struct FeuilleReglages: View {
+  /// LE MODÈLE EST LU, PAS MODIFIÉ PAR LIAISON : cet écran ne possède aucun champ
+  /// de saisie — il CONSTATE (état de l'appareil, chemin du diagnostic, versions)
+  /// et propose deux actions. Un `@Bindable` n'y servirait à rien.
+  let modele: ModeleApp
   @Environment(\.dismiss) private var fermer
 
-  var body: some View {
+  /// L'ENTRÉE PUBLIQUE EXISTE POUR LA SCÈNE `Settings` DE macOS.
+  ///
+  /// L'initialiseur membre à membre d'une structure publique est interne : sans
+  /// celui-ci, le module de l'application macOS — qui déclare la scène — ne
+  /// pourrait pas construire cet écran.
+  public init(modele: ModeleApp) {
+    self.modele = modele
+  }
+
+  public var body: some View {
     NavigationStack {
       Form {
-        Section {
-          // ── CET ÉCRAN EST VOLONTAIREMENT VIDE POUR L'INSTANT ─────────────
-          //
-          // TOUT ce qui l'occupait est descendu sur la PAGE DE LA MACHINE
-          // concernée : l'adresse, ses actions, le jeton — propre à chaque hôte,
-          // mesuré — le diagnostic avec ses remèdes, ET les deux interrupteurs de
-          // sessions. Ces derniers portent eux aussi sur une connexion :
-          // « suivre l'activité » décide si l'on interroge CE serveur,
-          // « chargées en mémoire seulement » filtre SA liste. Les garder ici
-          // les faisait hériter d'une machine à l'autre.
-          //
-          // Il ne reste donc rien de général à régler. Le dire évite de croire à
-          // un écran cassé : une feuille vide sans explication ressemble à un
-          // défaut.
-          Text("Les réglages généraux de l'application viendront ici. Tout ce qui concerne une machine — adresse, jeton, connexion, suivi, remèdes — se règle sur la page de cette machine, qu'on ouvre en touchant son icône.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
+        appareil
+        diagnostic
+        aPropos
       }
       .navigationTitle("Réglages")
       #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
       #endif
       .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Terminé") { fermer() }
-        }
+        #if os(iOS)
+          ToolbarItem(placement: .confirmationAction) {
+            Button("Terminé") { fermer() }
+          }
+        #endif
+      }
+      .task {
+        // L'ÉTAT EST RELU EN ARRIVANT, et non supposé : il a pu changer depuis le
+        // lancement — Tailscale s'installe, se connecte, se coupe. Un écran de
+        // diagnostic qui montrerait un constat d'il y a une heure serait un
+        // mensonge par omission.
+        let _ = modele.relireEtatTailscale()
       }
     }
     #if os(macOS)
@@ -78,11 +90,150 @@ struct FeuilleReglages: View {
       // 560 points est la largeur à laquelle une adresse de tailnet complète
       // (`http://` + machine + tailnet + `.ts.net`, une quarantaine de
       // caractères en chasse fixe) tient SANS troncature, boutons compris.
-      .frame(minWidth: 560, idealWidth: 640, maxWidth: .infinity, minHeight: 560, idealHeight: 620)
+      .frame(minWidth: 560, idealWidth: 640, maxWidth: .infinity, minHeight: 520, idealHeight: 620)
       // `grouped` est le style des réglages macOS : sections encartées, en-têtes
       // en petites capitales, fond de fenêtre. Le style par défaut, lui, ressemble
       // à un formulaire de saisie — ce que ces réglages ne sont pas.
       .formStyle(.grouped)
     #endif
+  }
+
+  // MARK: - Cet appareil
+
+  /// CE QUE CET APPAREIL SAIT DE LUI-MÊME.
+  ///
+  /// POURQUOI C'EST ICI, ET PAS SEULEMENT SUR LA PAGE D'UNE MACHINE. L'état de
+  /// Tailscale sur CET appareil est la première étape du parcours de CHAQUE
+  /// machine : quand rien ne répond, c'est la première cause à écarter. Il fallait
+  /// jusqu'ici ouvrir la page d'une machine — n'importe laquelle — pour la lire,
+  /// et il n'y avait aucun endroit où la lire quand aucune machine n'est connue :
+  /// exactement l'état d'un appareil neuf, celui qui en a le plus besoin.
+  @ViewBuilder
+  private var appareil: some View {
+    Section {
+      LabeledContent("Tailscale", value: modele.tailscaleInstalle ? "installé" : "absent")
+      LabeledContent("Réseau tailnet", value: etatTailnet)
+      if ExceptionATS.sousATS {
+        LabeledContent("Transport en clair", value: etatTransport)
+      }
+      Button("Vérifier maintenant") {
+        let _ = modele.relireEtatTailscale()
+      }
+    } header: {
+      Text("Cet appareil")
+    } footer: {
+      Text(
+        modele.tailnetDeLAppareil == true
+          ? "Cet appareil porte une adresse de tailnet : il peut joindre les machines qui publient DSH."
+          : "Sans tailnet, aucune machine distante n'est joignable — c'est la première étape du parcours de chaque serveur."
+      )
+      .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  /// Le tri-état de `tailnetDeLAppareil`, dit en mots.
+  ///
+  /// « pas encore mesuré » n'est PAS « non » : le constat se fait par une lecture
+  /// d'interfaces réseau, et tant qu'il n'a pas eu lieu, l'écran n'affirme rien.
+  private var etatTailnet: String {
+    switch modele.tailnetDeLAppareil {
+    case true: return "connecté"
+    case false: return "absent"
+    case nil: return "vérification…"
+    }
+  }
+
+  /// CE QUE LE PAQUET CONSTRUIT AUTORISE, en une ligne.
+  ///
+  /// POURQUOI CETTE LIGNE EXISTE. Une adresse en clair vers un nom MagicDNS est
+  /// refusée par App Transport Security AVANT toute tentative réseau, sauf si le
+  /// paquet construit porte une exception. Le nombre d'exceptions déclarées est
+  /// donc la réponse à « pourquoi cette adresse ne répond-elle pas alors que le
+  /// tailnet fonctionne ? » — une question qui a coûté une soirée.
+  private var etatTransport: String {
+    let declarations = ExceptionATS.duBuildCourant.count
+    switch declarations {
+    case 0: return "aucune exception déclarée"
+    case 1: return "1 exception déclarée"
+    default: return "\(declarations) exceptions déclarées"
+    }
+  }
+
+  // MARK: - Diagnostic
+
+  /// OÙ L'APPLICATION ÉCRIT CE QU'ELLE N'EXPLIQUE PAS.
+  ///
+  /// POURQUOI LE CHEMIN EST MONTRÉ, ET COPIABLE. Le fichier n'est lisible ni
+  /// depuis l'interface ni depuis l'iPhone : il faut aller le chercher sur la
+  /// machine, ou le faire passer. Un chemin qu'on ne peut pas copier oblige à le
+  /// recopier caractère par caractère — et c'est un chemin absolu.
+  @ViewBuilder
+  private var diagnostic: some View {
+    Section {
+      if let chemin {
+        Button("Copier le chemin du fichier") {
+          PressePapiers.ecrire(chemin)
+        }
+        Text(chemin)
+          .font(.caption.monospaced())
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+          .fixedSize(horizontal: false, vertical: true)
+      } else {
+        Text("Aucun dossier de documents : cette exécution n'écrit pas de diagnostic.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      }
+    } header: {
+      Text("Diagnostic")
+    } footer: {
+      Text(
+        "Les erreurs qu'aucune explication ne couvre y sont écrites : l'adresse visée, le message, la longueur du jeton et une empreinte de celui-ci. Le jeton lui-même n'y est jamais recopié."
+      )
+      .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  /// Le chemin du fichier de diagnostic, quand l'exécution en a un.
+  private var chemin: String? {
+    Persistance.documentsParDefaut?
+      .appendingPathComponent(Persistance.nomDuDiagnostic)
+      .path
+  }
+
+  // MARK: - À propos
+
+  /// LES VERSIONS, ET RIEN DE PLUS.
+  ///
+  /// Un client et un hôte qui ne s'entendent pas le disent par un message
+  /// d'incompatibilité ; savoir quelle version du protocole ce client sait lire
+  /// est ce qui permet de comprendre ce message. Le reste — mentions, licence —
+  /// appartient au dépôt, pas à l'écran.
+  private var aPropos: some View {
+    Section("À propos") {
+      LabeledContent("Application", value: versionApplication)
+      LabeledContent("Protocole lu", value: "version \(versionProtocoleSupportee)")
+      #if os(iOS)
+        LabeledContent("Plateforme", value: "iPhone")
+      #else
+        LabeledContent("Plateforme", value: "macOS")
+      #endif
+    }
+  }
+
+  /// La version déclarée par le PAQUET, ou un tiret s'il n'y en a pas.
+  ///
+  /// Un binaire lancé hors paquet (`swift run DSHRemoteMac`) n'a pas
+  /// d'`Info.plist` : afficher « 0.2 » y serait une invention. Le tiret dit
+  /// « pas de version déclarée », ce qui est la vérité de cette exécution-là.
+  private var versionApplication: String {
+    let info = Bundle.main.infoDictionary
+    let version = info?["CFBundleShortVersionString"] as? String
+    let build = info?["CFBundleVersion"] as? String
+    switch (version, build) {
+    case let (version?, build?): return "\(version) (\(build))"
+    case let (version?, nil): return version
+    default: return "—"
+    }
   }
 }

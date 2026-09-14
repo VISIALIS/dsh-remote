@@ -8,7 +8,15 @@ import SwiftUI
 /// replie lui-même en pile. Une seule structure d'interface pour les deux
 /// plateformes, donc un seul comportement à vérifier.
 public struct VuePrincipale: View {
-  @State private var modele = ModeleApp()
+  /// LE MODÈLE EST INJECTABLE, et c'est macOS qui l'exige.
+  ///
+  /// POURQUOI. Une scène `Settings` et des commandes de menu doivent parler au
+  /// MÊME modèle que la fenêtre : un ⌘R qui rafraîchirait une seconde instance,
+  /// que personne ne voit, serait un raccourci qui ne fait rien — et un écran de
+  /// réglages qui lirait un autre appareil que celui affiché serait pire encore.
+  /// L'application macOS en crée donc un et le passe ; iOS et `swift run`
+  /// gardent l'entrée sans argument, où la vue crée le sien comme avant.
+  @State private var modele: ModeleApp
   @State private var sessionSelectionnee: SessionListee?
   /// La feuille de réglages. Elle est tenue ICI parce que trois endroits
   /// l'ouvrent : la barre d'outils, le panneau latéral, la page d'un serveur.
@@ -21,7 +29,12 @@ public struct VuePrincipale: View {
   /// NAVIGATION, pas une machine : elle n'a donc rien à faire dans le modèle.
   @State private var ajoutOuvert = ProcessInfo.processInfo.arguments.contains("--ajout")
 
-  public init() {}
+  @MainActor
+  public init() { _modele = State(initialValue: ModeleApp()) }
+
+  /// L'entrée de l'application macOS : le modèle est déjà construit.
+  @MainActor
+  public init(modele: ModeleApp) { _modele = State(initialValue: modele) }
 
   /// Ancre de VÉRIFICATION, et rien d'autre : `--serveur` ouvre la page du
   /// premier serveur au lancement, ce qui permet de la CAPTURER sans piloter la
@@ -533,14 +546,24 @@ struct VueListeSessions: View {
       }
     #endif
     .toolbar {
-      ToolbarItem(placement: .primaryAction) {
-        Button {
-          reglagesOuverts = true
-        } label: {
-          Image(systemName: "gearshape")
+      // LE BOUTON RÉGLAGES N'EXISTE QUE SUR iOS.
+      //
+      // POURQUOI. La directive macOS est explicite : les réglages s'ouvrent par
+      // l'élément « Réglages… » du menu de l'application, avec ⌘, — pas par un
+      // bouton de barre d'outils. Depuis que l'application macOS a une scène
+      // `Settings`, ce bouton y ferait doublon avec le menu, au mauvais endroit.
+      // Sur iPhone, au contraire, la feuille est le lieu prévu, et elle est la
+      // seule porte.
+      #if os(iOS)
+        ToolbarItem(placement: .primaryAction) {
+          Button {
+            reglagesOuverts = true
+          } label: {
+            Image(systemName: "gearshape")
+          }
+          .accessibilityLabel("Réglages")
         }
-        .accessibilityLabel("Réglages")
-      }
+      #endif
     }
     // LA SONDE PART D'ICI, ET C'EST UNE CORRECTION DE COURSE.
     //
@@ -1061,6 +1084,8 @@ struct ServeursVides: View {
 /// La recherche, en bas et toujours là.
 struct BarreRecherche: View {
   @Binding var texte: String
+  /// LE FOCUS DU CHAMP, tenu ici parce que ⌘F doit pouvoir le donner.
+  @FocusState private var champActif: Bool
 
   var body: some View {
     HStack(spacing: 8) {
@@ -1069,8 +1094,20 @@ struct BarreRecherche: View {
       TextField("Rechercher une session, un projet…", text: $texte)
         .textFieldStyle(.plain)
         .autocorrectionDisabled()
+        .focused($champActif)
+        #if os(macOS)
+          // ⌘F VIENT ICI. La commande de menu ne connaît pas ce champ : elle lit
+          // la clôture publiée par cette vue, qui est la seule à pouvoir écrire
+          // son `@FocusState` (voir `CommandesDeMenu`).
+          .focusedSceneValue(\.focusRecherche) { champActif = true }
+        #endif
         #if os(iOS)
           .textInputAutocapitalization(.never)
+          // LA TOUCHE « RECHERCHER » DU CLAVIER, et la fermeture au défilement.
+          // Sans elles, le clavier ne se refermait que par le geste système, et
+          // rien ne disait que la saisie était finie.
+          .submitLabel(.search)
+          .onSubmit { champActif = false }
         #endif
       if !texte.isEmpty {
         Button {

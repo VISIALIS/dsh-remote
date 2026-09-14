@@ -69,10 +69,74 @@ struct DSHRemoteMac: App {
 
   var body: some Scene {
     WindowGroup("DSH Remote") {
-      VuePrincipale()
+      // LE MODÈLE VIENT DE L'APPLICATION, et non de la vue : la scène `Settings`
+      // et les commandes de menu doivent parler à celui de la fenêtre. Un ⌘R qui
+      // rafraîchirait une seconde instance, que personne ne voit, serait un
+      // raccourci qui ne fait rien ; un écran de réglages qui lirait un autre
+      // appareil que celui affiché serait pire encore.
+      VuePrincipale(modele: modele)
         .frame(minWidth: 900, minHeight: 600)
     }
     .defaultSize(width: 1100, height: 720)
+    .commands { CommandesDeDSHRemote(modele: modele) }
+
+    // LA SCÈNE RÉGLAGES, ET LE ⌘, QUI VA AVEC.
+    //
+    // POURQUOI ELLE EST ICI ET NON DANS UNE FEUILLE. La directive macOS est
+    // explicite : les réglages d'une application s'ouvrent par l'élément
+    // « Réglages… » du menu, avec le raccourci standard ⌘, — une scène `Settings`
+    // les déclare tous les deux d'un coup. La feuille que portait la barre
+    // d'outils n'existe donc plus que sur iPhone, où elle est le lieu prévu.
+    //
+    // ELLE MONTRE LE MÊME ÉCRAN que la feuille iOS : deux écrans de réglages
+    // auraient divergé sur ce qu'ils disent de l'appareil.
+    Settings {
+      FeuilleReglages(modele: modele)
+    }
+  }
+
+  /// LE MODÈLE DE L'APPLICATION, tenu au niveau de la scène.
+  ///
+  /// POURQUOI IL N'EST PLUS DANS LA VUE. Il l'était, et c'était juste tant que la
+  /// fenêtre était la seule à en avoir besoin. Dès qu'une scène `Settings` et des
+  /// commandes de menu sont déclarées, elles doivent viser le MÊME modèle — et
+  /// SwiftUI ne permet pas de le leur passer autrement qu'en le tenant ici.
+  @State private var modele = ModeleApp()
+}
+
+/// LES RACCOURCIS DE MENU DE L'APPLICATION macOS.
+///
+/// POURQUOI UN TYPE `Commands` À PART, ET NON DES BOUTONS DANS LA SCÈNE.
+/// `@FocusedValue` ne se lit que dans un type `Commands` : c'est lui qui sait
+/// quelle fenêtre est au premier plan. Déclarer les boutons dans la scène
+/// obligerait à viser une fenêtre en particulier — ce qu'un menu d'application ne
+/// fait jamais.
+///
+/// CE QUI EST DÉCLARÉ, ET RIEN DE PLUS. ⌘R rafraîchit les sessions et les
+/// machines ; ⌘F donne le focus à la recherche. Les deux manquaient : sans eux,
+/// l'application macOS ne se pilotait qu'à la souris. Le ⌘, des réglages, lui,
+/// vient de la scène `Settings` — il n'est pas à redéclarer ici.
+struct CommandesDeDSHRemote: Commands {
+  let modele: ModeleApp
+  /// Publié par la barre de recherche de la fenêtre active.
+  @FocusedValue(\.focusRecherche) private var focusRecherche
+
+  var body: some Commands {
+    CommandGroup(after: .toolbar) {
+      Button("Rafraîchir") {
+        Task { await modele.rafraichir() }
+      }
+      .keyboardShortcut("r", modifiers: .command)
+
+      Button("Rechercher une session") {
+        focusRecherche?()
+      }
+      .keyboardShortcut("f", modifiers: .command)
+      // DÉSACTIVÉ QUAND AUCUNE FENÊTRE NE PUBLIE L'ACTION — au lieu de ne rien
+      // faire en silence. Un raccourci qui ne répond pas laisse croire à une
+      // panne ; un élément grisé dit que l'action n'est pas disponible ici.
+      .disabled(focusRecherche == nil)
+    }
   }
 }
 
