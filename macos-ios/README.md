@@ -216,9 +216,21 @@ n'épuise pas les moyens praticables.
 | Le client la lit | `RemoteClient.listerServeurs()` |
 | Le modèle la consomme | `ModeleApp` : après une connexion réussie, si `capacites.decouverte` |
 | L'ordre des sources | hôte joint d'abord, Tailscale local (`macOS`) seulement en son absence |
+| L'ordre d'affichage des machines | le serveur **connecté** d'abord, puis les joignables, puis les autres — à rang égal, par nom (`DecouverteServeurs.ordonnerPourAffichage`) |
 | La liste s'affiche avec icône, état, et « hôte interrogé » | `VueListeSessions` |
 | Une liste vide dit POURQUOI | `ModeleApp.messageListeVide`, qui distingue « l'hôte ne voit personne » de « cette plateforme ne peut pas voir » |
 | Le tout est éprouvable sans interface | `dsh-remote-ctl <adresse> serveurs` |
+
+**L'ORDRE DU CARROUSEL RÉPOND À UNE QUESTION PRÉCISE : QUELLE MACHINE EST LA MIENNE.**
+La liste était triée « joignable d'abord, puis par nom » — stable d'un rendu à
+l'autre, mais la vignette **cochée** restait au milieu des autres. Signalé sur cette
+installation : `MacMini`, connecté, passait après un autre Mac joignable dont le nom
+vient avant le sien. Le serveur connecté ouvre donc la liste, **même s'il est hors
+ligne** (`tailscale serve` peut répondre là où `Online` dit non) ; le reste suit la
+règle d'origine. Le tri se fait **à la lecture** (`ModeleApp.serveursAffiches`), pas
+au rangement : choisir une machine la fait passer devant sans réécrire la liste que
+la découverte vient de rendre — une liste réécrite au choix serait périmée au rendu
+suivant, la cible changeant aussi par bascule, par mémorisation et au lancement.
 
 **Ce que la voie 1 a demandé, et qui ne se devinait pas.** Côté hôte, le CHEMIN du
 binaire Tailscale décide du succès : `/usr/local/bin/tailscale` est un lien symbolique

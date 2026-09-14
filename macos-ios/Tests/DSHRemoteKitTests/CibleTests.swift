@@ -104,3 +104,28 @@ func adresseEcriteSansMachine() {
   #expect(modele.nomServeur == nil)
   #expect(modele.adresse == "http://ailleurs.exemple.ts.net")
 }
+
+@MainActor
+@Test("La vignette du serveur CONNECTÉ est la première du carrousel")
+func serveurConnecteEnPremierePosition() {
+  let modele = modeleDeTest()
+  // « MacBook Air » passe avant « MacMini » par le nom : c'est le cas signalé,
+  // où la vignette cochée n'était pas la première de la liste.
+  let macbook = ServeurMac(nom: "MacBook Air", nomDNS: "macbook.exemple.ts.net", enLigne: true)
+  let macmini = ServeurMac(nom: "MacMini", nomDNS: "macmini.exemple.ts.net", enLigne: true)
+  let eteint = ServeurMac(nom: "iMac", nomDNS: "imac.exemple.ts.net", enLigne: false)
+  modele.remplacerServeursPourEssai([macbook, eteint, macmini])
+
+  // Avant toute connexion : joignables d'abord, puis par nom.
+  #expect(modele.serveursAffiches.map(\.nom) == ["MacBook Air", "MacMini", "iMac"])
+
+  // Le choix de la machine — c'est-à-dire la connexion — la fait passer devant,
+  // sans qu'aucune liste n'ait été réécrite.
+  modele.choisir(macmini)
+  #expect(modele.serveurChoisi == macmini)
+  #expect(modele.serveursAffiches.map(\.nom) == ["MacMini", "MacBook Air", "iMac"])
+
+  // Et la liste RANGÉE n'a pas bougé : l'ordre d'affichage est une lecture, pas
+  // un rangement — sinon la prochaine réponse de découverte l'écraserait.
+  #expect(modele.serveurs.map(\.nom) == ["MacBook Air", "iMac", "MacMini"])
+}

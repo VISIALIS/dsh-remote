@@ -44,7 +44,7 @@ public struct VuePrincipale: View {
   /// La machine désignée par `--serveur=<fragment>`, si elle existe dans la liste.
   private var machineNommee: ServeurMac? {
     guard let demande = VuePrincipale.nomDeMachineDemande else { return nil }
-    return modele.serveurs.first { machine in
+    return modele.serveursAffiches.first { machine in
       machine.nom.lowercased().contains(demande) || machine.nomDNS.lowercased().contains(demande)
     }
   }
@@ -56,7 +56,7 @@ public struct VuePrincipale: View {
   /// s'exécutait jamais, et la page affichée était toujours celle du serveur
   /// visé. La capture montrait le MacBook Air quand on avait demandé MacMini.
   private var machineDeLaPageSeule: ServeurMac? {
-    machineNommee ?? modele.serveurChoisi ?? modele.serveurs.first
+    machineNommee ?? modele.serveurChoisi ?? modele.serveursAffiches.first
   }
 
   private static var nomDeMachineDemande: String? {
@@ -775,8 +775,10 @@ struct CarrouselServeurs: View {
   ///
   /// POURQUOI ICI, ET NON DANS LA VIGNETTE. Deux machines peuvent partager leur
   /// premier mot : c'est la comparaison entre elles qui décide si un mot suffit.
-  /// Voir `NomsCourts`.
-  private var libelles: [String: String] { NomsCourts.libelles(pour: modele.serveurs) }
+  /// Voir `NomsCourts`. La liste est celle de l'AFFICHAGE — le connecté en tête :
+  /// les libellés sont calculés sur l'ensemble, donc l'ordre ne les change pas,
+  /// mais une seule liste circule dans la vue.
+  private var libelles: [String: String] { NomsCourts.libelles(pour: modele.serveursAffiches) }
 
   var body: some View {
     // LES INDICATEURS DE DÉFILEMENT SONT CEUX DU SYSTÈME. Ils étaient masqués
@@ -787,7 +789,9 @@ struct CarrouselServeurs: View {
     // geste.
     ScrollView(.horizontal) {
       HStack(alignment: .top, spacing: 16) {
-        ForEach(modele.serveurs) { serveur in
+        // L'ORDRE EST CELUI DE L'AFFICHAGE, pas celui de la découverte : le
+        // serveur connecté vient en tête (voir `ModeleApp.serveursAffiches`).
+        ForEach(modele.serveursAffiches) { serveur in
           // ── TOUCHER UNE MACHINE OUVRE SA PAGE ET S'Y CONNECTE ─────────────
           //
           // Deux effets pour un geste, et c'est délibéré : on touche une machine

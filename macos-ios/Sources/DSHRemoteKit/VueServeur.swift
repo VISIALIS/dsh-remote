@@ -167,9 +167,11 @@ struct VueServeur: View {
   ///
   /// On préfère celui dont la sonde a dit qu'il sert DSH : envoyer l'utilisateur
   /// vers une machine « en ligne » qui ne publie rien remplacerait une impasse
-  /// par une autre.
+  /// par une autre. La liste est prise dans l'ordre d'AFFICHAGE (le serveur
+  /// connecté en tête) : à mérite égal, c'est la machine qu'on voit en premier
+  /// qui est proposée — celle-ci exclue, puisqu'il s'agit d'« un autre ».
   private var autreMacJoignable: ServeurMac? {
-    let autres = modele.serveurs.filter { $0.id != serveur.id && $0.enLigne }
+    let autres = modele.serveursAffiches.filter { $0.id != serveur.id && $0.enLigne }
     return autres.first { modele.sertDsh($0) == true } ?? autres.first
   }
 

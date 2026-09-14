@@ -378,10 +378,42 @@ public enum DecouverteServeurs {
       }
     }
 
-    // En ligne d'abord, puis par nom : l'ordre doit être stable entre deux
-    // ouvertures, sinon la liste semble sauter d'un affichage à l'autre.
-    return trouves.sorted { gauche, droite in
-      if gauche.enLigne != droite.enLigne { return gauche.enLigne }
+    // En ligne d'abord, puis par nom : c'est la règle d'affichage, ici sans
+    // serveur connecté — la découverte ne sait pas encore à qui l'application
+    // est connectée, et c'est `ModeleApp.serveursAffiches` qui le lui dira.
+    return ordonnerPourAffichage(trouves, connecte: nil)
+  }
+
+  /// LE RANG D'UNE MACHINE DANS LA LISTE : connectée (0), joignable (1), autre (2).
+  private static func rang(_ serveur: ServeurMac, connecte: String?) -> Int {
+    if serveur.id == connecte { return 0 }
+    return serveur.enLigne ? 1 : 2
+  }
+
+  /// L'ORDRE D'AFFICHAGE DES MACHINES — LE SERVEUR CONNECTÉ EN TÊTE.
+  ///
+  /// POURQUOI CETTE RÈGLE A CHANGÉ. La liste était triée « joignable d'abord,
+  /// puis par nom », ce qui était déjà mieux que l'ordre rendu par Tailscale.
+  /// Mais la machine à laquelle l'application est CONNECTÉE n'y avait aucune
+  /// place réservée : signalé sur cette installation, `MacMini` — connecté —
+  /// passait APRÈS un autre Mac joignable dont le nom vient avant le sien. La
+  /// vignette cochée n'était donc pas la première, et il fallait la chercher.
+  ///
+  /// L'ordre est : le connecté, puis les joignables, puis les autres ; à rang
+  /// égal, par nom. Il reste STABLE d'un rendu à l'autre — seuls une connexion
+  /// ou un changement d'état du tailnet le déplacent.
+  ///
+  /// Le connecté passe même s'il est HORS LIGNE : c'est la connexion qui prime,
+  /// pas la supposition du tailnet.
+  ///
+  /// - Parameters:
+  ///   - serveurs: les machines à ordonner.
+  ///   - connecte: l'identifiant (nom DNS) du serveur connecté, s'il y en a un.
+  static func ordonnerPourAffichage(_ serveurs: [ServeurMac], connecte: String?) -> [ServeurMac] {
+    serveurs.sorted { gauche, droite in
+      let rangGauche = rang(gauche, connecte: connecte)
+      let rangDroit = rang(droite, connecte: connecte)
+      if rangGauche != rangDroit { return rangGauche < rangDroit }
       return gauche.nom.localizedStandardCompare(droite.nom) == .orderedAscending
     }
   }

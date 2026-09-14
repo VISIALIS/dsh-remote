@@ -51,6 +51,41 @@ func analyseTailnet() throws {
   #expect(machines[1].nom == "Portable Un")
 }
 
+@Test("Le serveur CONNECTÉ passe devant les machines seulement joignables")
+func serveurConnecteEnTete() {
+  // Le cas signalé, reproduit : « MacBook Air » passe avant « MacMini » par le
+  // nom, et MacMini — la machine à laquelle l'application est connectée — se
+  // retrouvait en seconde position, sa coche loin du premier regard.
+  let macmini = ServeurMac(nom: "MacMini", nomDNS: "macmini.exemple.ts.net", enLigne: true)
+  let macbook = ServeurMac(nom: "MacBook Air", nomDNS: "macbook.exemple.ts.net", enLigne: true)
+  let eteint = ServeurMac(nom: "iMac", nomDNS: "imac.exemple.ts.net", enLigne: false)
+
+  // Sans connexion, la règle d'origine tient : joignables d'abord, puis par nom.
+  #expect(
+    DecouverteServeurs.ordonnerPourAffichage([macmini, eteint, macbook], connecte: nil).map(\.nom)
+      == ["MacBook Air", "MacMini", "iMac"])
+
+  // Connecté, MacMini ouvre la liste — et l'ordre du reste ne change pas.
+  #expect(
+    DecouverteServeurs.ordonnerPourAffichage([macbook, eteint, macmini], connecte: macmini.id).map(\.nom)
+      == ["MacMini", "MacBook Air", "iMac"])
+
+  // Un connecté HORS LIGNE reste en tête : c'est la connexion qui prime, pas la
+  // supposition du tailnet (`tailscale serve` peut répondre là où `Online` dit non).
+  #expect(
+    DecouverteServeurs.ordonnerPourAffichage([macbook, macmini], connecte: macmini.id).first?.id
+      == macmini.id)
+  #expect(
+    DecouverteServeurs.ordonnerPourAffichage([eteint, macbook], connecte: eteint.id).map(\.nom)
+      == ["iMac", "MacBook Air"])
+
+  // Un identifiant absent de la liste ne déplace rien : l'ordre reste celui des
+  // joignables, puis des autres.
+  #expect(
+    DecouverteServeurs.ordonnerPourAffichage([eteint, macbook], connecte: "inconnu.exemple.ts.net").map(\.nom)
+      == ["MacBook Air", "iMac"])
+}
+
 @Test("Le point final du nom DNS est retiré : l'adresse doit être utilisable telle quelle")
 func adresseUtilisable() throws {
   let json = """
