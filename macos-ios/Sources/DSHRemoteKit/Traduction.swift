@@ -112,12 +112,15 @@ public enum Traduction {
     //    désigne le paquet de TESTS (`…/DSHRemoteKitTests.xctest`), dont le
     //    dossier parent est EXACTEMENT celui où SwiftPM dépose le paquet de
     //    ressources — quelle que soit la forme du dossier de construction. Les
-    //    chemins devinés plus bas, eux, dépendent de la chaîne d'outils : mesuré
-    //    sur cette machine (Swift 6.4, Xcode 27), `swift build --show-bin-path`
-    //    rend `.build/out/Products/Debug`, et non `.build/arm64-apple-macosx/debug`
-    //    comme les versions antérieures. La mauvaise forme ne casse pas
-    //    l'application — elle rend `cles()` muet, donc fait échouer les tests de
-    //    parité des traductions, ce qui est précisément arrivé.
+    //    chemins devinés plus bas, eux, dépendent de la chaîne d'outils — et ce
+    //    dépôt est utilisé depuis DEUX Mac, qui ne l'ont pas la même. Mesuré :
+    //    `swift build --show-bin-path` rend `.build/out/Products/Debug` avec
+    //    Swift 6.4 / Xcode 27, et `.build/arm64-apple-macosx/debug` avec
+    //    Swift 6.3.3 / Xcode 26.6. Les deux formes sont donc des candidats, et
+    //    c'est le `Bundle(for:)` ci-dessus qui répond sans dépendre d'aucune :
+    //    la mauvaise forme ne casse pas l'application, elle rend `cles()` muet,
+    //    donc fait échouer les tests de parité des traductions — ce qui est
+    //    précisément arrivé, sur une seule des deux machines.
     let ancre = Bundle(for: AncreDePaquet.self).bundleURL.deletingLastPathComponent()
     deDeveloppement.append(ancre.appendingPathComponent(nom))
 
