@@ -1694,6 +1694,31 @@ que la documentation du SDK 26 demande précisément d'éviter ; elle reprend le
 du composeur. Et le nom d'une machine s'écrivait **deux fois** sur sa page (barre de
 titre de fenêtre et bande d'identité), à quarante points d'écart.
 
+### Ce qui se retrouve à la réouverture
+
+L'application repartait à zéro à chaque lancement : espaces repliés, aucune session
+ouverte, mode d'envoi remis à « à la suite ». Aucun de ces trois choix ne se reprend
+à chaque ouverture — ce sont des **choix durables**, et les redemander coûtait des
+gestes répétés à chaque lancement.
+
+Ils vivent maintenant dans `EtatDeNavigation`, écrit par `Persistance` — le seul
+endroit du paquet qui touche au disque. Deux règles rendent la restauration sûre :
+
+1. **la session mémorisée est revalidée** contre la liste que l'hôte vient de rendre :
+   rouvrir un journal disparu afficherait un écran vide sous un titre oublié ;
+2. **rien de ce qui est retenu n'est une donnée de session** — ni titre, ni journal,
+   ni projet —, seulement des identifiants opaques, revalidés à l'usage.
+
+Les espaces sont **triés à l'écriture** : un `Set` encodé en JSON n'a pas d'ordre, et
+deux écritures du même ensemble produisaient deux fichiers différents, ce qui rendait
+un test de persistance instable pour rien.
+
+**Le collage du jeton passe par le bouton système sur iOS** : lire
+`UIPasteboard.general.string` sur un appui déclenche la bannière « Collé depuis … »,
+alors que l'utilisateur **demande** ce collage. `PasteButton` exprime la même intention
+au système, qui accorde l'accès sans bannière. La validation, elle, reste la même des
+deux côtés (`ModeleApp.jetonPlausible`), et le message d'échec n'est écrit qu'une fois.
+
 ### Ce qui reste non prouvé
 
 - **Les gestes eux-mêmes.** Le glissement, l'appui long et le retour haptique sont
@@ -1707,6 +1732,12 @@ titre de fenêtre et bande d'identité), à quarante points d'écart.
   menu « Présentation » de l'application lancée — et leur cible est du code
   compilé. La frappe elle-même n'a pas été observée : `rafraichir()` n'écrit pas de
   trace, et le focus d'un champ ne se lit pas de l'extérieur.
+- **La réouverture ELLE-MÊME n'a pas été observée.** L'aller-retour de l'état de
+  navigation est éprouvé par deux tests (écriture, relecture par un second modèle,
+  revalidation de la session), et le chemin d'écriture est celui du modèle. Mais
+  rouvrir l'application et la voir revenir sur la même session n'a pas été constaté
+  en capture : cela demande d'ouvrir un journal, de quitter, de relancer — trois
+  gestes que cet environnement ne sait pas injecter dans la liste.
 - **Le titre des menus FOURNIS PAR LE SYSTÈME reste en anglais** quand
   l'application est lancée comme binaire nu (`swift run`) : elle n'a alors ni
   paquet ni `Info.plist`, donc aucune région de développement, et « Settings… »
@@ -2075,3 +2106,6 @@ inactive.
 | **La légende d'une vignette est lisible** | captures : « DSH · hôte », « pas de DSH » et « hors ligne » rendus en `.caption2` (11 pt), deux lignes autorisées |
 | **La recherche n'a plus qu'un fond** | capture : un champ discret sur la bande en matière, au lieu d'une matière posée sur une autre plus un contour |
 | **Le nom d'une machine ne s'écrit qu'une fois** | captures avant/après : barre de titre de fenêtre ET bande d'identité → barre de titre seule |
+| **Deux machines qui partageaient « MacBook » se distinguent** | capture des données réelles : « MacBook Air » et « MacBook Pro », là où deux vignettes disaient « MacBook » — 5 tests sur `NomsCourts` |
+| **L'état de navigation fait un aller-retour** | 2 tests : espaces triés relus par un SECOND modèle sur le même domaine ; une session mémorisée n'est rouverte que si l'hôte la nomme |
+| **Le collage iOS ne lit plus le presse-papiers à l'insu de l'utilisateur** | `PasteButton` des deux côtés (feuille Adresse, page d'une machine) ; compilation iOS complète par `Scripts/construire-app-ios.sh --simulateur` → `BUILD SUCCEEDED` |
