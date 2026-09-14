@@ -323,7 +323,7 @@ exactement ce qu'il faut regarder.
 ```bash
 # 1. les vérifications qui, elles, ne demandent AUCUN redémarrage
 bash scripts/verifier.sh --tout
-node --test plugins/dsh-remote/tests/
+node --test plugins/dsh-remote/tests/*.test.js
 
 # 2. puis relancer le harness — sauf pour une retouche de `dynamic/client.js`, que
 #    l'onglet ouvert doit reprendre seul (P11) — et regarder la sortie du terminal :
@@ -381,7 +381,7 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 | `tests/trames.test.js` | le protocole WebSocket, éprouvé octet par octet |
 
 ```bash
-node --test plugins/dsh-remote/tests/     # 69 tests, aucune dépendance
+node --test plugins/dsh-remote/tests/*.test.js     # 73 tests, aucune dépendance
 
 POURQUOI LE MODULE HÔTE EST CHARGÉ HORS HARNESS. C'est la panne qui a déjà coûté une
 instance neuve : un import manquant (`cheminIndicatif`) ne casse pas `node --check`,
@@ -423,6 +423,22 @@ tests éprouvent cette concaténation, l'ignorance d'une ligne illisible (une
 titre, plus grand `seq`) et le caractère **indicatif** du chemin déduit d'un nom
 de dossier — `dsh-plugins` s'y relit `dsh/plugins`, et c'est pourquoi ce champ ne
 sert jamais à lire : `cwd` fait foi.
+
+LE DOSSIER N'EST PAS UN ARGUMENT VALIDE, ET C'EST MESURÉ. `node --test
+plugins/dsh-remote/tests/` — la forme longtemps documentée ici — est REFUSÉ par
+Node 22.19 (`Error: Cannot find module '…/tests'`), qui est à la fois le Node du
+PATH et celui sous lequel tourne le harness, alors que 20.19 et 26.8.2
+l'acceptent. D'où le motif `tests/*.test.js`, accepté par les trois.
+`scripts/verifier.sh` passe, lui, des chemins de fichiers explicites, tirés de
+`git ls-files` : un contrôle qui ne trouve aucun test n'échoue pas, il ment.
+
+LE DÉFAUT QUE CES TESTS ONT ATTRAPÉ, ET QU'AUCUN ESSAI MANUEL N'AURAIT VU. Le
+premier d'entre eux — « toutes les trames doivent être lues » — échouait sous
+Node 22.19 en rendant `[]` : la fin de trame était cherchée par essais, et le
+décodeur ne lève pas sur une tranche tronquée. Corrigé depuis par la lecture
+structurelle (voir « Lecture des journaux : le point délicat ») ; quatre tests de
+plus verrouillent les cas voisins : journal d'une seule trame, trame tronquée en
+fin de journal, trame « à ignorer », en-tête abîmé.
 
 DEUX CASSES D'EXTRACTION ONT ÉTÉ ATTRAPÉES, ET PAR DEUX MOYENS DIFFÉRENTS :
 
@@ -988,20 +1004,38 @@ répondu *est* retenu — les deux implémentations ne se comportent pas pareil,
 ## Lecture des journaux : le point délicat
 
 Un journal de session (`session.v3.jsonl.zstd`) est une **concaténation de
-trames zstd indépendantes**, une par écriture. Sur un journal réel de cette
-installation : **169 trames** pour 891 Ko décompressés.
+trames zstd indépendantes**, une par écriture. Sur le plus gros journal de cette
+installation : **27 313 trames** dans 10,2 Mo, pour 24,25 Mo décompressés.
 
 `zlib.zstdDecompressSync` n'en décode **qu'une seule** et s'arrête
-silencieusement — il rend 215 octets et ne signale aucune erreur. L'utiliser seul
-ne montrerait que la première écriture du journal, ce qui donnerait un affichage
-tronqué sans le moindre signe d'échec.
+silencieusement — il rend les octets de la première écriture et ne signale aucune
+erreur. L'utiliser seul ne montrerait que le début du journal, ce qui donnerait un
+affichage tronqué sans le moindre signe d'échec.
 
-Le plugin avance donc trame par trame, en trouvant la fin de chacune par
-recherche binaire (une tranche qui décode n'est pas forcément exactement une
-trame : zstd ignore ce qui suit). Mesuré : **172 trames, 914 Ko, 62 ms**.
+Le plugin avance donc trame par trame, **en lisant la longueur de chaque trame dans
+sa structure** (en-tête puis blocs, sans décompresser) au lieu de chercher sa fin
+par essais. Ce n'est pas une optimisation gratuite, c'est une correction :
 
-Bornes : 64 Mio décompressés par journal, 512 Mio par fichier. Un journal qui
-dépasse est refusé en `413`, jamais tronqué en silence.
+| Méthode | Node 22.19 *(celui du harness ici)* | Node 26.8.2 |
+|---|---|---|
+| **Structure** (ce plugin) | 37 989 lignes, **554 ms** | 37 989 lignes, **219 ms** |
+| Par essais (« la plus petite tranche qui décodait ») | **0 ligne**, 2 ms | 37 989 lignes, 7 900 ms |
+
+Trois mesures par cas, écarts sous 10 % (527-572 ms et 203-235 ms ; 7 900-8 300 ms).
+Le « 2 ms » de la colonne de gauche n'est pas une rapidité : c'est le temps qu'il
+faut pour ne rien lire.
+
+La méthode par essais supposait que le décodeur **lève** sur une tranche tronquée.
+Sur Node 22.19 il ne lève pas : il rend ce qu'il a, sans rien dire (1 octet →
+chaîne vide ; 90 % d'une trame de 200 Kio → 131 072 octets rendus). La recherche
+convergeait donc vers 1 octet, et **tout journal se lisait comme vide** — sur le
+Node même sous lequel tourne le harness, alors que le même code passait sur Node
+26.8.2 (`Z_BUF_ERROR`). La structure, elle, ne dépend d'aucune version de Node.
+C'est l'approche du harnais pour ses propres journaux (`scanZstdFrames`,
+`@deepseek-ai/dsh-session-persistence-jsonl`).
+
+Bornes : 64 Mio décompressés par journal (et par trame), 512 Mio par fichier. Un
+journal qui dépasse est refusé en `413`, jamais tronqué en silence.
 
 Un cache mémoire (clé : chemin) évite de redécoder un journal inchangé ; il est
 invalidé par couple `(taille, mtime)`.

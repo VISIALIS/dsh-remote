@@ -3,8 +3,8 @@
  *
  * POURQUOI CE FICHIER EXISTE. Ces règles vivaient au milieu d'un fichier de
  * 1 637 lignes. Elles sont PURES (hors la lecture du fichier lui-même) et
- * portent des décisions mesurées — la concaténation des trames zstd, la
- * recherche binaire de la fin d'une trame, le résumé d'un en-tête — donc elles
+ * portent des décisions mesurées — la concaténation des trames zstd, la lecture
+ * structurelle de la fin d'une trame, le résumé d'un en-tête — donc elles
  * s'éprouvent avec des charges utiles réelles.
  *
  * Un journal de session DSH (`session.v3.jsonl.zstd`) est une CONCATENATION de
@@ -12,9 +12,18 @@
  * décode qu'UNE et s'arrête silencieusement : l'utiliser seul ne rendrait que la
  * première écriture du journal. Il faut donc avancer trame par trame.
  *
- * La fin d'une trame est trouvée par recherche binaire : une tranche qui décode
- * n'est pas forcément exactement une trame (zstd ignore ce qui suit), on cherche
- * donc la plus petite longueur qui décode encore.
+ * LA FIN D'UNE TRAME SE LIT DANS SA STRUCTURE, PAS EN LA DÉCOMPRESSANT. Le
+ * décodeur de Node ne signale pas qu'une trame est incomplète : sur Node 22.19 —
+ * celui sous lequel tourne le harnais ici — une tranche tronquée rend ce qu'elle
+ * a, sans lever (1 octet → chaîne vide ; 90 % d'une trame de 200 Kio → 131 072
+ * octets rendus, aucune erreur). Chercher la fin par essais (« la plus petite
+ * tranche qui décode ») ne peut donc pas marcher là où le harnais tourne :
+ * mesuré, `decoderJournal` rendait ZÉRO ligne sur un journal de trois trames,
+ * tandis que le même code passait sur Node 26.8.2, où la tranche tronquée lève
+ * `Z_BUF_ERROR`. La structure, elle, ne dépend d'aucune version : en-tête
+ * (magie, descripteur, fenêtre, dictionnaire, taille de contenu) puis blocs
+ * (en-tête de 3 octets, charge du bloc). C'est l'approche du harnais pour ses
+ * propres journaux (`scanZstdFrames`, `@deepseek-ai/dsh-session-persistence-jsonl`).
  */
 
 import { open, stat } from 'node:fs/promises'
@@ -30,41 +39,87 @@ import zlib from 'node:zlib'
 // exactement le genre d'erreur qu'on ne voit qu'en lisant un vrai journal.
 export const PLAFOND_DECOMPRESSION = 64 * 1024 * 1024
 
-// Un journal de session DSH (`session.v3.jsonl.zstd`) est une CONCATENATION de
-// trames zstd indépendantes, une par écriture. `zlib.zstdDecompressSync` n'en
-// décode qu'UNE et s'arrête silencieusement : l'utiliser seul ne rendrait que la
-// première écriture du journal. Il faut donc avancer trame par trame.
-//
-// La fin d'une trame est trouvée par recherche binaire : une tranche qui décode
-// n'est pas forcément exactement une trame (zstd ignore ce qui suit), on cherche
-// donc la plus petite longueur qui décode encore.
+// La magie sert DEUX FOIS : en Buffer pour `indexOf` (repérer un départ de trame
+// candidat dans une fenêtre), et en entier pour la lecture structurelle.
 const MAGIE_ZSTD = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
-const MAGIE_ZSTD_SKIPPABLE = Buffer.from([0x50, 0x2a, 0x4d, 0x18])
+const MAGIE_ZSTD_ENTIER = MAGIE_ZSTD.readUInt32LE(0)
+// Trames « à ignorer » : la spécification en réserve la plage 0x184D2A50-5F.
+const MAGIE_IGNORABLE_MIN = 0x184d2a50
+const MAGIE_IGNORABLE_MAX = 0x184d2a5f
 
-export function decoderUneTrame(tampon, depart, maximum) {
-  const fin = Math.min(tampon.length, depart + maximum)
-  let bas = 1
-  let haut = fin - depart
-  let meilleur = -1
-  while (bas <= haut) {
-    const milieu = (bas + haut) >> 1
-    try {
-      zlib.zstdDecompressSync(tampon.subarray(depart, depart + milieu))
-      meilleur = milieu
-      haut = milieu - 1
-    } catch {
-      bas = milieu + 1
-    }
+/**
+ * Longueur totale de la trame qui commence à `depart`, LUE DANS SA STRUCTURE.
+ *
+ * Aucune décompression n'est faite ici : on lit l'en-tête de trame, puis on
+ * saute les blocs d'après leurs en-têtes. C'est la seule façon de connaître la
+ * fin d'une trame sans dépendre du comportement — variable selon la version de
+ * Node — du décodeur face à une entrée tronquée.
+ *
+ * @param {Buffer} tampon
+ * @param {number} depart
+ * @returns {number | null} la longueur en octets, ou `null` si les octets
+ *   présents ne suffisent pas à lire une trame complète (trame en cours
+ *   d'écriture, ou début qui n'est pas une trame).
+ */
+export function longueurDeTrame(tampon, depart) {
+  if (tampon.length - depart < 4) return null
+  const magie = tampon.readUInt32LE(depart)
+
+  // Trame à ignorer : magie, taille de charge sur 4 octets, puis la charge.
+  if (magie >= MAGIE_IGNORABLE_MIN && magie <= MAGIE_IGNORABLE_MAX) {
+    if (tampon.length - depart < 8) return null
+    const fin = depart + 8 + tampon.readUInt32LE(depart + 4)
+    return fin <= tampon.length ? fin - depart : null
   }
-  if (meilleur === -1) return null
-  return { sortie: zlib.zstdDecompressSync(tampon.subarray(depart, depart + meilleur)), consomme: meilleur }
+  if (magie !== MAGIE_ZSTD_ENTIER) return null
+
+  let curseur = depart + 4
+  // Journal coupé juste après la magie : rien à lire, et rien à lever.
+  if (curseur >= tampon.length) return null
+  const descripteur = tampon.readUInt8(curseur)
+  curseur += 1
+  // Bits réservés : une trame qui les porte n'est pas du zstd valide.
+  if ((descripteur & 0x18) !== 0) return null
+  const drapeauTaille = descripteur >>> 6
+  const segmentUnique = (descripteur & 0x20) !== 0
+  const somme = (descripteur & 0x04) !== 0
+  const drapeauDictionnaire = descripteur & 0x03
+  const octetsDictionnaire = drapeauDictionnaire === 3 ? 4 : drapeauDictionnaire
+  // `Frame_Content_Size` : absent, ou 1 octet quand la trame est un segment unique.
+  const octetsTaille = drapeauTaille === 0 ? (segmentUnique ? 1 : 0) : 1 << drapeauTaille
+  const resteEnTete = (segmentUnique ? 0 : 1) + octetsDictionnaire + octetsTaille
+  if (tampon.length - curseur < resteEnTete) return null
+  curseur += resteEnTete
+
+  for (;;) {
+    if (tampon.length - curseur < 3) return null
+    const enteteBloc = tampon.readUIntLE(curseur, 3)
+    curseur += 3
+    const dernierBloc = (enteteBloc & 1) !== 0
+    const typeBloc = (enteteBloc >>> 1) & 3
+    const tailleBloc = enteteBloc >>> 3
+    if (typeBloc === 3) return null // type réservé
+    // Un bloc RLE n'occupe qu'un octet : `tailleBloc` est sa taille DÉCOMPRESSÉE.
+    const charge = typeBloc === 1 ? 1 : tailleBloc
+    if (tampon.length - curseur < charge) return null
+    curseur += charge
+    if (dernierBloc) break
+  }
+
+  if (somme) {
+    if (tampon.length - curseur < 4) return null
+    curseur += 4
+  }
+  return curseur - depart
 }
 
 /**
  * Décode un journal complet et rend ses lignes JSON.
  * @param {Buffer} tampon - contenu brut du fichier.
  * @param {number} depart - décalage de la première trame à décoder.
- * @returns {{lignes: string[], offset: number, tronque: boolean}}
+ * @returns {{lignes: string[], offset: number, tronque: boolean}} `offset` est
+ *   l'endroit où reprendre : le début de la trame incomplète, ou la fin du
+ *   tampon. `tronque` dit qu'il reste des octets non lus à cet endroit.
  */
 export function decoderJournal(tampon, depart = 0) {
   const lignes = []
@@ -72,29 +127,34 @@ export function decoderJournal(tampon, depart = 0) {
   let rendus = 0
   let tronque = false
   while (offset < tampon.length) {
-    const magie = tampon.subarray(offset, offset + 4)
-    if (!magie.equals(MAGIE_ZSTD) && !magie.equals(MAGIE_ZSTD_SKIPPABLE)) {
-      // Trame interrompue par une écriture en cours : on s'arrête proprement.
+    const longueur = longueurDeTrame(tampon, offset)
+    if (longueur === null) {
+      // Trame interrompue par une écriture en cours, ou octets qui ne sont pas
+      // une trame : on s'arrête proprement, sans rien inventer.
       tronque = true
       break
     }
-    if (rendus > PLAFOND_DECOMPRESSION) {
+    if (rendus >= PLAFOND_DECOMPRESSION) {
       tronque = true
       break
     }
-    let resultat
+    let sortie
     try {
-      resultat = decoderUneTrame(tampon, offset, PLAFOND_DECOMPRESSION)
+      // `maxOutputLength` borne la mémoire d'une SEULE trame : le plafond
+      // ci-dessus ne compte que ce qui a déjà été rendu. Une trame complète mais
+      // illisible (somme de contrôle fausse, corruption) lève ici.
+      sortie = zlib.zstdDecompressSync(tampon.subarray(offset, offset + longueur), {
+        maxOutputLength: PLAFOND_DECOMPRESSION,
+      })
     } catch {
-      resultat = null
-    }
-    if (resultat === null) {
       tronque = true
       break
     }
-    rendus += resultat.sortie.length
-    offset += resultat.consomme
-    const texte = resultat.sortie.toString('utf8')
+    rendus += sortie.length
+    offset += longueur
+    // Une trame à ignorer rend zéro octet : elle est sautée, et sa place dans le
+    // compte des octets est tenue par `longueur`.
+    const texte = sortie.toString('utf8')
     for (const ligne of texte.split('\n')) if (ligne.length > 0) lignes.push(ligne)
   }
   return { lignes, offset, tronque }

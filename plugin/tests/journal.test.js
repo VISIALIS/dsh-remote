@@ -8,7 +8,12 @@
  * silencieusement. Une erreur ici ne lève pas : elle rend un journal TRONQUÉ, et
  * l'utilisateur croit avoir tout lu.
  *
- * LANCEMENT : `node --test plugins/dsh-remote/tests/`.
+ * LANCEMENT : `node --test plugins/dsh-remote/tests/*.test.js`.
+ *
+ * PAS DE DOSSIER EN ARGUMENT : `node --test <dossier>` est REFUSÉ par Node
+ * 22.19 (`Cannot find module …/tests`) alors qu'il est accepté par 20.19 et
+ * 26.8.2 — et 22.19 est le Node sous lequel tourne le harnais ici. Des fichiers
+ * explicites marchent sur les trois.
  */
 
 import assert from 'node:assert/strict'
@@ -22,6 +27,7 @@ import {
   analyserLigne,
   cheminIndicatif,
   decoderJournal,
+  longueurDeTrame,
   resumer,
   trouverJournal,
 } from '../dynamic/journal.js'
@@ -49,6 +55,73 @@ test('un journal est une CONCATÉNATION de trames : toutes doivent être lues', 
     '{"type":"message","seq":2}',
   ])
   assert.equal(tronque, false)
+})
+
+test('la fin d’une trame se lit dans sa STRUCTURE, pas en la décompressant', () => {
+  const trame = zlib.zstdCompressSync(Buffer.from('{"type":"a"}\n', 'utf8'))
+  assert.equal(longueurDeTrame(trame, 0), trame.length)
+
+  // 300 Kio ne tiennent pas dans un bloc zstd (128 Kio au plus) : la lecture
+  // doit avancer de bloc en bloc, pas s'arrêter au premier.
+  const grosse = zlib.zstdCompressSync(Buffer.alloc(300 * 1024, 0x61))
+  assert.equal(longueurDeTrame(grosse, 0), grosse.length)
+
+  // Un octet de moins : ce n'est plus une trame complète. C'est LE cas qui
+  // décidait de tout — sur Node 22.19, `zstdDecompressSync` rend une tranche
+  // tronquée SANS LEVER (mesuré : 1 octet → chaîne vide, 90 % d'une trame de
+  // 200 Kio → 131 072 octets rendus). La structure, elle, ne se laisse pas
+  // convaincre : la taille annoncée dépasse ce qui est présent.
+  assert.equal(longueurDeTrame(trame.subarray(0, trame.length - 1), 0), null)
+  // Coupée juste après la magie : rien à lire, et rien à lever.
+  assert.equal(longueurDeTrame(trame.subarray(0, 4), 0), null)
+})
+
+test('une trame TRONQUÉE en fin de journal n’efface pas ce qui précède', () => {
+  const complet = journal('{"type":"a"}\n', '{"type":"b"}\n')
+  const entiere = zlib.zstdCompressSync(Buffer.from('{"type":"c"}\n', 'utf8'))
+  const tampon = Buffer.concat([complet, entiere.subarray(0, entiere.length - 2)])
+
+  const { lignes, offset, tronque } = decoderJournal(tampon)
+
+  // C'est la panne mesurée : la recherche par essais rendait ZÉRO ligne pour
+  // tout le journal, y compris les trames complètes qui le précédaient.
+  assert.deepEqual(lignes, ['{"type":"a"}', '{"type":"b"}'])
+  assert.equal(tronque, true)
+  // `offset` dit où reprendre : au DÉBUT de la trame incomplète, pour que rien
+  // ne soit sauté quand l'écriture en cours sera terminée.
+  assert.equal(offset, complet.length)
+})
+
+test('une trame « à ignorer » est SAUTÉE, pas prise pour du contenu', () => {
+  // La spécification zstd réserve la plage 0x184D2A50-5F à des trames dont la
+  // charge ne veut rien dire pour le décodeur. DSH n'en écrit pas aujourd'hui ;
+  // les fabriquer à la main est la seule façon d'éprouver qu'on les saute
+  // (magie de 4 octets, taille de charge sur 4 octets, puis la charge).
+  const charge = Buffer.from('a ignorer', 'utf8')
+  const taille = Buffer.alloc(4)
+  taille.writeUInt32LE(charge.length, 0)
+  const ignorable = Buffer.concat([Buffer.from([0x50, 0x2a, 0x4d, 0x18]), taille, charge])
+
+  const tampon = Buffer.concat([journal('{"type":"avant"}\n'), ignorable, journal('{"type":"apres"}\n')])
+  const { lignes, offset, tronque } = decoderJournal(tampon)
+
+  assert.deepEqual(lignes, ['{"type":"avant"}', '{"type":"apres"}'])
+  assert.equal(tronque, false)
+  assert.equal(offset, tampon.length)
+})
+
+test('un en-tête de trame ABÎMÉ arrête la lecture sans lever', () => {
+  // Bits réservés du descripteur : du zstd invalide. Le journal rend ce qu'il a
+  // lu avant, et dit qu'il s'est arrêté — il ne lève jamais dans le processus du
+  // harnais, où une exception non rattrapée coûte la route entière.
+  const abime = Buffer.from([0x28, 0xb5, 0x2f, 0xfd, 0xff, 0x00, 0x00])
+  const tampon = Buffer.concat([journal('{"type":"lisible"}\n'), abime])
+
+  const { lignes, offset, tronque } = decoderJournal(tampon)
+
+  assert.deepEqual(lignes, ['{"type":"lisible"}'])
+  assert.equal(tronque, true)
+  assert.equal(offset, tampon.length - abime.length)
 })
 
 test('une ligne illisible est IGNORÉE, pas fatale', () => {
