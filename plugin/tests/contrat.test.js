@@ -16,7 +16,8 @@
  * Une dérive d'un côté casse un test de l'autre, sans qu'il faille faire tourner
  * les deux langages en même temps.
  *
- * LANCEMENT : `node --test plugins/dsh-remote/tests/`.
+ * LANCEMENT : `node --test plugins/dsh-remote/tests/*.test.js` — le DOSSIER n'est
+ * pas un argument valide sous Node 22.19, celui du PATH et du harness.
  */
 
 import assert from 'node:assert/strict'

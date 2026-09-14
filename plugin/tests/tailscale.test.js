@@ -11,7 +11,9 @@
  * dépendance une surface d'attaque de plus dans un processus sans bac à sable.
  * Le runner est intégré à Node depuis la version 18 ; il n'y a rien à installer.
  *
- * LANCEMENT : `node --test plugins/dsh-remote/tests/` (ou `scripts/verifier.sh`).
+ * LANCEMENT : `node --test plugins/dsh-remote/tests/*.test.js` (ou
+ * `scripts/verifier.sh`) — le DOSSIER n'est pas un argument valide sous Node
+ * 22.19, celui du PATH et du harness.
  */
 
 import assert from 'node:assert/strict'
