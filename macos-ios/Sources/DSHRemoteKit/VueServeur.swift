@@ -309,18 +309,36 @@ struct VueServeur: View {
         #if os(iOS)
           .textInputAutocapitalization(.never)
         #endif
-        Button {
-          // UN COLLAGE REFUSÉ SE DIT : un presse-papiers vide ne doit pas
-          // produire un appui sans effet.
-          if !modele.collerLeJeton(pour: serveur.adresse) {
-            modele.signaler("Le presse-papier ne contient pas de jeton exploitable.")
+        // LE COLLAGE, PAR LE BOUTON SYSTÈME SUR iOS — même raison que dans la
+        // feuille Adresse : lire le presse-papiers sur un appui déclenche la
+        // bannière système, alors que l'utilisateur demande précisément ce
+        // collage. Sur macOS, la lecture sur geste explicite ne se signale pas.
+        #if os(iOS)
+          PasteButton(payloadType: String.self) { chaines in
+            guard let brut = chaines.first else {
+              modele.signaler(ModeleApp.messageJetonIllisible)
+              return
+            }
+            modele.adopterJeton(brut, pour: serveur.adresse)
           }
-        } label: {
-          Image(systemName: "doc.on.clipboard")
-        }
-        .buttonStyle(.borderless)
-        .cibleTactile()
-        .accessibilityLabel("Coller le jeton depuis le presse-papier")
+          .labelStyle(.iconOnly)
+          .buttonStyle(.borderless)
+          .cibleTactile()
+          .accessibilityLabel("Coller le jeton depuis le presse-papier")
+        #else
+          Button {
+            // UN COLLAGE REFUSÉ SE DIT : un presse-papiers vide ne doit pas
+            // produire un appui sans effet.
+            if !modele.collerLeJeton(pour: serveur.adresse) {
+              modele.signaler(ModeleApp.messageJetonIllisible)
+            }
+          } label: {
+            Image(systemName: "doc.on.clipboard")
+          }
+          .buttonStyle(.borderless)
+          .cibleTactile()
+          .accessibilityLabel("Coller le jeton depuis le presse-papier")
+        #endif
         if modele.jetonDisponible(pour: serveur.adresse) {
           Button {
             modele.effacerJeton(pour: serveur.adresse)

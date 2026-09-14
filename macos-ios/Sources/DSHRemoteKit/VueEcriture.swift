@@ -21,7 +21,18 @@ struct ComposeurEcriture: View {
   @Bindable var modele: ModeleApp
   let session: SessionListee
 
-  @State private var mode: ModePrompt = .queue
+  /// LE MODE D'ENVOI APPARTIENT AU MODÈLE, ET SE RETROUVE À LA RÉOUVERTURE.
+  ///
+  /// POURQUOI IL N'EST PLUS UN `@State` LOCAL. Il repartait à « à la suite » à
+  /// chaque changement de session, sans le dire : quelqu'un qui travaille en
+  /// « tout de suite » le re-sélectionnait à chaque fois, et le menu ne disait
+  /// jamais que le choix avait été oublié. Le mode est un choix DURABLE de
+  /// l'utilisateur, pas un état de passage.
+  private var mode: ModePrompt { modele.navigation.modeEnvoi }
+
+  private func definirMode(_ nouveau: ModePrompt) {
+    modele.definirModeEnvoi(nouveau)
+  }
   @FocusState private var champActif: Bool
   /// L'interruption DEMANDE CONFIRMATION : elle est demandée par un appui, et
   /// elle arrête un travail en cours.
@@ -138,12 +149,12 @@ struct ComposeurEcriture: View {
   private var menuMode: some View {
     Menu {
       Button {
-        mode = .queue
+        definirMode(.queue)
       } label: {
         Label("À la suite", systemImage: mode == .queue ? "checkmark" : "text.badge.plus")
       }
       Button {
-        mode = .steer
+        definirMode(.steer)
       } label: {
         Label("Tout de suite (interrompt)", systemImage: mode == .steer ? "checkmark" : "bolt.fill")
       }

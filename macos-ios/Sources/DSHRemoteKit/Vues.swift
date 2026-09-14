@@ -198,6 +198,23 @@ public struct VuePrincipale: View {
         // remède d'installation, qui n'a de sens que là.
         if let cible = machineDeLaPageSeule { modele.ouvrirPage(cible) }
       }
+      // LA SESSION CONSULTÉE SE ROUVRE, si l'hôte vient de la nommer.
+      //
+      // POURQUOI APRÈS `demarrer()` : la liste des sessions n'existe qu'une fois
+      // la connexion faite, et un identifiant mémorisé ne vaut que si la machine
+      // le reconnaît encore. `sessionARouvrir` fait cette vérification — rouvrir
+      // un journal disparu afficherait un écran vide sous un titre oublié.
+      //
+      // POURQUOI SEULEMENT SI RIEN N'EST SÉLECTIONNÉ : les ancres de vérification
+      // (`--serveur`, `--ajout`) ouvrent un écran précis, et restaurer par-dessus
+      // rendrait la capture dépendante de ce qui a été consulté la veille.
+      if sessionSelectionnee == nil, modele.serveurOuvert == nil, !ajoutOuvert {
+        sessionSelectionnee = modele.sessionARouvrir
+      }
+    }
+    // LA SÉLECTION SE RETIENT, pour être rouverte au prochain lancement.
+    .onChange(of: sessionSelectionnee) { _, nouvelle in
+      modele.definirSessionConsultee(nouvelle?.id)
     }
     // ── POURQUOI UNE ERREUR FORCE LA PAGE DU SERVEUR ───────────────────────
     //
@@ -396,6 +413,10 @@ struct VueListeSessions: View {
                 },
                 set: { ouvert in
                   if ouvert { espacesDeplies.insert(espace.id) } else { espacesDeplies.remove(espace.id) }
+                  // CE QUI EST DÉPLIÉ SE RETIENT. Sans cela, quitter l'écran ou
+                  // relancer l'application refermait tous les dossiers, et il
+                  // fallait les rouvrir un par un pour retrouver son travail.
+                  modele.definirEspacesDeplies(espacesDeplies)
                 }
               )
             ) {
@@ -588,6 +609,21 @@ struct VueListeSessions: View {
       // verdict dont on n'a plus besoin.
       await modele.ajusterAuParc()
       await modele.sonderLesServeurs()
+    }
+    // LES ESPACES DÉPLIÉS SE RETROUVENT AU LANCEMENT.
+    //
+    // POURQUOI ICI, ET PAS DANS L'INITIALISATION DE `@State`. L'état vit dans la
+    // vue — il n'appartient qu'à elle —, mais il doit SURVIVRE à sa disparition :
+    // c'est le modèle qui l'a écrit, et c'est de lui qu'on le relit, une fois,
+    // quand la vue apparaît.
+    .task {
+      if espacesDeplies.isEmpty {
+        espacesDeplies = modele.navigation.espacesDepliesEnsemble
+        // Les espaces dépliés pendant une recherche ne comptent pas : ils le sont
+        // d'office, et les mémoriser ferait rouvrir au lancement des dossiers que
+        // personne n'a ouverts.
+        if !modele.recherche.isEmpty { espacesDeplies = [] }
+      }
     }
     // La recherche ANCRÉE EN BAS, sous le pouce.
     //

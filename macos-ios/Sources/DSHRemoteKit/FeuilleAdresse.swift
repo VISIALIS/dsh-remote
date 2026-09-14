@@ -140,14 +140,33 @@ struct FeuilleAdresse: View {
             .textInputAutocapitalization(.never)
           #endif
 
-        Button {
-          coller()
-        } label: {
-          Image(systemName: "doc.on.clipboard")
-        }
-        .buttonStyle(.borderless)
-        .cibleTactile()
-        .accessibilityLabel("Coller le jeton depuis le presse-papier")
+        // LE COLLAGE, PAR LE BOUTON SYSTÈME SUR iOS.
+        //
+        // POURQUOI. Lire `UIPasteboard.general.string` sur un appui déclenche la
+        // bannière « Collé depuis … » : iOS avertit qu'une application a lu le
+        // presse-papiers, et c'est une bonne règle — sauf qu'ici l'utilisateur
+        // DEMANDE ce collage. Le bouton système (`PasteButton`) exprime la même
+        // intention AU SYSTÈME, qui accorde l'accès sans bannière et sans lire le
+        // presse-papiers à son insu. La validation, elle, reste la même des deux
+        // côtés (`ModeleApp.jetonPlausible`).
+        #if os(iOS)
+          PasteButton(payloadType: String.self) { chaines in
+            adopter(chaines.first)
+          }
+          .labelStyle(.iconOnly)
+          .buttonStyle(.borderless)
+          .cibleTactile()
+          .accessibilityLabel("Coller le jeton depuis le presse-papier")
+        #else
+          Button {
+            coller()
+          } label: {
+            Image(systemName: "doc.on.clipboard")
+          }
+          .buttonStyle(.borderless)
+          .cibleTactile()
+          .accessibilityLabel("Coller le jeton depuis le presse-papier")
+        #endif
 
         if !jeton.isEmpty {
           Button {
@@ -253,14 +272,31 @@ struct FeuilleAdresse: View {
   }
 
   /// Colle le presse-papier dans le champ, ET DIT quand il n'y a rien à coller.
+  ///
+  /// macOS SEULEMENT depuis que le bouton système fait ce travail sur iOS : le
+  /// presse-papiers y est lu sur un geste explicite, ce que la plateforme ne
+  /// signale pas.
   private func coller() {
     if modele.collerLeJeton() {
       jeton = modele.jetonSaisi
     } else {
       // Un presse-papiers vide est le cas le plus fréquent d'échec ici, et un
       // appui qui ne produit RIEN est un mensonge d'interface.
-      modele.signaler(
-        "Le presse-papier ne contient pas de jeton exploitable (moins de 20 caractères).")
+      modele.signaler(ModeleApp.messageJetonIllisible)
+    }
+  }
+
+  /// ADOPTE LE TEXTE FOURNI PAR LE BOUTON SYSTÈME — même règle, même message.
+  private func adopter(_ brut: String?) {
+    guard let brut else {
+      // Le système n'a rien rendu : c'est le cas « presse-papiers vide ».
+      modele.signaler(ModeleApp.messageJetonIllisible)
+      return
+    }
+    // Si le texte est inexploitable, `adopterJeton` a DÉJÀ posé le message : le
+    // répéter ici ferait deux fois le même reproche.
+    if modele.adopterJeton(brut) {
+      jeton = modele.jetonSaisi
     }
   }
 }

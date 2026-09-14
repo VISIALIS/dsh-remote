@@ -255,6 +255,9 @@ public final class ModeleApp {
 
   /// Préférences connues, par clé de serveur.
   public private(set) var preferences: [String: PreferencesServeur] = [:]
+  /// CE QUI SE RETROUVE À LA RÉOUVERTURE : espaces dépliés, mode d'envoi, session
+  /// consultée. Voir `EtatDeNavigation` pour ce qu'il ne contient PAS.
+  public private(set) var navigation = EtatDeNavigation()
 
   /// Préférences d'une adresse — les valeurs par défaut si on ne la connaît pas.
   public func preferences(pour adresse: String) -> PreferencesServeur {
@@ -282,6 +285,52 @@ public final class ModeleApp {
 
   private func memoriserPreferencesServeurs() {
     persistance.memoriserPreferences(preferences)
+  }
+
+  // MARK: - Ce qui se retrouve à la réouverture
+
+  /// Les espaces dépliés se notent ICI, parce que la vue qui les déplie ne
+  /// survit pas à un changement d'onglet ni à un lancement.
+  ///
+  /// POURQUOI LE MODÈLE S'EN CHARGE, ET NON LA VUE. `@State` meurt avec la vue :
+  /// persister depuis elle demanderait d'écrire dans `UserDefaults` au milieu
+  /// d'une vue, ce que ce paquet ne fait nulle part. Le modèle est le seul
+  /// endroit qui connaît déjà `Persistance`.
+  public func definirEspacesDeplies(_ identifiants: Set<String>) {
+    // Trié : deux ensembles identiques doivent produire le MÊME enregistrement,
+    // sans quoi un test de persistance échouerait au hasard de l'ordre.
+    navigation.espacesDeplies = identifiants.sorted()
+    persistance.memoriserNavigation(navigation)
+  }
+
+  /// Le mode d'envoi se retient d'une session à l'autre — c'est un choix durable.
+  public func definirModeEnvoi(_ mode: ModePrompt) {
+    navigation.modeEnvoi = mode
+    persistance.memoriserNavigation(navigation)
+  }
+
+  /// La session dont le journal était ouvert, pour la rouvrir au lancement.
+  public func definirSessionConsultee(_ identifiant: String?) {
+    // Ne rien réécrire quand rien ne change : cet appel vient d'un `onChange`
+    // de sélection, qui se déclenche aussi pour une valeur identique.
+    guard navigation.sessionConsultee != identifiant else { return }
+    navigation.sessionConsultee = identifiant
+    persistance.memoriserNavigation(navigation)
+  }
+
+  /// LA SESSION À ROUVRIR, si elle existe encore dans la liste reçue.
+  ///
+  /// POURQUOI ELLE EST REVALIDÉE. Un identifiant mémorisé peut désigner une
+  /// session terminée, archivée, ou appartenant à une autre machine — et rouvrir
+  /// un journal qui n'existe plus afficherait un écran vide sous un titre
+  /// disparu. On ne rend donc la session que si l'hôte vient de la nommer.
+  public var sessionARouvrir: SessionListee? {
+    guard let identifiant = navigation.sessionConsultee else { return nil }
+    return sessionsFiltrees.first { $0.id == identifiant }
+  }
+
+  private func chargerNavigation() {
+    navigation = persistance.lireNavigation()
   }
 
   /// Le filtre « chargées seulement », POUR LE SERVEUR COURANT.
@@ -789,6 +838,7 @@ public final class ModeleApp {
     chargerConfiguration()
     chargerPreference()
     chargerPreferencesServeurs()
+    chargerNavigation()
   }
 
   /// Mémorise l'adresse et le nom du serveur choisis, entre deux lancements.
@@ -1586,11 +1636,60 @@ public final class ModeleApp {
     #else
       valeur = nil
     #endif
-    guard let valeur else { return nil }
-    let nettoye = valeur.trimmingCharacters(in: .whitespacesAndNewlines)
+    return jetonPlausible(valeur)
+  }
+
+  /// LA RÈGLE DE VALIDATION D'UN JETON COLLÉ, en un seul endroit.
+  ///
+  /// POURQUOI ELLE EST SÉPARÉE DE LA LECTURE. Sur iPhone, le collage passe
+  /// désormais par le bouton système (`PasteButton`) : le texte n'est plus lu par
+  /// nous, il arrive en paramètre. Deux chemins de collage — celui du système et
+  /// celui du presse-papiers sur macOS — doivent appliquer LA MÊME règle : au
+  /// moins 20 caractères, espaces de bord retirés. Deux copies auraient fini par
+  /// diverger, et un jeton tronqué accepté d'un côté ne se diagnostique pas.
+  nonisolated static func jetonPlausible(_ brut: String?) -> String? {
+    guard let brut else { return nil }
+    let nettoye = brut.trimmingCharacters(in: .whitespacesAndNewlines)
     guard nettoye.count >= 20 else { return nil }
     return nettoye
   }
+
+  /// Adopte un jeton VENU DU SYSTÈME (bouton de collage), pour la saisie en cours.
+  ///
+  /// C'est le pendant de `collerLeJeton()` quand le texte est fourni par le
+  /// bouton système plutôt que lu dans le presse-papiers.
+  @discardableResult
+  public func adopterJeton(_ brut: String) -> Bool {
+    guard let nettoye = ModeleApp.jetonPlausible(brut) else {
+      signaler(ModeleApp.messageJetonIllisible)
+      return false
+    }
+    jetonSaisi = nettoye
+    return true
+  }
+
+  /// Adopte un jeton venu du système POUR UNE MACHINE NOMMÉE, et l'enregistre.
+  ///
+  /// Même distinction que les deux `collerLeJeton` : le champ d'une page de
+  /// machine appartient à un hôte CONNU, et l'y coller est un geste délibéré qui
+  /// n'attend pas une soumission.
+  @discardableResult
+  public func adopterJeton(_ brut: String, pour adresse: String) -> Bool {
+    guard let nettoye = ModeleApp.jetonPlausible(brut) else {
+      signaler(ModeleApp.messageJetonIllisible)
+      return false
+    }
+    enregistrerJeton(nettoye, pour: adresse)
+    return true
+  }
+
+  /// CE QU'ON DIT QUAND LE COLLAGE NE DONNE RIEN D'EXPLOITABLE.
+  ///
+  /// Un presse-papiers vide est le cas le plus fréquent d'échec, et un appui qui
+  /// ne produit RIEN est un mensonge d'interface. Le seuil est nommé parce qu'il
+  /// est la seule chose vérifiable par l'utilisateur.
+  static let messageJetonIllisible =
+    "Rien à coller : le presse-papier est vide, ou ne contient pas un jeton exploitable (moins de 20 caractères)."
 
   /// Oublie le serveur mémorisé, adresse comprise.
   ///

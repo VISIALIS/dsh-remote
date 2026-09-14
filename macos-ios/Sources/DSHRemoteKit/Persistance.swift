@@ -34,6 +34,37 @@ public struct PreferencesServeur: Codable, Equatable, Sendable {
   public init() {}
 }
 
+/// CE QUI SE RETROUVE À LA RÉOUVERTURE : où l'on regardait, et comment on écrit.
+///
+/// POURQUOI CE TYPE EXISTE. L'application repartait à zéro à chaque lancement :
+/// espaces repliés, aucune session ouverte, mode d'envoi remis à « à la suite ».
+/// Rien de tout cela n'est une décision qu'on prend à chaque ouverture — ce sont
+/// des CHOIX DURABLES, et les redemander chaque fois coûte des gestes répétés.
+///
+/// CE QU'IL NE CONTIENT PAS. Aucune donnée de session : ni titre, ni journal, ni
+/// identifiant de projet. Seulement des identifiants OPAQUES (chemin d'espace,
+/// identifiant de session), qui ne disent rien du travail lui-même — et qui sont
+/// revalidés à l'usage : une session qui n'existe plus n'est pas rouverte, un
+/// espace inconnu n'est pas déplié.
+///
+/// POURQUOI LES ESPACES SONT UNE LISTE ET NON UN `Set`. `Set<String>` est
+/// `Codable`, mais son encodage JSON n'a pas d'ordre : deux écritures du même
+/// ensemble produisaient deux fichiers différents, ce qui rend un test de
+/// persistance instable pour rien. La liste est triée à l'écriture.
+public struct EtatDeNavigation: Codable, Equatable, Sendable {
+  /// Les espaces de travail dépliés, par identifiant (le chemin du dossier).
+  public var espacesDeplies: [String] = []
+  /// Le mode d'envoi choisi — « à la suite » ou « tout de suite ».
+  public var modeEnvoi: ModePrompt = .queue
+  /// La session dont le journal était ouvert, si elle existe encore.
+  public var sessionConsultee: String?
+
+  public init() {}
+
+  /// Les espaces dépliés, sous la forme qu'attend la vue.
+  public var espacesDepliesEnsemble: Set<String> { Set(espacesDeplies) }
+}
+
 /// CE QUI SURVIT À L'APPLICATION : adresse mémorisée, préférences par serveur,
 /// fichier d'amorçage, et le diagnostic d'un échec.
 ///
@@ -56,6 +87,7 @@ public struct Persistance {
   public static let cleAdresse = "dsh-remote.derniere-adresse"
   public static let cleNomServeur = "dsh-remote.dernier-nom-serveur"
   public static let clePreferences = "dsh-remote.preferences-serveurs"
+  public static let cleNavigation = "dsh-remote.navigation"
   public static let nomDuFichierDAmorcage = "dsh-remote-config.json"
   public static let nomDuDiagnostic = "diagnostic.json"
 
@@ -112,6 +144,20 @@ public struct Persistance {
   public func memoriserPreferences(_ preferences: [String: PreferencesServeur]) {
     guard let donnees = try? JSONEncoder().encode(preferences) else { return }
     defaults.set(donnees, forKey: Self.clePreferences)
+  }
+
+  // MARK: - L'état de navigation
+
+  public func lireNavigation() -> EtatDeNavigation {
+    guard let donnees = defaults.data(forKey: Self.cleNavigation),
+      let lue = try? JSONDecoder().decode(EtatDeNavigation.self, from: donnees)
+    else { return EtatDeNavigation() }
+    return lue
+  }
+
+  public func memoriserNavigation(_ navigation: EtatDeNavigation) {
+    guard let donnees = try? JSONEncoder().encode(navigation) else { return }
+    defaults.set(donnees, forKey: Self.cleNavigation)
   }
 
   // MARK: - Le fichier d'amorçage
