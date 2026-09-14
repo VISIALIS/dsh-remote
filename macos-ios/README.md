@@ -1700,6 +1700,17 @@ deux portent l'adresse et un **code à usage unique de deux minutes**.
 | iPhone, iPad | **Scanner le QR code** (`VueScan.swift`, `DataScannerViewController`) | un Mac ne peut pas scanner son propre écran |
 | Mac | **Coller un appairage** — le texte affiché sous le QR | idem, et le presse-papiers est le canal le plus court |
 
+**APRÈS LE SCAN, LA PAGE D'AJOUT S'EFFACE — correction signalée à l'usage : « quand je
+scanne le QR code, il faudrait que la page s'actualise ».** L'appairage réussissait de
+bout en bout — jeton rangé, connexion faite, sessions chargées — mais la page d'ajout
+restait à l'écran : son travail est terminé dès qu'une machine est appairée, et rien ne
+la quittait. Elle part maintenant par deux chemins, parce que les plateformes ne la
+présentent pas de la même façon : sur iPhone elle est **poussée**, et `dismiss` la
+dépile ; sur macOS et iPad elle occupe la **colonne de détail**, où c'est l'état de
+l'application qui décide de ce qu'on regarde (`surAppairage` → `ajoutOuvert = false`).
+Sur la fiche d'une machine DÉJÀ ouverte, en revanche, rien ne se ferme : le verdict
+change et les cinq constats passent au vert tout seuls, puisque le modèle est observé.
+
 **OÙ LE GESTE SE TROUVE — ET POURQUOI IL A FALLU LE DÉPLACER.** Le premier jet
 l'avait mis dans la feuille « Adresse », en première section, avec ce raisonnement :
 « un appareil neuf n'ouvre que cette feuille ». Il était **faux**, et l'usage l'a dit
@@ -2276,6 +2287,14 @@ visite plus — c'est le cas que le geste doit couvrir, et `GardienDeJetons.effa
 énumère au lieu de supprimer « ceux qu'on connaît » ; l'adresse et le nom mémorisés ;
 les préférences par serveur ; l'état de navigation (espaces dépliés, mode d'envoi,
 session consultée) ; le réglage des alertes ; le fichier de diagnostic.
+
+**ET ELLE REFERME LA PAGE OUVERTE** — correction signalée à l'usage : « il y a le même
+problème suite à la réinitialisation sur macOS, il faudrait que la page s'actualise ».
+Elle effaçait tout sauf ce qu'on avait sous les yeux : la fiche de la machine oubliée
+restait affichée, avec un verdict calculé sur un jeton qui n'existait plus. La remise à
+zéro passe par `oublierServeur`, qui appelle `fermerPage` — un seul chemin, donc un seul
+endroit à éprouver, et le test ouvre une page AVANT de remettre à zéro (sans quoi
+l'assertion serait vraie à vide : vérifié par mutation, le correctif retiré, il échoue).
 
 **CE QU'ELLE NE TOUCHE PAS, ET QUI EST DIT À L'ÉCRAN.** Le **jeton du harness**, sur le
 Mac : il vit dans son coffre, pas dans cette application. Et le **fichier d'amorçage**
