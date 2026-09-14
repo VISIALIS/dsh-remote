@@ -51,38 +51,21 @@ def echapper(texte: str) -> str:
 
 TRADUCTIONS = {
     # ── Installation du plugin (démarches) ────────────────────────────────────
-    "1. Avoir le dépôt `dsh-plugins` sur cette machine, et y prendre `plugins/dsh-remote`.":
-        "1. Have the `dsh-plugins` repository on that machine, and take `plugins/dsh-remote` from it.",
-    "2. Déclarer le plugin dans `~/.dsh/profiles/web/cordis.patch.yml` :":
-        "2. Declare the plugin in `~/.dsh/profiles/web/cordis.patch.yml`:",
-    "3. Relancer le harness sur cette machine — ici `dsh web`. Le CODE d'un plugin n'est pas rechargé à chaud : sans redémarrage, l'ancien processus continue de répondre.":
-        "3. Restart the harness on that machine — here, `dsh web`. A plugin's CODE is not hot-reloaded: without a restart, the old process keeps answering.",
     "Le plugin `dsh-remote` n'est pas installé sur cette machine. DSH y tourne et son port 80 est publié — mais rien n'y expose DSH Remote.":
         "The `dsh-remote` plugin is not installed on that machine. DSH runs there and its port 80 is published — but nothing there serves DSH Remote.",
-    "Le plugin `dsh-remote` doit AUSSI y être chargé : publier DSH ne suffit pas. S'il manque, la page de cette machine donnera sa démarche d'installation.":
-        "The `dsh-remote` plugin must ALSO be loaded there: publishing DSH is not enough. If it is missing, that machine's page gives the installation steps.",
     "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond.":
         "No service is listening on that machine's port 80. The tailnet itself works: the machine answers.",
-    "Vérifiez sur cette machine : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal).":
-        "Check on that machine: `401` or `200` means the plugin is answering (`401` = no token, which is normal).",
     "Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre.":
         "The token is not what failed here: nothing could be reached. Note that it is SPECIFIC TO EACH HOST — this machine's token will not work for another.",
-    "Sur cette machine-là, publiez l'instance DSH :":
-        "On that machine, publish the DSH instance:",
-    "Vérifiez ensuite, sur cette machine-là :":
-        "Then check, on that machine:",
 
     # ── Adresse et jeton ──────────────────────────────────────────────────────
     "Adresse": "Address",
     "Adresse de la machine": "Machine address",
     "Jeton d'appareil": "Device token",
-    "Jeton d'appareil de cet hôte": "Device token for this host",
     "Le coffre du harness de cette machine contient un AUTRE jeton.":
         "The harness vault on that machine holds a DIFFERENT token.",
     "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il est gardé au trousseau — jamais dans les préférences — et n'est jamais renvoyé par une route.":
         "It is shown only once, in the harness output, when the plugin first loads on that machine. It is kept in the keychain — never in the preferences — and is never returned by a route.",
-    "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il n'est jamais renvoyé par une route.":
-        "It is shown only once, in the harness output, when the plugin first loads on that machine. It is never returned by a route.",
     "Le service a refusé ce jeton. Chaque machine a le sien : recopiez celui de CET hôte.":
         "The service refused this token. Each machine has its own: copy the one for THIS host.",
     "Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien.":
@@ -107,14 +90,6 @@ TRADUCTIONS = {
         "Check the tailnet state, on that machine or on another:",
     "Vérifiez sur cette machine ce qui est publié :":
         "Check what is published on this machine:",
-    "Sur cette machine-là : installez Tailscale, connectez-le, puis vérifiez :":
-        "On that machine: install Tailscale, connect it, then check:",
-    "Il doit y apparaître en ligne, avec un nom en `.ts.net`.":
-        "It should appear there online, with a name ending in `.ts.net`.",
-    "Une machine devient un serveur DSH en quatre étapes. Elles se font dans cet ordre : chacune suppose la précédente.":
-        "A machine becomes a DSH server in four steps. They are done in this order: each assumes the previous one.",
-    "L'ordre est celui du travail : chaque étape suppose la précédente. Les étapes grisées restent lisibles — dépliez « Voir la méthode » si vous les avez déjà faites, ou pour savoir ce qui vous attend.":
-        "The order is the order of the work: each step assumes the previous one. Greyed steps stay readable — unfold “See the method” if you have already done them, or to see what awaits you.",
     "Ajouter un serveur": "Add a server",
     "Chercher une machine": "Find a machine",
     "Saisir une adresse": "Enter an address",
@@ -369,7 +344,154 @@ TRADUCTIONS.update({
 TRADUCTIONS.update({
     "Rafraîchir": "Refresh",
     "Rechercher une session": "Search for a session",
-    "Ouvre la page de cette machine": "Opens this machine's page",
+})
+
+# ── L'APPAIRAGE, LA RÉINITIALISATION, ET LA FICHE D'UN SERVEUR ────────────────
+#
+# TRANCHE DE RATTRAPAGE, ET POURQUOI ELLE A ÉTÉ NÉCESSAIRE. Les tables `.strings`
+# portaient exactement les clés qu'elles portaient : ni plus, ni moins. Une clé
+# AJOUTÉE au code après la dernière écriture n'y entrait pas — et l'application,
+# elle, la servait en FRANÇAIS dans une interface anglaise. Le test de parité ne
+# pouvait pas le voir : il compare les deux TABLES entre elles, et toutes deux
+# ignoraient la même clé. C'est `--verifier` qui l'attrape, en relisant le code —
+# et il faut donc le lancer, ce que `scripts/verifier.sh` ne faisait pas.
+TRADUCTIONS.update({
+    # L'appairage : les gestes.
+    "Appairer": "Pair",
+    "Appairer un appareil": "Pair a device",
+    "Appairer avec ce texte": "Pair with this text",
+    "Scanner le QR code": "Scan the QR code",
+    "Coller un appairage": "Paste a pairing",
+    "Ou renseignez le texte du QR code": "Or enter the QR code text",
+    "Caméra indisponible": "Camera unavailable",
+    "Serveur sélectionné": "Server selected",
+    "Sélectionne cette machine ; un second appui ouvre sa page":
+        "Selects this machine; a second tap opens its page",
+    "Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page.":
+        "Its sessions and workspaces are on the left. Tap its icon again to open its page.",
+
+    # L'appairage : ce que le panneau est, et où il est.
+    "Le panneau « Appairer un appareil » de l'interface DSH affiche un QR code et le texte qui va avec : le scanner (ou le collage) remplit l'adresse ET le jeton d'un seul geste, puis se connecte.":
+        "The « Appairer un appareil » panel in the DSH interface shows a QR code and its text: scanning (or pasting) fills in the address AND the token in one gesture, then connects.",
+    "Le texte affiché sous le QR code commence par `dshremote://` et contient le nom du Mac. Un texte d'un autre genre est refusé, avec la raison.":
+        "The text shown under the QR code starts with `dshremote://` and contains the Mac's name. Text of another kind is refused, with the reason.",
+    "Rien à coller : le presse-papier est vide. Copiez le texte affiché sous le QR code du panneau « Appairer un appareil ».":
+        "Nothing to paste: the clipboard is empty. Copy the text shown under the QR code in the « Appairer un appareil » panel.",
+    "Ce simulateur n'a pas de caméra, ou ce modèle ne sait pas analyser un QR code en direct. Utilisez « Coller un appairage » : le texte affiché sous le QR code du panneau fait exactement la même chose.":
+        "This simulator has no camera, or this model cannot read a QR code live. Use « Coller un appairage »: the text shown under the QR code in the panel does exactly the same thing.",
+
+    # L'appairage : les refus, et ce qu'ils demandent.
+    "Ce code d'appairage a expiré.": "This pairing code has expired.",
+    "Ce code d'appairage n'est plus valable : il a déjà servi, ou il n'a jamais été émis.":
+        "This pairing code is no longer valid: it has already been used, or it was never issued.",
+    "demandez un nouveau code dans le panneau « Appairer un appareil » du Mac.":
+        "ask for a new code in the Mac's « Appairer un appareil » panel.",
+    "appairage refusé :": "pairing refused:",
+    "cet hôte ne sait pas échanger un code d'appairage : son plugin dsh-remote est plus ancien que cette application. Mettez le plugin à jour, ou collez le jeton d'appareil à la main.":
+        "this host cannot exchange a pairing code: its dsh-remote plugin is older than this app. Update the plugin, or paste the device token by hand.",
+    "Cette version d'appairage n'est pas connue de cette application.":
+        "This app does not know that pairing version.",
+    "Ce genre d'appairage n'existe pas.": "That kind of pairing does not exist.",
+    "Ce texte n'est pas une charge utile d'appairage.": "This text is not a pairing payload.",
+    "Ce lien n'est pas un appairage DSH.": "This link is not a DSH pairing.",
+    "Ce lien vise la boucle locale : un autre appareil ne peut pas la joindre.":
+        "This link points at the loopback address: another device cannot reach it.",
+    "Le nom de machine est vide ou mal formé.": "The machine name is empty or malformed.",
+    "Le secret est absent, tronqué ou mal formé.": "The secret is missing, truncated or malformed.",
+
+    # L'appairage : l'état d'une machine, et le cinquième constat du parcours.
+    "à appairer": "not paired",
+    "jeton refusé": "token refused",
+    "Cet appareil est appairé": "This device is paired",
+    "Il a son propre jeton pour cette machine : rien à recopier, jamais.":
+        "It has its own token for this machine: nothing to copy, ever.",
+    "Il n'a pas de jeton accepté par cette machine : la connexion serait refusée.":
+        "It has no token accepted by this machine: the connection would be refused.",
+    "On ne sait pas encore si cet appareil est appairé à cette machine.":
+        "It is not yet known whether this device is paired with this machine.",
+    "Le jeton rangé a été refusé : c'est celui d'une autre machine. Appairez à nouveau pour le remplacer.":
+        "The stored token was refused: it belongs to another machine. Pair again to replace it.",
+    "Jeton d'appareil de cet hôte — à la main": "Device token for this host — by hand",
+    "Sur le Mac : le bouton « DSH Remote », en bas de la barre latérale — il ouvre un QR code et son texte, valables deux minutes.":
+        "On the Mac: the « DSH Remote » button at the bottom of the sidebar — it opens a QR code and its text, valid for two minutes.",
+    "Le bouton d'appairage est en bas de la barre latérale de l'interface web, sous le nom « DSH Remote ». S'il n'apparaît pas, rechargez l'onglet — et s'il manque encore, relancez `dsh web`.":
+        "The pairing button is at the bottom of the sidebar in the web interface, labelled « DSH Remote ». If it does not appear, reload the tab — and if it is still missing, restart `dsh web`.",
+
+    # La fiche d'un serveur : le verdict, et le travail à faire.
+    "prêt": "ready",
+    "erreur": "error",
+    "information": "information",
+    "en attente": "pending",
+    "sur le Mac": "on the Mac",
+    "après l'étape": "after step",
+    "Sur cet appareil, deux choses se font : que Tailscale soit connecté, et l'appairage. Tout le reste se passe sur le Mac qui héberge DSH — et l'application le vérifie toute seule, dès qu'une machine répond.":
+        "Two things happen on this device: Tailscale being connected, and pairing. Everything else happens on the Mac hosting DSH — and the app checks it on its own, as soon as a machine answers.",
+    "Sur le Mac qui héberge DSH — pas sur cet appareil : ouvrez une session DSH sur ce Mac, et collez-lui ceci :":
+        "On the Mac hosting DSH — not on this device: open a DSH session on that Mac and paste this into it:",
+    "1. Sur cette machine-là, DSH doit tourner. S'il n'y est pas — Node.js est requis :":
+        "1. DSH must be running on that machine. If it is not — Node.js is required:",
+    "2. Publiez ensuite son port 80 sur le tailnet :":
+        "2. Then publish its port 80 on the tailnet:",
+    "Et vérifiez, sur cette machine-là :": "And check, on that machine:",
+    "Le plugin `dsh-remote` doit AUSSI y être chargé : publier DSH ne suffit pas. S'il manque, l'étape 4 donne sa démarche d'installation.":
+        "The `dsh-remote` plugin must ALSO be loaded there: publishing DSH is not enough. If it is missing, step 4 gives the installation steps.",
+    "Si vous préférez vérifier vous-même, depuis ce Mac : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal).":
+        "If you prefer to check yourself, from that Mac: `401` or `200` means the plugin is answering (`401` = no token, which is normal).",
+
+    # La réinitialisation.
+    "Réinitialiser": "Reset",
+    "Réinitialiser l'application": "Reset the application",
+    "Réinitialiser l'application ?": "Reset the application?",
+    "Tout effacer": "Erase everything",
+    "Les jetons gardés sur cet appareil seront effacés : il faudra réappairer pour retrouver l'accès. Cette action ne se défait pas.":
+        "The tokens kept on this device will be erased: you will have to pair again to regain access. This action cannot be undone.",
+    "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit.":
+        "Erases the device tokens kept on this device — ALL of them, including those of machines you no longer visit —, the remembered address and name, the per-server preferences, the last session opened, the alert setting and the diagnostic file. The harness token, on the Mac, is untouched. A bootstrap file placed by hand is NOT erased: it would bring the address and the token back on the next launch, and the report says so.",
+    "%d jeton(s) d'appareil effacé(s)": "%d device token(s) erased",
+    "%d préférence(s) oubliée(s)": "%d preference(s) forgotten",
+    "aucun jeton n'était gardé": "no token was stored",
+    "aucune préférence à oublier": "no preference to forget",
+    "diagnostic effacé": "diagnostic erased",
+})
+
+# La CONCLUSION du diagnostic — composée de morceaux, parce qu'une phrase
+# interpolée ne peut pas être une clé de table (voir `EtapesServeur.resume`).
+TRADUCTIONS.update({
+    "Ce serveur est prêt.": "This server is ready.",
+    "Vérification en cours…": "Checking…",
+    "Il reste une étape :": "One step left:",
+    "Étapes restantes :": "Steps left:",
+    "sur": "of",
+})
+
+# Les phrases des étapes et des messages du modèle qui étaient écrites NUES.
+# Une phrase nue n'est pas une clé : elle n'entrait dans aucune table et restait
+# donc en français dans une interface anglaise. Constaté à l'écran.
+TRADUCTIONS.update({
+    "Il doit avoir Tailscale installé et connecté : c'est ce qui le rend visible depuis cet appareil.":
+        "It must have Tailscale installed and connected: that is what makes it visible from this device.",
+    "Son port 80 doit être publié par `tailscale serve` — sans quoi rien ne répond à son adresse.":
+        "Its port 80 must be published by `tailscale serve` — without that, nothing answers at its address.",
+    "Son port 80 est publié par `tailscale serve`, donc quelque chose répond à son adresse.":
+        "Its port 80 is published by `tailscale serve`, so something answers at its address.",
+    "Le panneau « Appairer un appareil » du Mac affiche un QR code et son texte : ils portent l'adresse ET un code à usage unique, et remplacent les deux saisies.":
+        "The Mac's « Appairer un appareil » panel shows a QR code and its text: they carry the address AND a single-use code, and replace both manual entries.",
+
+    # Les messages du modèle — les morceaux fixes, les nombres restant interpolés.
+    "aucun jeton : collez-le d'abord": "no token: paste it first",
+    "jeton incomplet :": "incomplete token:",
+    "caractères au lieu de 43": "characters instead of 43",
+    "caractères au lieu de 43. Recopiez-le en entier.":
+        "characters instead of 43. Copy it in full.",
+    "est hors ligne sur le tailnet. Allumez-le, ou choisissez une machine en ligne : la liste se rafraîchit toute seule.":
+        "is offline on the tailnet. Turn it on, or choose a machine that is online: the list refreshes on its own.",
+    "Cet appareil n'est pas appairé à cette machine. Ouvrez sa page et prenez le QR code du panneau « Appairer un appareil » — ou, sur le Mac lui-même, recopiez le jeton que le harness n'affiche qu'une fois, au premier chargement du plugin.":
+        "This device is not paired with that machine. Open its page and take the QR code from the « Appairer un appareil » panel — or, on the Mac itself, copy the token the harness shows only once, when the plugin first loads.",
+})
+
+TRADUCTIONS.update({
+    "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse.":
+        "Its port 80 must be published by `tailscale serve` for anything to answer at its address.",
 })
 
 if __name__ == "__main__":

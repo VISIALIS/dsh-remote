@@ -140,13 +140,13 @@ public struct VuePrincipale: View {
         // l'ancre affichait la page de la machine visée et la page d'ajout
         // n'était pas capturable — constaté sur la première capture.
         NavigationStack {
-          VueAjoutServeur(modele: modele) { adresseOuverte = true }
+          FicheServeur(modele: modele, serveur: nil) { adresseOuverte = true }
         }
       } else if pageSeuleParArgument, let serveur = machineDeLaPageSeule {
         let _ = modele.relireEtatTailscale()
         // Ancre de vérification : la page seule, pour la capturer.
         NavigationStack {
-          VueServeur(modele: modele, serveur: serveur)
+          FicheServeur(modele: modele, serveur: serveur)
         }
         // LA SONDE PART AUSSI D'ICI, et pour la même raison que la mesure
         // ci-dessus : sans le panneau latéral, aucune sonde n'est lancée, donc
@@ -215,9 +215,9 @@ public struct VuePrincipale: View {
           VueJournal(modele: modele, session: session)
         }
       case .ajout:
-        VueAjoutServeur(modele: modele) { adresseOuverte = true }
+        FicheServeur(modele: modele, serveur: nil) { adresseOuverte = true }
       case let .serveur(serveur):
-        VueServeur(modele: modele, serveur: serveur)
+        FicheServeur(modele: modele, serveur: serveur)
       case let .selection(serveur):
         // LA MACHINE EST SÉLECTIONNÉE, SA PAGE N'EST PAS OUVERTE. On ne laisse pas
         // l'écran vide pour autant : on dit laquelle est choisie, ce que le
@@ -683,10 +683,10 @@ struct VueListeSessions: View {
       // La destination des icônes de serveur, déclarée DANS la colonne qui
       // l'affiche : sur iPhone elle s'empile, sur iPad elle remplit le détail.
       .navigationDestination(for: ServeurMac.self) { serveur in
-        VueServeur(modele: modele, serveur: serveur)
+        FicheServeur(modele: modele, serveur: serveur)
       }
       .navigationDestination(for: PageAjoutServeur.self) { _ in
-        VueAjoutServeur(modele: modele) { adresseOuverte = true }
+        FicheServeur(modele: modele, serveur: nil) { adresseOuverte = true }
       }
     #endif
     .toolbar {

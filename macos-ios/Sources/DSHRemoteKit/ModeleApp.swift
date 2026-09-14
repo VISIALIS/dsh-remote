@@ -1765,11 +1765,12 @@ public final class ModeleApp {
     enChargement = true
     let jeton = jetonDeLaCible()
     guard !jeton.isEmpty else {
-      connexion = .jetonInvalide("aucun jeton : collez-le d'abord")
+      connexion = .jetonInvalide(L("aucun jeton : collez-le d'abord"))
       return
     }
     guard jeton.count == 43 else {
-      connexion = .jetonInvalide("jeton incomplet : \(jeton.count) caractères au lieu de 43")
+      connexion = .jetonInvalide(
+        L("jeton incomplet :") + " \(jeton.count) " + L("caractères au lieu de 43"))
       return
     }
     do {
@@ -2412,7 +2413,8 @@ public final class ModeleApp {
   /// que l'utilisateur doit faire. Ici l'action est concrète, et elle tient en
   /// une phrase parce que l'état, lui, est connu.
   nonisolated static func messageHorsLigne(_ serveur: ServeurMac) -> String {
-    "« \(serveur.nom) » est hors ligne sur le tailnet. Allumez-le, ou choisissez une machine en ligne : la liste se rafraîchit toute seule."
+    "« \(serveur.nom) » "
+      + L("est hors ligne sur le tailnet. Allumez-le, ou choisissez une machine en ligne : la liste se rafraîchit toute seule.")
   }
 
   public func connecter() async {
@@ -2447,14 +2449,24 @@ public final class ModeleApp {
     }
     let jeton = jetonDeLaCible()
     guard !jeton.isEmpty else {
+      // LE MESSAGE RENVOIE AU GESTE QUI EXISTE, PAS À CELUI D'AVANT.
+      //
+      // Il disait : « Récupérez-le dans la sortie du harness sur l'hôte, au
+      // premier chargement du plugin. » C'était le chemin d'avant l'appairage —
+      // lire 43 caractères dans un terminal, sur l'AUTRE machine, et les
+      // recopier. Le chemin normal est désormais le panneau : un QR code, ou son
+      // texte à coller, qui remplissent l'adresse ET le jeton d'un seul geste.
+      // Le terminal reste dit, en second, parce qu'il reste vrai — et c'est le
+      // seul chemin quand on est devant le Mac lui-même.
       connexion = .jetonInvalide(
-        "Aucun jeton d'appareil. Récupérez-le dans la sortie du harness sur l'hôte, au premier chargement du plugin.")
+        L("Cet appareil n'est pas appairé à cette machine. Ouvrez sa page et prenez le QR code du panneau « Appairer un appareil » — ou, sur le Mac lui-même, recopiez le jeton que le harness n'affiche qu'une fois, au premier chargement du plugin."))
       return
     }
     // Un jeton tronqué enverrait une requête vouée au 401, en accusant le
     // serveur à tort : on le dit avant, avec le compte exact.
     guard jeton.count == 43 else {
-      connexion = .jetonInvalide("jeton incomplet : \(jeton.count) caractères au lieu de 43. Recopiez-le en entier.")
+      connexion = .jetonInvalide(
+        L("jeton incomplet :") + " \(jeton.count) " + L("caractères au lieu de 43. Recopiez-le en entier."))
       return
     }
     // TRACE TEMPORAIRE : ou passe le temps au demarrage.

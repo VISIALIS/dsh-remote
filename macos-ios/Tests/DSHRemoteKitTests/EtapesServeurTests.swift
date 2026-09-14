@@ -164,9 +164,13 @@ func serveurPretMaisPasAppaire() {
   #expect(etat(etapes, 4) == .franchie)
   #expect(etat(etapes, 5) == .aFaire)
   #expect(EtapesServeur.premiereAEtapesFranchir(etapes) == 5)
-  #expect(EtapesServeur.resume(etapes) == "Il reste une étape : « Cet appareil est appairé ».")
+  #expect(
+    EtapesServeur.resume(etapes)
+      == L("Il reste une étape :") + " « \(L("Cet appareil est appairé")) ».")
   // Et la pastille de la machine ne dit plus « pas de DSH » : elle sert DSH.
-  #expect(etape(etapes, 5)?.explication.contains("refusée") == true)
+  #expect(
+    etape(etapes, 5)?.explication
+      == L("Il n'a pas de jeton accepté par cette machine : la connexion serait refusée."))
 }
 
 @Test("Un jeton REFUSÉ n'est pas un appairage")
@@ -304,29 +308,59 @@ func verrouDuneListeDeTravail() {
   #expect(EtapesServeur.estVerrouillee(jugees[4], dans: jugees, mode: .diagnostic))
 }
 
+@Test("Le verrou dit QUEL numéro bloque, et ce n'est pas toujours le précédent")
+func numeroDeLEtapeQuiBloque() {
+  // POURQUOI CE TEST EXISTE. Le message du verrou s'écrit « après l'étape N », et
+  // il lisait `numero - 1`. C'est faux dès que les deux côtés ne se suivent pas :
+  // sur une liste de travail, l'appairage (5) n'est bloqué que par Tailscale (1),
+  // et la page annonçait donc « après l'étape 4 » — un renvoi vers une étape
+  // DÉJÀ FRANCHIE, c'est-à-dire vers nulle part.
+  let sansReseau = EtapesServeur.etapesDAjout(tailnetDeLAppareil: false)
+  #expect(EtapesServeur.etapeQuiBloque(sansReseau[4], dans: sansReseau, mode: .objectifs) == 1)
+  // Et sans blocage, il n'y a rien à annoncer.
+  let avecReseau = EtapesServeur.etapesDAjout(tailnetDeLAppareil: true)
+  #expect(EtapesServeur.etapeQuiBloque(avecReseau[4], dans: avecReseau, mode: .objectifs) == nil)
+
+  // Sur un diagnostic, la chaîne est mesurée : le port fermé bloque ce qui suit.
+  let portFerme = machine(sertDsh: false, cause: .rienNEcoute, appairage: .absent)
+  #expect(EtapesServeur.etapeQuiBloque(portFerme[3], dans: portFerme, mode: .diagnostic) == 3)
+  #expect(EtapesServeur.etapeQuiBloque(portFerme[2], dans: portFerme, mode: .diagnostic) == nil)
+  #expect(EtapesServeur.etapeQuiBloque(portFerme[4], dans: portFerme, mode: .diagnostic) == 3)
+
+  // ET LE BOOLÉEN EN DÉCOULE : une seule source pour un seul fait, sans quoi les
+  // deux calculs auraient fini par diverger.
+  for etape in portFerme {
+    #expect(
+      EtapesServeur.estVerrouillee(etape, dans: portFerme, mode: .diagnostic)
+        == (EtapesServeur.etapeQuiBloque(etape, dans: portFerme, mode: .diagnostic) != nil))
+  }
+}
+
 @Test("La conclusion du diagnostic distingue prêt, reste à faire, et pas encore su")
 func resumeDuDiagnostic() {
   // Un diagnostic se lit par sa conclusion : « ce serveur est-il utilisable ? »
   // est la question, les cinq étapes sont la démonstration.
   let pret = machine(sertDsh: true)
-  #expect(EtapesServeur.resume(pret) == "Ce serveur est prêt.")
+  #expect(EtapesServeur.resume(pret) == L("Ce serveur est prêt."))
 
   // UNE seule étape : on la NOMME — c'est l'information la plus utile, et elle
   // évite d'avoir à lire la liste pour savoir laquelle.
   let uneSeule = machine(sertDsh: false, cause: .pluginAbsent)
-  #expect(EtapesServeur.resume(uneSeule).contains("une étape"))
-  #expect(EtapesServeur.resume(uneSeule).contains("plugin"))
+  #expect(EtapesServeur.resume(uneSeule).contains(L("Il reste une étape :")))
+  #expect(EtapesServeur.resume(uneSeule).contains(L("Le plugin `dsh-remote` est installé")))
 
   // LE CAS QUI A MOTIVÉ LA CINQUIÈME ÉTAPE. Une machine parfaitement prête dont
   // l'appareil n'a pas le jeton : la conclusion NOMME l'appairage. Avant, elle
   // annonçait « Vérification en cours… » — indéfiniment, et à tort.
   let pasAppaire = machine(sertDsh: true, appairage: .absent)
-  #expect(EtapesServeur.resume(pasAppaire) == "Il reste une étape : « Cet appareil est appairé ».")
+  #expect(
+    EtapesServeur.resume(pasAppaire)
+      == L("Il reste une étape :") + " « \(L("Cet appareil est appairé")) ».")
 
   // PLUSIEURS ÉTAPES À FAIRE : on compte, sans en cacher aucune. C'est le cas
   // d'une machine hors ligne dont l'appareil n'a pas non plus de jeton.
   let deux = machine(enLigne: false, sertDsh: nil, appairage: .absent)
-  #expect(EtapesServeur.resume(deux) == "Il reste 2 étapes sur 5.")
+  #expect(EtapesServeur.resume(deux) == L("Étapes restantes :") + " 2 " + L("sur") + " 5.")
 
   // Cette liste-ci est construite à la main, pour couvrir la branche le jour où
   // les règles changeraient.
@@ -336,12 +370,12 @@ func resumeDuDiagnostic() {
     EtapesServeur.Etape(numero: 3, titre: "c", explication: "c", etat: .aFaire),
     EtapesServeur.Etape(numero: 4, titre: "d", explication: "d", etat: .inconnue),
   ]
-  #expect(EtapesServeur.resume(plusieurs) == "Il reste 2 étapes sur 4.")
+  #expect(EtapesServeur.resume(plusieurs) == L("Étapes restantes :") + " 2 " + L("sur") + " 4.")
 
   // LA FRONTIÈRE INCONNUE L'EMPORTE : on ne peut rien affirmer des suivantes, et
   // compter des étapes qu'on ne sait pas juger serait affirmer à leur place.
   let enCours = machine(tailnet: nil, sertDsh: nil)
-  #expect(EtapesServeur.resume(enCours) == "Vérification en cours…")
+  #expect(EtapesServeur.resume(enCours) == L("Vérification en cours…"))
 }
 
 // ── DE QUI RELÈVE CHAQUE ÉTAPE ────────────────────────────────────────────────

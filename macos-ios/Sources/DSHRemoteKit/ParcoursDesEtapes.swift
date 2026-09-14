@@ -63,8 +63,12 @@ struct ParcoursDesEtapes<Methode: View>: View {
   private func ligne(_ etape: EtapesServeur.Etape) -> some View {
     // LE VERROU SE DÉDUIT DE LA LISTE, jamais d'un champ de l'étape : la règle
     // vit dans `EtapesServeur`, où elle est éprouvée. Il ne s'applique QU'AUX
-    // OBJECTIFS : un diagnostic n'a pas de frontière.
-    let verrouillee = mode == .objectifs && EtapesServeur.estVerrouillee(etape, dans: etapes, mode: mode)
+    // OBJECTIFS : un diagnostic n'a pas de frontière. Et il rend LE NUMÉRO de
+    // l'étape qui bloque — pas « la précédente », qui n'est pas la même sur une
+    // liste de travail (l'appairage n'est bloqué que par Tailscale).
+    let bloquante = mode == .objectifs
+      ? EtapesServeur.etapeQuiBloque(etape, dans: etapes, mode: mode) : nil
+    let verrouillee = bloquante != nil
     let presentation = EtapesServeur.presentation(etape, dans: etapes, mode: mode)
 
     return VStack(alignment: .leading, spacing: 8) {
@@ -75,9 +79,22 @@ struct ParcoursDesEtapes<Methode: View>: View {
           .font(.callout.weight(etape.etat == .franchie || verrouillee ? .regular : .medium))
           .foregroundStyle(couleurDuTitre(etape, verrouillee: verrouillee))
           .fixedSize(horizontal: false, vertical: true)
+        // DE QUELLE MACHINE PARLE CETTE ÉTAPE — et seulement là où ça se perd.
+        //
+        // Sur la page d'une machine, le titre dit déjà de laquelle il s'agit, et
+        // trois lignes « sur le Mac » y seraient du bruit. Sur une LISTE DE
+        // TRAVAIL, il n'y a aucune machine nommée : les étapes du Mac et celles
+        // de l'appareil s'y mélangent, et c'est ainsi qu'on finit par taper une
+        // commande sur le mauvais ordinateur. Le repère coûte deux mots, et il
+        // les vaut.
+        if mode == .objectifs, etape.responsable == .hote {
+          T("sur le Mac")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
         Spacer(minLength: 4)
-        if verrouillee {
-          Text("après l'étape \(etape.numero - 1)")
+        if let bloquante {
+          Text(L("après l'étape") + " \(bloquante)")
             .font(.caption)
             .foregroundStyle(.tertiary)
         } else if etape.etat == .inconnue {
@@ -90,7 +107,7 @@ struct ParcoursDesEtapes<Methode: View>: View {
       // cela, un lecteur d'écran énumère trois fragments dont aucun ne dit si
       // l'étape est faite, à faire, ou seulement verrouillée.
       .accessibilityElement(children: .ignore)
-      .accessibilityLabel(libelle(etape, verrouillee: verrouillee))
+      .accessibilityLabel(libelle(etape, bloquante: bloquante))
 
       // ON N'EXPLIQUE ET N'OUTILLE QUE CE QUI RESTE À FAIRE — mais on l'outille
       // TOUJOURS. Une étape verrouillée garde son explication et sa méthode,
@@ -128,15 +145,21 @@ struct ParcoursDesEtapes<Methode: View>: View {
   ///
   /// « verrouillée » n'est pas un état de l'étape mais une conséquence de
   /// l'ordre : on le dit APRÈS l'état, et seulement là où il s'applique.
-  private func libelle(_ etape: EtapesServeur.Etape, verrouillee: Bool) -> String {
+  ///
+  /// LE REPÈRE « SUR LE MAC » Y EST AUSSI, quand il est affiché. Un lecteur
+  /// d'écran ne voit pas la couleur discrète qui distingue les deux machines :
+  /// sans ce mot, il entend cinq étapes de suite sans savoir lesquelles se font
+  /// ailleurs — exactement ce que le repère visuel répare.
+  private func libelle(_ etape: EtapesServeur.Etape, bloquante: Int?) -> String {
     let etat: String
     switch etape.etat {
     case .franchie: etat = "franchie"
     case .aFaire: etat = "à faire"
     case .inconnue: etat = "à vérifier"
     }
-    let ordre = verrouillee ? ", après l'étape \(etape.numero - 1)" : ""
-    return "Étape \(etape.numero), \(etape.titre), \(etat)\(ordre)"
+    let ou = mode == .objectifs && etape.responsable == .hote ? ", sur le Mac" : ""
+    let ordre = bloquante.map { ", après l'étape \($0)" } ?? ""
+    return "Étape \(etape.numero), \(etape.titre)\(ou), \(etat)\(ordre)"
   }
 
   private func symbole(_ etat: EtapesServeur.Etat) -> String {

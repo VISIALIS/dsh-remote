@@ -317,13 +317,11 @@ public enum EtapesServeur {
       titre = L("Le port de DSH est ouvert")
       switch etat {
       case .franchie:
-        explication =
-          "Son port 80 est publié par `tailscale serve`, donc quelque chose répond à son adresse."
+        explication = L("Son port 80 est publié par `tailscale serve`, donc quelque chose répond à son adresse.")
       case .aFaire:
         explication = L("Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas.")
       case .inconnue:
-        explication =
-          "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse."
+        explication = L("Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse.")
       }
     case 4:
       titre = L("Le plugin `dsh-remote` est installé")
@@ -375,20 +373,20 @@ public enum EtapesServeur {
         numero: 1,
         titre: L("Tailscale est connecté sur cet appareil"),
         explication:
-          "Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre.",
+          L("Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre."),
         etat: tailnetDeLAppareil == nil ? .inconnue : (tailnetDeLAppareil! ? .franchie : .aFaire),
         responsable: .appareil),
       Etape(
         numero: 2,
         titre: L("La machine à ajouter est sur le tailnet"),
         explication:
-          "Il doit avoir Tailscale installé et connecté : c'est ce qui le rend visible depuis cet appareil.",
+          L("Il doit avoir Tailscale installé et connecté : c'est ce qui le rend visible depuis cet appareil."),
         etat: .aFaire),
       Etape(
         numero: 3,
         titre: L("Le port de DSH y est ouvert"),
         explication:
-          "Son port 80 doit être publié par `tailscale serve` — sans quoi rien ne répond à son adresse.",
+          L("Son port 80 doit être publié par `tailscale serve` — sans quoi rien ne répond à son adresse."),
         etat: .aFaire),
       Etape(
         numero: 4,
@@ -399,7 +397,7 @@ public enum EtapesServeur {
         numero: 5,
         titre: L("Cet appareil est appairé"),
         explication:
-          "Le panneau « Appairer un appareil » du Mac affiche un QR code et son texte : ils portent l'adresse ET un code à usage unique, et remplacent les deux saisies.",
+          L("Le panneau « Appairer un appareil » du Mac affiche un QR code et son texte : ils portent l'adresse ET un code à usage unique, et remplacent les deux saisies."),
         etat: .aFaire,
         responsable: .appareil),
     ]
@@ -424,18 +422,56 @@ public enum EtapesServeur {
   /// LA FRONTIÈRE INCONNUE L'EMPORTE. Si la première étape non franchie est
   /// « à vérifier », on ne peut rien affirmer des suivantes : on le dit, au lieu
   /// de compter des étapes dont on ne sait rien.
+  /// LA PHRASE EST COMPOSÉE DE MORCEAUX TRADUISIBLES, ET C'EST UNE CONTRAINTE.
+  ///
+  /// POURQUOI ELLE N'EST PAS ÉCRITE D'UN BLOC. Une clé de traduction est une
+  /// phrase ENTIÈRE relue dans le code par `Scripts/traduire.py` ; une phrase
+  /// interpolée (`"Il reste \(n) étapes"`) n'est pas une clé, et reste donc en
+  /// français — dans une interface anglaise. Constaté sur capture : « Ce serveur
+  /// est prêt. » s'affichait en français sous une pastille anglaise, et la phrase
+  /// « Il reste une étape : « This device is paired ». » mélangeait les deux
+  /// langues DANS LA MÊME PHRASE.
+  ///
+  /// Les morceaux sont donc fixes — « Étapes restantes : », « sur » —, et seuls
+  /// les NOMBRES sont interpolés. L'ordre des mots est le même dans les deux
+  /// langues, ce qui n'est pas un hasard : c'est ce qui permet de composer.
   public static func resume(_ etapes: [Etape]) -> String {
     let restantes = etapes.filter { $0.etat != .franchie }
-    guard let frontiere = restantes.first else { return "Ce serveur est prêt." }
-    guard frontiere.etat == .aFaire else { return "Vérification en cours…" }
+    guard let frontiere = restantes.first else { return L("Ce serveur est prêt.") }
+    guard frontiere.etat == .aFaire else { return L("Vérification en cours…") }
     let sures = restantes.filter { $0.etat == .aFaire }
     if sures.count == 1 {
       // LE TITRE EST CITÉ TEL QUEL. Le mettre en minuscules abîmait les noms
       // propres — « Cette machine est visible » devenait « cette machine est visible »,
       // constaté sur capture.
-      return "Il reste une étape : « \(frontiere.titre) »."
+      return L("Il reste une étape :") + " « \(frontiere.titre) »."
     }
-    return "Il reste \(sures.count) étapes sur \(etapes.count)."
+    return L("Étapes restantes :") + " \(sures.count) " + L("sur") + " \(etapes.count)."
+  }
+
+  /// QUELLE ÉTAPE BLOQUE CELLE-CI, s'il y en a une.
+  ///
+  /// POURQUOI ELLE REND UN NUMÉRO, ET PAS SEULEMENT « OUI ». Le verrou se DIT à
+  /// l'écran — « après l'étape 3 » —, et ce numéro n'est pas toujours le
+  /// précédent : sur une liste de travail, l'appairage (étape 5) n'est bloqué que
+  /// par Tailscale (étape 1), les trois étapes du Mac ne le précèdent pas. Écrire
+  /// `numero - 1` affichait donc « après l'étape 4 » devant quelqu'un dont le
+  /// blocage était l'étape 1 — un renvoi vers une étape déjà franchie.
+  ///
+  /// ELLE EST LA SEULE SOURCE : `estVerrouillee` en découle, et la vue lit le
+  /// même numéro. Deux calculs pour un seul fait finiraient par diverger.
+  public static func etapeQuiBloque(
+    _ etape: Etape, dans etapes: [Etape], mode: Mode = .diagnostic
+  ) -> Int? {
+    let comparables: [Etape]
+    switch mode {
+    case .diagnostic: comparables = etapes
+    case .objectifs: comparables = etapes.filter { $0.responsable == etape.responsable }
+    }
+    guard let frontiere = premiereAEtapesFranchir(comparables), etape.numero > frontiere else {
+      return nil
+    }
+    return frontiere
   }
 
   /// Cette étape est-elle VERROUILLÉE par une précédente non franchie ?
@@ -460,13 +496,7 @@ public enum EtapesServeur {
   public static func estVerrouillee(
     _ etape: Etape, dans etapes: [Etape], mode: Mode = .diagnostic
   ) -> Bool {
-    let comparables: [Etape]
-    switch mode {
-    case .diagnostic: comparables = etapes
-    case .objectifs: comparables = etapes.filter { $0.responsable == etape.responsable }
-    }
-    guard let frontiere = premiereAEtapesFranchir(comparables) else { return false }
-    return etape.numero > frontiere
+    etapeQuiBloque(etape, dans: etapes, mode: mode) != nil
   }
 
   /// Le numéro de la PREMIÈRE étape à franchir, s'il y en a une.

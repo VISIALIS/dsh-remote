@@ -48,12 +48,13 @@ func cibleEnLigneOuInconnue() {
 func messageDEtat() {
   let message = ModeleApp.messageHorsLigne(eteint)
   #expect(message.contains("Portable Deux"))
-  #expect(message.contains("hors ligne"))
+  #expect(message.contains(L("hors ligne")))
   // Ce qu'on ne veut PLUS lire : un diagnostic de transport, qui décrit ce que
-  // le réseau a fait au lieu de ce que l'utilisateur peut faire.
-  #expect(!message.contains("délai"))
+  // le réseau a fait au lieu de ce que l'utilisateur peut faire. Le CODE d'erreur
+  // est le marqueur qui ne dépend pas de la langue — le reste de la phrase, lui,
+  // est traduit.
   #expect(!message.contains("-1001"))
-  #expect(!message.contains("transport"))
+  #expect(!message.contains("NSURLError"))
 }
 
 @MainActor

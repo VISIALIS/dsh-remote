@@ -78,7 +78,9 @@ func laSondePartSansJeton() async {
     tailnetDeLAppareil: true, enLigne: macSansJeton.enLigne,
     sertDsh: modele.sertDsh(macSansJeton), cause: nil,
     appairage: modele.etatAppairage(pour: macSansJeton))
-  #expect(EtapesServeur.resume(etapes) == "Il reste une étape : « Cet appareil est appairé ».")
+  #expect(
+    EtapesServeur.resume(etapes)
+      == L("Il reste une étape :") + " « \(L("Cet appareil est appairé")) ».")
   // Et surtout PAS « pas de DSH », qui était le mot affiché avant.
   #expect(
     EtatMachine.decrire(
