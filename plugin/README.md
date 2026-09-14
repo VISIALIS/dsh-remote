@@ -5,6 +5,13 @@ JSON versionnée pour observer l'instance DSH qui tourne sur le Mac. Il ne
 remplace pas l'interface web : il expose à un programme ce que l'interface web
 ne sait dire qu'à un navigateur.
 
+Il porte aussi, depuis l'**appairage par QR**, un panneau dans l'interface web :
+le Mac y affiche un QR code — et son texte — qui remplit l'adresse *et* le jeton
+d'un seul geste sur l'appareil à rattacher. Ce qui circule est un **code à usage
+unique de deux minutes**, jamais le jeton d'appareil : chaque appareil reçoit le
+sien en échangeant ce code, et se révoque tout seul depuis le panneau. Voir
+« Appairer un appareil » et « Sécurité ».
+
 Compagnon Swift : [`packages/dsh-remote-swift`](../dsh-remote-swift/) — client
 `DSHRemoteKit`, tool de validation `dsh-remote-ctl`, application SwiftUI **livrée**
 (macOS et iOS ; voir la feuille de route en fin de document).
@@ -67,6 +74,254 @@ dans un processus neuf.**
 
 ---
 
+## Appairer un appareil — le QR, et ce qu'il transporte
+
+**Le problème que ça résout.** Le jeton d'appareil ne s'affichait qu'une fois, au
+terminal, à sa création. Le rattachement d'un appareil demandait donc deux saisies
+sur deux écrans : l'adresse, puis 43 caractères recopiés à la main — et une faute
+de frappe coûtait une rotation de jeton, puisque plus rien ne le réaffichait. Le
+deuxième appareil, lui, exigeait de relire le coffre avec `dsh-remote-ctl`.
+
+**Ce que ça ne résout pas**, et il faut le dire : Tailscale sur l'appareil, le Mac
+visible, le port publié. Les quatre étapes du parcours de mise en service restent.
+C'est la **transcription du secret** qui disparaît.
+
+### La charge utile — un contrat entre deux langages
+
+```
+dshremote://<hote>/<genre>/v1/<secret>
+```
+
+| Segment | Ce qu'il porte | Pourquoi ainsi |
+|---|---|---|
+| `<hote>` | le nom MagicDNS **sans point final** | c'est l'adresse joignable d'un autre appareil, et celle que le profil déclare comme hôte de confiance |
+| `<genre>` | `jeton` (étape A) ou `code` (étape B) | un jeton se garde, un code s'échange et expire : les confondre donnerait un `401` incompréhensible |
+| `v1` | la version du contrat, **par genre** | un client qui ne connaît pas la version refuse en le disant, au lieu de l'essayer |
+| `<secret>` | base64url, donc sans `/` | le découpage du chemin n'est jamais ambigu |
+
+Le **port est implicite** (80, la convention que `tailscale serve` publie) : un
+champ de plus serait un champ de plus à faire diverger. Mesure sur un hôte réel de
+40 caractères : **105 octets**, soit un QR de **version 6, ECC M, 41 × 41
+modules** (capacité 106) — et l'encodeur couvre jusqu'à la version 10 (214 octets).
+
+**LES DEUX MOITIÉS SONT ÉPROUVÉES CONTRE LE MÊME FICHIER.** Une charge utile est
+construite en JavaScript (l'hôte) et analysée en Swift (l'application) : rien
+n'aurait signalé une divergence avant l'appairage, chez l'utilisateur. Le fixture
+`packages/dsh-remote-swift/Tests/DSHRemoteKitTests/Fixtures/vecteurs-appairage.json`
+est rejoué par `tests/appairage.test.js` **et** par `AppairageTests.swift` : les
+charges valides, les refus (sept motifs), les seuils de secret, et jusqu'aux
+**bornes de laxité** du nom d'hôte — `mauvais-.exemple.test` est accepté des deux
+côtés, parce que la règle est « commence et finit alphanumérique », pas une règle
+DNS par étiquette. C'est la divergence qui coûte, pas la laxité.
+
+**UN GENRE CONNU N'EST PAS UN GENRE TRAITÉ.** Le contrat connaît `code` — la
+grammaire est commune aux deux moitiés, et le fixture le prouve — mais l'étape A
+n'échange rien : l'application **refuse** une charge utile `code` avec un message
+qui dit quoi faire (« mettez l'application à jour, ou scannez le QR code d'un
+jeton »). Sans ce refus, elle rangerait 22 caractères dans le champ du jeton, les
+enverrait comme jeton porteur, et l'utilisateur récolterait un `401` — c'est-à-dire
+une chasse à la panne d'authentification là où il manque une version. C'est éprouvé
+(`AppairageAppliqueTests.swift`) : après le refus, **rien** n'a bougé, ni l'adresse,
+ni le jeton, ni le trousseau.
+
+### Les trois routes de l'appairage — et la seule gardée par le NAVIGATEUR
+
+Toutes les autres routes de ce plugin authentifient le **jeton d'appareil** et
+refusent tout `Origin`. Celles-ci font l'inverse pour trois d'entre elles, et
+c'est délibéré : c'est la page de l'utilisateur, sur sa propre machine, qui les
+appelle — pour frapper un code, voir les appareils, en révoquer un.
+
+| Route | Méthode | Garde | Rôle |
+|---|---|---|---|
+| `/dsh-remote/v1/appairage` | `POST` | **session navigateur** | frappe un **code à usage unique** (2 min) et rend la charge utile à afficher |
+| `/dsh-remote/v1/appareils` | `GET` | **session navigateur** | les appareils appairés : nom, portée, date, **empreinte** — jamais un jeton |
+| `/dsh-remote/v1/appareils/revoquer` | `POST` | **session navigateur** | coupe UN appareil, désigné par son empreinte |
+| `/dsh-remote/v1/appairage/echange` | `POST` | **le code lui-même** | rend un jeton **propre à l'appareil** ; aucun `Origin` toléré |
+
+**LE JETON D'APPAREIL N'EST PLUS PUBLIÉ PAR AUCUNE ROUTE.** À l'étape A, la
+route rendait le jeton lui-même — une dérogation assumée, dont la conséquence
+était écrite noir sur blanc : une photo de l'écran valait le jeton **pour
+toujours**. Ce qui circule maintenant est un code qui expire en deux minutes, ne
+sert qu'une fois, et ne vit qu'en mémoire chez l'hôte. Le seul moment où un jeton
+sort d'une route, c'est l'échange — et il sort **neuf**, pour l'appareil qui a
+présenté le code.
+
+```json
+// POST /dsh-remote/v1/appairage  →  200
+{
+  "protocole": 1,
+  "genre": "code",
+  "version": "v1",
+  "adresse": "http://<nom-magicdns>",
+  "charge": "dshremote://<nom-magicdns>/code/v1/<22 caracteres>",
+  "porteeFuture": "lecture",
+  "expireLe": 1789220160414,
+  "via": "tailscale"
+}
+```
+
+- **Le cookie est vérifié en premier** (`connection.browserAuth.isAuthenticated`) :
+  une requête refusée ne lit ni le coffre ni Tailscale, et repart avec une réponse
+  fixe (`401`).
+- **Le secret n'est jamais tracé.** `tracer` écrit la méthode, le chemin sans
+  paramètre, le code et un complément court (« code tailscale », « echange iPhone »).
+  Jamais la charge utile, jamais un jeton.
+- **Jamais une adresse de boucle locale.** `nomDeLHote` prend le `Self` de
+  Tailscale, sinon l'hôte déclaré au profil ; si les deux manquent, la route
+  répond `503` avec sa raison au lieu d'émettre un QR qui ne mène nulle part.
+- **La frappe est plafonnée** (30 par minute, tous clients confondus) et **huit
+  codes vivants au maximum** ; les codes périmés sont retirés **avant** le plafond,
+  sinon huit codes expirés bloqueraient la frappe d'un neuvième. Le plafond est
+  **global, pas par adresse** : mesuré et documenté plus haut, derrière
+  `tailscale serve` l'adresse source vaut toujours `127.0.0.1` — un plafond
+  « par IP » serait une illusion de contrôle.
+
+#### `POST /v1/appairage/echange` — le seul chemin qui rend un jeton
+
+```json
+// en-tête : Authorization: Bearer <code>   corps : { "nom": "iPhone de Camille" }
+{
+  "protocole": 1,
+  "jeton": "<43 caracteres, NEUF>",
+  "portee": "lecture",
+  "nom": "iPhone de Camille",
+  "creeLe": 1789220160414
+}
+```
+
+- **L'ORDRE DES OPÉRATIONS EST DÉLIBÉRÉ** : forme, provenance, **consommation du
+  code**, puis écriture. Le code est consommé **avant** l'écriture au coffre : un
+  échec du coffre brûle le code au lieu de le laisser rejouable — l'appareil
+  redemande un code, ce qui est un désagrément ; un code rejouable serait une
+  faille.
+- **Deux refus, un seul code** : « code inconnu ou déjà utilisé » et « code
+  expiré » sont deux `403` distincts. Le premier ne dit pas si le texte a existé —
+  le dire renseignerait un porteur de code deviné — et les deux se réparent
+  pareil : on redemande un code.
+- **Le nom vient du client, donc du réseau** : il est **nettoyé** avant d'entrer
+  dans la liste (`nomDAppareil`) — longueur bornée à 40, caractères de commande,
+  commandes bidi et largeurs nulles retirés. Un `\n` fabriquerait une fausse ligne
+  dans la liste, et un `U+202E` inverserait l'affichage du nom : une liste
+  illisible est une liste où l'on révoque le mauvais appareil.
+- **Un hôte trop ancien** (sans cette route) rend `404` : l'application le
+  traduit en « cet hôte ne sait pas échanger un code d'appairage », ce qui est un
+  remède différent de « ce code a expiré ».
+- **Le `429`** (plafond d'échanges) est un « réessayez », pas un refus d'appairage.
+
+### Le registre des jetons, et la portée par appareil
+
+| Enregistrement du coffre | Ce qu'il porte | Qui l'écrit |
+|---|---|---|
+| `dsh-remote/device-token` | le jeton **historique** (celui du terminal) | le plugin, à la création — **jamais réécrit** depuis |
+| `dsh-remote/device-tokens` | `{ jetons: [ { token, portee, creeLe, nom } ] }` — un par appareil appairé | le plugin, à chaque échange et à chaque révocation |
+
+**POURQUOI UN SECOND ENREGISTREMENT, ET PAS UNE RÉÉCRITURE DU PREMIER.** Le jeton
+historique reste lu **tel quel** : une mise à jour du plugin ne doit pas retirer un
+droit acquis, et un retour en arrière du plugin doit continuer de fonctionner. Les
+deux sources sont valides en même temps, et l'historique est simplement la
+**première entrée** de la liste.
+
+**LA PORTÉE EST DEVENUE PAR APPAREIL.** Elle était une variable de module — il n'y
+avait qu'un jeton, donc une seule portée. Chaque entrée porte maintenant la sienne,
+et la requête lit celle de **l'appareil qui a parlé** : marquée **sur la réponse**
+(un `Symbol`), jamais dans une variable de module. Une variable écrasée à chaque
+requête serait juste « en pratique » — Node est mono-thread et le gestionnaire lit
+la portée dans le même tour — mais elle deviendrait fausse le jour où une route
+attend entre l'authentification et la lecture. La réponse, elle, appartient à sa
+requête par construction.
+
+**La comparaison reste à temps constant**, longueurs égalisées, et la boucle les
+fait **toutes** (aucune sortie anticipée) : la durée ne dit donc pas à quelle
+position le jeton a été trouvé. Le nombre d'appareils, lui, est public — il est
+affiché.
+
+**La révocation est par appareil, et elle passe par la session navigateur.** Le
+geste vit dans le panneau, pas dans une route native : un porteur de jeton ne doit
+pas pouvoir expulser les autres. Ce que cela coûte est dit au README, section
+« Sécurité ».
+
+### Le panneau — un `client.js` écrit à la main, sans compilation
+
+Le panneau vit dans le pied de la barre latérale (`sidebar.footer.action`) : c'est
+un geste **global**, qui ne dépend d'aucune session ouverte.
+
+Ce dépôt connaissait deux formes de plugin ; celle-ci est la **troisième**, et elle
+a été mesurée avant d'être écrite, dans le harness installé (v0.1.5-rc.1) :
+
+| Étape | Ce que fait DSH | Référence |
+|---|---|---|
+| 1 | il remonte du module hôte au `package.json` **le plus proche**, lit `dsh.client` | `dsh-client-modules/lib/index.js` (`resolveMeta`, `locatePkgJson`) |
+| 2 | il résout `exports["./client"]` et **lit le fichier tel quel** | `index.js` (`initialBundleSnapshot`) |
+| 3 | il le sert sous `/plugins/<nom-du-paquet>/client.js`, l'identifiant du graphe étant le **nom du paquet** | `index.js` (`graphRow(packageName, …)`) |
+| 4 | le navigateur consomme un tableau CJS paresseux : `window.__ModuleLoader__.load({ id, factory })` | `dsh-client-modules/lib/client.js:1-6` |
+
+**Aucune compilation n'est exigée par DSH.** C'est ce qui rend le panneau
+**durable** — contrairement à `share-qr`, posé par `cordis_define`, qui disparaît
+au redémarrage : un panneau qu'il faut reposer à la main pour rattacher un
+appareil serait un piège.
+
+Deux conséquences pratiques, apprises en écrivant ce fichier :
+
+- **`id` doit être le nom du paquet.** Le chargeur refuse un bundle qui enregistre
+  un autre identifiant — et la panne est SILENCIEUSE côté utilisateur : le panneau
+  est simplement absent ;
+- **le `package.json` doit déclarer `"type": "module"`.** Sans lui, Node ne casse
+  pas le chargement mais émet `MODULE_TYPELESS_PACKAGE_JSON` et **re-parse** le
+  module hôte à chaque démarrage (mesuré sur Node v26.8.2).
+
+Le panneau **ne reconstruit pas** la charge utile : la route la lui donne déjà
+construite par `dynamic/appairage.js`. Deux constructions du même contrat
+finiraient par diverger — c'est précisément ce que le fixture partagé évite
+ailleurs. Il ne garde rien non plus : la charge utile quitte l'état React et le DOM
+dès la fermeture.
+
+**Deux points du shell ont été vérifiés dans le code installé**, parce que deux
+hypothèses silencieuses auraient pu rendre le panneau inatteignable ou muet :
+
+| Question | Réponse mesurée | Conséquence |
+|---|---|---|
+| Le pied de la barre latérale est-il rendu quand elle est REPLIÉE ? | `renderSlot("sidebar.footer.action", { wide })` est rendu **sans condition** dans `footArea` ; `wide` n'est qu'une prop | le bouton reste atteignable en 56 px de rail — d'où le libellé affiché seulement si `wide` |
+| Une CSP interdirait-elle le `fetch` same-origin du panneau ? | **aucune** `Content-Security-Policy` n'est servie pour la page du shell (la seule du harness garde les références média : `sandbox; default-src 'none'`) | la route est joignable depuis la page ; si un jour une CSP apparaissait, le panneau afficherait « L'hôte n'a pas répondu », pas un écran vide |
+
+### L'épreuve, après un redémarrage du harness
+
+Le code du panneau n'est **pas** rechargé à chaud (voir « Ce que `patchReload: live`
+recharge ») : il exige un **processus neuf**. C'est la seule épreuve que ce dépôt ne
+peut pas faire à ta place, et voici exactement ce qu'il faut regarder.
+
+```bash
+# 1. les vérifications qui, elles, ne demandent AUCUN redémarrage
+bash scripts/verifier.sh --tout
+node --test plugins/dsh-remote/tests/
+
+# 2. puis relancer le harness, et regarder la sortie du terminal : trois lignes
+#    doivent apparaître, dont celle-ci, avec le nombre d'appareils connus
+#    [dsh-remote] appairage (appareil): POST /dsh-remote/v1/appairage/echange — N appareil(s) connu(s)
+```
+
+| # | À observer | Ce que ça prouve |
+|---|---|---|
+| P1 | le panneau « Appairer » est dans le pied de la barre latérale ; l'icône ouvre une carte avec un **QR code** et un **compte à rebours** | un `client.js` écrit à la main est servi et exécuté **sans compilation** |
+| P2 | `curl -i -X POST http://127.0.0.1:3080/dsh-remote/v1/appairage` → `401` ; avec un cookie de navigateur → `200` **et aucun jeton dans le corps** | la route est gatée par la session du navigateur, et le jeton n'est plus publié |
+| P3 | l'adresse affichée est le **nom MagicDNS**, jamais `127.0.0.1` ; `expireLe` est à ~2 minutes | l'hôte publie une adresse joignable, et le code est daté |
+| P4 | le QR se scanne depuis l'iPhone (Ajouter un serveur → Adresse → **Scanner le QR code**) et la connexion part seule | un geste remplace deux saisies |
+| P5 | sur macOS, **Coller un appairage** (le texte sous le QR) remplit l'adresse et le jeton | le Mac ne peut pas scanner son propre écran — la forme texte est la représentation canonique, pas un repli |
+| P6 | **le compte à rebours arrive à zéro**, le QR disparaît, et « Générer un nouveau code » en redonne un | un code EXPIRÉ ne peut plus être échangé — c'est ce qui rend une photo d'écran sans valeur |
+| P7 | l'appareil appairé apparaît dans **« Appareils appairés »** avec son nom, sa portée et sa date ; l'adresse dans l'app est celle du Mac | le registre est écrit, et le nom vient bien de l'appareil |
+| P8 | **Révoquer** cet appareil (deux appuis : « Révoquer », puis « Confirmer ») : il disparaît de la liste, et l'application de cet appareil reçoit `401` à la requête suivante | la révocation est **par appareil** — la limite que l'étape A ne levait pas |
+| P9 | `curl -s http://127.0.0.1:3080/dsh-remote/v1/sante -H "Authorization: Bearer <jeton d'un appareil>"` → `portee`, `capacites.ecriture` et `appareils` | la portée est **par appareil**, et le compte est publié sans la liste |
+| P10 | rejouer le même code (`curl -X POST …/appairage/echange -H "Authorization: Bearer <code>"`) une seconde fois → `403 code inconnu ou deja utilise` | un code ne sert **qu'une fois** |
+
+Ce qui est **déjà** prouvé sans redémarrage, par les tests : l'encodeur embarqué
+est identique caractère pour caractère à celui de `share-qr` ; sa matrice est
+**décodée par Vision/macOS** (implémentation indépendante) et rend la charge utile
+exacte ; le bundle s'annonce avec le bon `id`, enregistre le bon slot et se dégrade
+sans lever quand `slots` ou React manquent ; le module hôte se charge et enregistre
+ses routes ; le flux complet frappe → échange → jeton → portée → révocation est
+rejoué de bout en bout ; le contrat est rejoué des deux côtés.
+
+---
+
 ## Les fichiers, et les tests
 
 Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
@@ -75,17 +330,44 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 
 | Fichier | Ce qu'il porte |
 |---|---|
-| `dynamic/host.js` | le plugin : les routes, le cache, le flux, le jeton |
+| `dynamic/host.js` | le plugin : les routes, le cache, le flux, les jetons, le registre des appareils, les codes d'appairage |
+| `dynamic/appairage.js` | le contrat d'appairage — fonctions **pures** (construction, analyse, nom d'appareil), éprouvées et partagées avec le Swift |
+| `dynamic/client.js` | le panneau : **bundle client durable écrit à la main** (encodeur QR, compte à rebours, liste des appareils, révocation), servi tel quel par DSH |
+| `package.json` | ce qui rend `client.js` **découvrable** (`dsh.client`, `exports["./client"]`) — aucune installation promise (RÈGLE #5) |
 | `dynamic/tailscale.js` | la découverte du tailnet — lancement du CLI local et **analyse pure** de sa sortie |
 | `dynamic/journal.js` | la lecture d'un journal de session : trames zstd concaténées, lignes JSONL, résumé |
 | `dynamic/trames.js` | le protocole WebSocket écrit à la main (RFC 6455) : texte, ping, pong, fermeture |
+| `tests/appairage.test.js` | le contrat d'appairage, rejoué contre le fixture **partagé avec le Swift** |
+| `tests/hote.test.js` | le module hôte chargé **hors harness** : routes et gardes, puis le flux complet frappe → échange → jeton → portée → révocation |
+| `tests/bundle.test.js` | le bundle RÉEL : `id`, slot, dégradation, copie de l'encodeur, et décodage par Vision |
+| `tests/outils/qr-vers-bmp.js` | l'image du QR, écrite sans dépendance (BMP non compressé), pour l'épreuve de décodage |
+| `tests/outils/decoder-qr.swift` | le décodeur **indépendant** (Vision/macOS) qui lit cette image |
 | `tests/tailscale.test.js` | les règles de la découverte, éprouvées sans lancer Tailscale |
 | `tests/journal.test.js` | les règles de lecture du journal, éprouvées avec de vraies trames zstd |
 | `tests/contrat.test.js` | le contrat avec le client : le plugin produit exactement les clés du fixture |
 | `tests/trames.test.js` | le protocole WebSocket, éprouvé octet par octet |
 
 ```bash
-node --test plugins/dsh-remote/tests/     # 27 tests, aucune dépendance
+node --test plugins/dsh-remote/tests/     # 69 tests, aucune dépendance
+
+POURQUOI LE MODULE HÔTE EST CHARGÉ HORS HARNESS. C'est la panne qui a déjà coûté une
+instance neuve : un import manquant (`cheminIndicatif`) ne casse pas `node --check`,
+il casse au CHARGEMENT, chez l'utilisateur, sous la forme d'un `500` sans trace. Le
+test importe donc `dynamic/host.js`, vérifie que les dix routes sont là avec un
+gestionnaire, puis rejoue le parcours d'appairage entier sur un coffre en mémoire —
+y compris les chemins qu'on ne veut jamais voir en vrai : code expiré, code rejoué,
+empreinte inconnue, révocation du jeton historique sans `deleteRecord`.
+
+POURQUOI LE BUNDLE A SES PROPRES TESTS, ET CE QU'ILS ATTRAPENT. Le panneau est un
+`client.js` écrit à la main, sans compilation : trois pannes y sont SILENCIEUSES —
+un `id` qui ne correspond pas au nom du paquet (le chargeur refuse d'enregistrer,
+le panneau est simplement absent), une copie d'encodeur qui a dérivé, un
+enregistrement de slot mal formé. Le test charge donc le bundle **réel** derrière
+un faux `window.__ModuleLoader__.load`, compare son encodeur, caractère pour
+caractère, à celui de `share-qr`, et fait décoder sa matrice par Vision — une
+implémentation qui ne partage aucune ligne avec lui. Le test de décodage est
+**sauté** si `swift` est absent, et il le dit : un contrôle qui ne s'exécute pas ne
+doit pas passer pour un contrôle.
 
 POURQUOI LES TRAMES ONT DES TESTS. C'est du code **binaire** écrit à la main pour
 ne pas ajouter de dépendance (RÈGLE #0) : une longueur mal encodée, un masque mal
@@ -226,12 +508,23 @@ dire, pas deviner.
 Authentification : `Authorization: Bearer <jeton>`. Jamais de jeton en paramètre
 d'URL — un paramètre finit dans un journal d'accès ou un historique.
 
+**QUATRE ROUTES ÉCHAPPENT À CETTE RÈGLE**, et elles forment la surface
+d'appairage : trois sont gatées par la **session du navigateur**
+(`browserAuth.isAuthenticated`) parce que c'est la page de l'utilisateur qui les
+appelle, et la quatrième (`/v1/appairage/echange`) par le **code** lui-même, qu'un
+appareil présente avant d'avoir un jeton. Voir « Appairer un appareil » et
+« Sécurité ».
+
 | Route | Méthode | Rôle |
 |---|---|---|
 | `/dsh-remote/v1/sante` | `GET` | Poignée de main : version du protocole, capacités, **portée du jeton**. Aucune donnée. |
 | `/dsh-remote/v1/sessions` | `GET`, `POST` | Liste des sessions, de la plus récente à la plus ancienne. |
 | `/dsh-remote/v1/espaces` | `GET` | Espaces de travail du registre de l'hôte, **ceux sans session compris**, dans son ordre de création décroissante. |
 | `/dsh-remote/v1/serveurs` | `GET` | Liste des machines du tailnet qui peuvent héberger DSH, **découverte par l'hôte** — c'est ce qui donne une liste à l'iPhone. |
+| `/dsh-remote/v1/appairage` | `POST` | **Session navigateur.** Frappe un code à usage unique et rend la charge utile à afficher. Jamais tracée, `no-store`. |
+| `/dsh-remote/v1/appareils` | `GET` | **Session navigateur.** Les appareils appairés : nom, portée, date, empreinte — jamais un jeton. |
+| `/dsh-remote/v1/appareils/revoquer` | `POST` | **Session navigateur.** Coupe un appareil, désigné par son empreinte. |
+| `/dsh-remote/v1/appairage/echange` | `POST` | **Le code fait office de porteur.** Rend un jeton neuf, propre à l'appareil. Aucun `Origin` toléré. |
 | `/dsh-remote/v1/session/<id>` | `POST` | Une page du journal d'une session. |
 | `/dsh-remote/v1/session/<id>/prompt` | `POST` | Envoyer un prompt. Reprend la session si elle est froide. |
 | `/dsh-remote/v1/session/<id>/annuler` | `POST` | Interrompre le tour en cours, **file d'attente conservée**. |
@@ -685,7 +978,7 @@ invalidé par couple `(taille, mtime)`.
 ## Sécurité — dérogations assumées à la RÈGLE #0
 
 La RÈGLE #0 d'[`AGENTS.md`](../../AGENTS.md) interdit huit choses. Ce plugin en
-déroge sur **un** point, délibéré et documenté ici.
+déroge sur **trois** points, délibérés et documentés ici.
 
 ### Il affiche un identifiant porteur (interdit #3)
 
@@ -696,8 +989,56 @@ d'apprendre le secret, et une route qui le rendrait serait pire.
 **Risque** : une capture d'écran de ce terminal, ou un enregistrement de session,
 donne le contrôle de la surface de lecture. **Garde-fous** : le jeton est affiché
 une seule fois ; il n'est jamais journalisé par `tracer` (qui ne trace que
-méthode, route, code et compteur) ; il n'est jamais renvoyé par une route ; le
-coffre est en `0600`.
+méthode, route, code et compteur) ; le coffre est en `0600`.
+
+### L'échange REND un jeton — à qui présente un code
+
+Ce README posait, avant l'appairage : « le jeton n'est **jamais** renvoyé par une
+route HTTP, pas même à un client authentifié : une route qui rendrait le jeton
+serait un oracle ». L'étape A avait transgressé cette règle en publiant le jeton
+d'appareil dans un QR — dérogation assumée, mais dont la conséquence était lourde :
+une photo de l'écran valait le jeton **pour toujours**, et cette photo pouvait venir
+d'un autre panneau (`share-qr` publie l'URL navigateur authentifiée).
+
+**L'étape B a refermé cela, et la règle d'origine est rétablie** : aucune route ne
+rend le jeton d'appareil. Ce que `POST /v1/appairage/echange` rend est un jeton
+**neuf, propre à l'appareil**, et seulement à qui présente un **code à usage unique
+de deux minutes**. La dérogation se réduit donc à ce qu'elle doit être :
+
+**Ce qui la sépare d'un oracle** : ni la session navigateur ni un jeton existant ne
+suffisent — il faut un code vivant, frappé sur geste, consommé au premier échange.
+Le nombre de codes vivants est plafonné à huit, leur frappe à trente par minute.
+
+**LA CHAÎNE QU'IL FAUT CONNAÎTRE, ET ELLE A CHANGÉ DE PORTÉE.** `share-qr` affiche
+l'URL navigateur **authentifiée** ; une photo de ce panneau donne un cookie valide,
+et ce cookie ouvre `POST /v1/appairage`, qui **frappe un code**. Une photo donne donc
+un code — valable **deux minutes**, à usage unique, et seulement si personne ne l'a
+déjà échangé. C'est écrit ici **et** dans le README de `share-qr` : une chaîne de ce
+genre doit se trouver en lisant l'un **ou** l'autre, jamais en les recoupant.
+
+**Risque résiduel, dit sans le minimiser** : qui photographie l'écran pendant ces
+deux minutes, **et échange le premier**, obtient un jeton d'appareil — en portée
+`lecture` par défaut. C'est borné dans le temps, ça ne répond à aucune approbation,
+et ça se révoque appareil par appareil. À l'étape A, la même photo valait un jeton
+permanent : la fenêtre est passée de « toujours » à « deux minutes ».
+
+### Révoquer un appareil passe par la SESSION NAVIGATEUR
+
+`GET /v1/appareils` et `POST /v1/appareils/revoquer` sont gardés par la session du
+navigateur, **pas** par un jeton d'appareil. C'est délibéré : un porteur de jeton ne
+doit pas pouvoir expulser les autres — sinon le premier jeton qui fuit permettrait
+de déconnecter tous les appareils de l'utilisateur.
+
+**Ce que cela coûte** : qui obtient la session navigateur (donc, aujourd'hui, qui
+obtient le cookie — voir la chaîne ci-dessus) peut **révoquer** des appareils. C'est
+un déni de service sur ses propres appareils, jamais une fuite : la révocation ne
+révèle rien et ne donne aucun accès. Le remède est immédiat — réappairer.
+
+**Il n'y a pas de route NATIVE de gestion des appareils**, et c'est un choix : elle
+exposerait la liste à tout porteur de jeton, et elle ferait de `dsh-remote-ctl` un
+**second lecteur du coffre** — un lecteur qui se trompe afficherait un jeton. Le
+terminal sait seulement **combien** d'appareils sont appairés (champ `appareils` de
+`/v1/sante`) ; pour les voir et en révoquer un, c'est le panneau.
 
 ### Le jeton autorise désormais l'ÉCRITURE (portée accrue)
 
@@ -725,9 +1066,11 @@ conséquences pratiques :
 - **Aucune donnée de session journalisée** : `tracer` écrit méthode, chemin sans
   paramètre, code HTTP et compteur. Jamais un contenu, jamais un chemin local,
   jamais un jeton.
-- **Aucun `Origin` toléré** : refusé en `403` **avant** le test du jeton. Un
-  client natif n'en envoie jamais, un navigateur en envoie toujours — c'est la
-  barrière anti-CSRF et anti-DNS-rebinding.
+- **Aucun `Origin` toléré sur les routes NATIVES** : refusé en `403` **avant** le
+  test du jeton. Un client natif n'en envoie jamais, un navigateur en envoie
+  toujours — c'est la barrière anti-CSRF et anti-DNS-rebinding. **L'exception est
+  `/v1/appairage`**, qui EST une route de navigateur : elle n'accepte pas d'`Origin`
+  par tolérance, elle l'attend, et c'est la session du navigateur qui la garde.
 - **Comparaison à temps constant** (`timingSafeEqual`), longueurs égalisées au
   préalable pour ne pas fuiter la taille du secret.
 - **Aucune E/S avant authentification** : une requête refusée ne lit ni le
@@ -752,11 +1095,16 @@ testée, et le plugin se dégrade au lieu de lever une exception au chargement.
 | API | Usage | Si elle disparaît |
 |---|---|---|
 | `webServer.register` / `.registerUpgrade` | enregistrer routes et flux | sans `webServer`, le plugin journalise l'échec et ne s'active pas |
-| `credentials.readRecord` / `.modifyRecord` | stocker le jeton | sans coffre, aucune authentification n'est possible : toutes les routes répondent `401` |
+| `credentials.readRecord` / `.modifyRecord` | stocker le jeton historique ET le registre des appareils | sans coffre, aucune authentification n'est possible : toutes les routes répondent `401` |
+| `credentials.deleteRecord` | révoquer le jeton **historique** (il vit dans son propre enregistrement) | la révocation de l'historique répond `503 coffre incapable de supprimer` — jamais un « ok » qui n'aurait rien supprimé |
 | `sessions.get`, `agents.roots` | marquer une session `vivante` | `vivante` vaut `false` partout ; le reste fonctionne |
 | `sessionController.prompt` / `.cancel` | écrire et interrompre | `capacites.ecriture` vaut `false`, la lecture continue de fonctionner, les deux routes répondent `503` |
 | `workspaceRegistry.list()` | publier les espaces de travail, **vides compris** | `capacites.espaces` vaut `false` et `/v1/espaces` répond `503` ; le client retombe sur le regroupement des sessions par `cwd` |
 | `ctx.on('user-questions/request' \| 'approval/request', …, { prepend: true })` | signaler qu'une décision humaine est attendue | `attendReponse` reste `false` partout : l'indicateur disparaît, rien d'autre ne casse |
+| `connection.browserAuth.isAuthenticated(req)` | garder la route d'appairage | le panneau affiche « authentification navigateur indisponible » et n'émet rien (réponse `503`) |
+| `connection.trustedHosts` | repli d'adresse quand Tailscale est muet | l'hôte retombe sur `Self` de Tailscale, puis sur un refus explicite |
+| client : `slots.inject` / `slots.register('sidebar.footer.action')` | poser le panneau | RÈGLE #3 : le bundle journalise l'absence et **ne lève pas** — la page de l'utilisateur continue de fonctionner |
+| client : `require('react')` (table de modules du shell) | dessiner la carte | même dégradation, testée (`tests/bundle.test.js`) |
 | `ctx.effect` | retirer les routes au déchargement | les routes fuient jusqu'au redémarrage |
 
 **`sessionController` est relu à chaque requête, jamais au chargement** : la
@@ -815,6 +1163,21 @@ limite la surface de casse.
 | Identifiant inconnu refusé | `404` |
 | Le journal se décode entièrement | 172 trames, 914 Ko, 62 ms, **0 ligne illisible** |
 | Le client Swift lit réellement les données | `dsh-remote-ctl <tailnet> sessions 6` affiche 486 évts et une date sur la session courante |
+| **Le bundle écrit à la main se charge SANS compilation** | `tests/bundle.test.js` exécute le fichier réel derrière un faux `window.__ModuleLoader__.load` : le `id` est celui du paquet, `apply` enregistre `sidebar.footer.action`, et l'absence de `slots` ou de React **dégrade sans lever** |
+| **La copie de l'encodeur n'a pas dérivé** | comparaison **caractère pour caractère** du bloc d'encodeur avec celui de `share-qr` (`tests/bundle.test.js`) |
+| **Le module hôte se charge, et enregistre toutes ses routes** | `tests/hote.test.js` importe `dynamic/host.js` hors harness : les six routes et l'`Upgrade` du flux sont là, chacune avec un gestionnaire. C'est la panne « import manquant » qui n'apparaissait qu'en instance neuve (`500 listage impossible`) |
+| **La route d'appairage est gardée, et dans le bon ordre** | même fichier : `503` sans service navigateur, `401` sans cookie **avant toute lecture**, `405` en `POST`, et le chemin nominal rend une charge utile que l'analyseur du contrat relit — jamais une adresse de boucle locale |
+| **Le QR est lisible par une implémentation INDÉPENDANTE** | la matrice du bundle est rendue en BMP (sans dépendance) et **décodée par Vision/macOS** : `payloadStringValue` rend la charge utile exacte |
+| **Les deux moitiés analysent pareil** | 61 tests JS + la suite Swift rejouent le **même fixture** : charges valides, 15 refus (7 motifs), seuils de secret, et les bornes de laxité du nom d'hôte |
+| **L'application applique l'appairage sans mélanger les hôtes** | `AppairageAppliqueTests.swift` : adresse ET jeton posés ensemble, jeton de l'hôte précédent conservé, refus qui ne change **rien** |
+| **Le flux d'appairage complet, sans harness** | `tests/hote.test.js` : frappe → échange → jeton neuf de 43 caractères → il authentifie `/v1/sante` → portée `lecture` → la route d'écriture le refuse en `403 jeton en lecture seule` |
+| **Un code ne sert qu'une fois, et il expire** | même fichier : second échange du même code → `403 code inconnu ou deja utilise` ; après la durée de vie → `403 code expire`, puis le code reste brûlé |
+| **La révocation est PAR APPAREIL** | même fichier : deux appareils appairés, révocation du premier par empreinte → son jeton rend `401`, le second et l'historique continuent de rendre `200` |
+| **Le jeton historique survit à la mise à jour** | même fichier : le registre est un SECOND enregistrement ; l'ancien jeton reste valide et devient la première entrée de la liste |
+| **Un nom d'appareil hostile est nettoyé** | même fichier : `\n`, commande bidi et 200 caractères → nom sans retour à la ligne, sans inversion d'affichage, borné à 40 |
+| **Trois `403` ne se confondent plus** | `AppairageEchangeTests.swift` : un `403` de code devient `appairageRefuse` (motif traduit), la portée reste `ecritureRefusee`, l'origine reste `origineRefusee` |
+| **L'appareil échange, il ne range pas le code** | `AppairageAppliqueTests.swift` : le code part à l'échange avec l'adresse et un nom ; c'est le jeton REÇU qui va au trousseau, jamais le code |
+| **Reste à éprouver APRÈS REDÉMARRAGE** : le panneau, le compte à rebours, le scan iPhone, le collage macOS et la révocation depuis l'écran | procédure en **10 points** dans « Appairer un appareil » — **non faite à ce jour** |
 
 Un bug réel a été trouvé par cette méthode : le client Swift attendait du
 `snake_case` quand le plugin émet du `camelCase`. Les tests Swift « passaient »
@@ -826,6 +1189,33 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 
 ## Limites connues
 
+- **La fenêtre d'appairage est de deux minutes, et elle est réelle.** Qui
+  photographie l'écran pendant ce temps **et échange le premier** obtient un jeton
+  d'appareil — en portée `lecture` par défaut. C'est la limite de tout appairage
+  par QR ; elle est bornée dans le temps, à usage unique, et révocable appareil par
+  appareil. La durée est réglable (`config.ttlCodeMs`, bornée entre 1 s et 15 min).
+- **Un code frappé mais non échangé reste en mémoire jusqu'à son expiration**, et
+  huit au maximum. Un panneau qu'on ouvre et qu'on ferme dix fois consomme le
+  plafond de frappe (30/minute) : c'est un « réessayez », pas une panne.
+- **La révocation passe par la session navigateur**, donc par le cookie. Qui
+  obtient ce cookie (voir la chaîne `share-qr`) peut révoquer des appareils — un
+  déni de service sur ses propres appareils, jamais une fuite.
+- **Révoquer le jeton historique ne le remplace pas tout de suite** : le plugin en
+  tire un neuf au prochain démarrage du harness, et c'est le seul moyen — il n'y a
+  pas de « tourner le jeton » à chaud.
+- **Le panneau ne peut pas être ouvert depuis un appareil sans session
+  navigateur.** Sa route exige le cookie de l'interface web : ce n'est pas un
+  défaut, c'est ce qui la garde — mais cela veut dire qu'on appaire depuis la page
+  du Mac, pas depuis le téléphone.
+- **La description d'usage de la caméra est en français seulement.** L'application
+  est localisée (fr source, en ajouté), mais `NSCameraUsageDescription` vit dans
+  l'`Info.plist`, dont la traduction demanderait un `InfoPlist.strings` qui n'existe
+  pas encore. Un utilisateur anglophone verra donc une phrase française dans
+  l'invite système — c'est écrit ici plutôt que découvert.
+- **Aucun lien universel, aucun schéma déclaré** : le scan se fait **dans**
+  l'application. Ouvrir l'appairage depuis la caméra système demanderait un
+  `CFBundleURLTypes` et un `apple-app-site-association` servi par DSH — un sujet à
+  part entière, pas un réglage.
 - **L'écriture est opérationnelle, avec une portée à connaître** : envoyer un prompt
   et interrompre un tour. Le jeton d'appareil autorise donc **l'écriture**, pas
   seulement la lecture (voir « Sécurité »).
@@ -878,3 +1268,5 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 | 3 | Flux temps réel des événements (`/v1/flux`) | **livré et prouvé** (plugin, client Swift et application) |
 | 4 | Écriture : prompt, approbations, questions | **prompt, annulation et SIGNALEMENT d'une décision attendue livrés et prouvés** ; le « blocage » était une capture précoce du service, corrigée. Répondre aux questions et aux approbations reste hors d'atteinte : un seul répondeur terminal par déploiement, déjà occupé par l'interface web |
 | 5 | Installation et signature iOS | **livré** — app signée et installée sur l'iPhone du propriétaire, connectée au harness via Tailscale (106 sessions) |
+| 6 | Appairage par QR — **étape A** : contrat versionné, panneau durable, scanner iPhone, collage macOS | **livrée**, puis **remplacée par l'étape B** : la route qui publiait le jeton d'appareil a été retirée, et la règle « le jeton n'est jamais renvoyé par une route » est rétablie |
+| 6 | Appairage par QR — **étape B** : code à usage unique (2 min), échange contre un jeton **par appareil**, portée par appareil, liste et révocation dans le panneau | **écrite et éprouvée localement** (69 tests JS dont le flux complet, 230 tests Swift, construction iOS simulateur verte) ; l'épreuve du panneau exige un **redémarrage** du harness — procédure en **10 points** ci-dessus, **non encore exécutée** |

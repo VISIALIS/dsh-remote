@@ -1,0 +1,16 @@
+{
+  "name": "dsh-remote",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Surface JSON versionnée pour l'application native DSH Remote, et panneau d'appairage par QR dans l'interface web.",
+  "_avertissement": "RÈGLE #5 : aucune installation par gestionnaire de paquets n'est promise. Ce paquet n'est ni publié, ni installé dans node_modules — la ligne du profil pointe sur dynamic/host.js par un chemin file://. Il existe parce que DSH ne découvre la moitié client qu'en remontant au package.json le plus proche ; sans lui, dynamic/client.js serait un fichier mort, jamais servi, et sans erreur. « type: module » est obligatoire ici : sans lui, Node re-parse le module hôte en émettant MODULE_TYPELESS_PACKAGE_JSON (mesuré sur Node v26.8.2).",
+  "dsh": {
+    "client": {
+      "platform": "web"
+    }
+  },
+  "exports": {
+    "./client": "./dynamic/client.js"
+  }
+}
