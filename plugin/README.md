@@ -275,9 +275,9 @@ a été mesurée avant d'être écrite, dans le harness installé (v0.1.5-rc.1) 
 | 4 | le navigateur consomme un tableau CJS paresseux : `window.__ModuleLoader__.load({ id, factory })` | `dsh-client-modules/lib/client.js:1-6` |
 
 **Aucune compilation n'est exigée par DSH.** C'est ce qui rend le panneau
-**durable** — contrairement à `share-qr`, posé par `cordis_define`, qui disparaît
-au redémarrage : un panneau qu'il faut reposer à la main pour rattacher un
-appareil serait un piège.
+**durable** — contrairement à la forme dynamique (`cordis_define`), que `share-qr`
+utilisait et dont un plugin ne survit pas au redémarrage : un panneau qu'il faut
+reposer à la main pour rattacher un appareil serait un piège.
 
 Deux conséquences pratiques, apprises en écrivant ce fichier :
 
@@ -373,7 +373,9 @@ en jeu, et la mesure montre qu'il suit le retrait mais pas l'ajout. Une observat
 l'une ne vaut donc pas preuve pour l'autre.
 
 Ce qui est **déjà** prouvé sans redémarrage, par les tests : l'encodeur embarqué
-est identique caractère pour caractère à celui de `share-qr` ; sa matrice est
+est identique caractère pour caractère à la **référence figée**
+(`tests/encodeur-reference.js` — le bloc d'origine, gelé le 14 septembre 2026 quand
+`share-qr` a quitté le dépôt) ; sa matrice est
 **décodée par Vision/macOS** (implémentation indépendante) et rend la charge utile
 exacte ; le bundle s'annonce avec le bon `id`, enregistre le bon slot et se dégrade
 sans lever quand `slots` ou React manquent ; le module hôte se charge et enregistre
@@ -424,7 +426,8 @@ un `id` qui ne correspond pas au nom du paquet (le chargeur refuse d'enregistrer
 le panneau est simplement absent), une copie d'encodeur qui a dérivé, un
 enregistrement de slot mal formé. Le test charge donc le bundle **réel** derrière
 un faux `window.__ModuleLoader__.load`, compare son encodeur, caractère pour
-caractère, à celui de `share-qr`, et fait décoder sa matrice par Vision — une
+caractère, à la **référence figée** du fichier d'origine
+(`tests/encodeur-reference.js`), et fait décoder sa matrice par Vision — une
 implémentation qui ne partage aucune ligne avec lui. Le test de décodage est
 **sauté** si `swift` est absent, et il le dit : un contrôle qui ne s'exécute pas ne
 doit pas passer pour un contrôle.
@@ -1116,7 +1119,8 @@ route HTTP, pas même à un client authentifié : une route qui rendrait le jeto
 serait un oracle ». L'étape A avait transgressé cette règle en publiant le jeton
 d'appareil dans un QR — dérogation assumée, mais dont la conséquence était lourde :
 une photo de l'écran valait le jeton **pour toujours**, et cette photo pouvait venir
-d'un autre panneau (`share-qr` publie l'URL navigateur authentifiée).
+d'un autre panneau (`share-qr`, supprimé du dépôt depuis, publiait l'URL navigateur
+authentifiée).
 
 **L'étape B a refermé cela, et la règle d'origine est rétablie** : aucune route ne
 rend le jeton d'appareil. Ce que `POST /v1/appairage/echange` rend est un jeton
@@ -1127,12 +1131,18 @@ de deux minutes**. La dérogation se réduit donc à ce qu'elle doit être :
 suffisent — il faut un code vivant, frappé sur geste, consommé au premier échange.
 Le nombre de codes vivants est plafonné à huit, leur frappe à trente par minute.
 
-**LA CHAÎNE QU'IL FAUT CONNAÎTRE, ET ELLE A CHANGÉ DE PORTÉE.** `share-qr` affiche
-l'URL navigateur **authentifiée** ; une photo de ce panneau donne un cookie valide,
-et ce cookie ouvre `POST /v1/appairage`, qui **frappe un code**. Une photo donne donc
-un code — valable **deux minutes**, à usage unique, et seulement si personne ne l'a
-déjà échangé. C'est écrit ici **et** dans le README de `share-qr` : une chaîne de ce
-genre doit se trouver en lisant l'un **ou** l'autre, jamais en les recoupant.
+**LA CHAÎNE QU'IL FAUT CONNAÎTRE, ET ELLE A PERDU SON PREMIER MAILLON.** Elle
+était écrite à deux endroits parce que deux plugins la composaient : `share-qr`
+affichait l'URL navigateur **authentifiée** ; une photo de ce panneau donnait un
+cookie valide, et ce cookie ouvrait `POST /v1/appairage`, qui **frappe un code**.
+Une photo donnait donc un code — valable **deux minutes**, à usage unique, et
+seulement si personne ne l'a déjà échangé.
+
+**`share-qr` a été supprimé du dépôt le 14 septembre 2026** : la chaîne n'est plus
+composable depuis ce dépôt, et ce paragraphe en garde la trace plutôt que de
+l'effacer. Si un plugin publie de nouveau l'URL authentifiée, la chaîne se
+reforme telle qu'elle est décrite ici — et la borne reste celle du code, pas celle
+de la photo.
 
 **Risque résiduel, dit sans le minimiser** : qui photographie l'écran pendant ces
 deux minutes, **et échange le premier**, obtient un jeton d'appareil — en portée
@@ -1282,7 +1292,7 @@ limite la surface de casse.
 | Le journal se décode entièrement | 172 trames, 914 Ko, 62 ms, **0 ligne illisible** |
 | Le client Swift lit réellement les données | `dsh-remote-ctl <tailnet> sessions 6` affiche 486 évts et une date sur la session courante |
 | **Le bundle écrit à la main se charge SANS compilation** | `tests/bundle.test.js` exécute le fichier réel derrière un faux `window.__ModuleLoader__.load` : le `id` est celui du paquet, `apply` enregistre `sidebar.footer.action`, et l'absence de `slots` ou de React **dégrade sans lever** |
-| **La copie de l'encodeur n'a pas dérivé** | comparaison **caractère pour caractère** du bloc d'encodeur avec celui de `share-qr` (`tests/bundle.test.js`) |
+| **La copie de l'encodeur n'a pas dérivé** | comparaison **caractère pour caractère** du bloc d'encodeur avec la référence figée `tests/encodeur-reference.js` — le bloc d'origine, gelé le 14 septembre 2026 à la suppression de `share-qr` (`tests/bundle.test.js`) |
 | **Le module hôte se charge, et enregistre toutes ses routes** | `tests/hote.test.js` importe `dynamic/host.js` hors harness : les six routes et l'`Upgrade` du flux sont là, chacune avec un gestionnaire. C'est la panne « import manquant » qui n'apparaissait qu'en instance neuve (`500 listage impossible`) |
 | **La route d'appairage est gardée, et dans le bon ordre** | même fichier : `503` sans service navigateur, `401` sans cookie **avant toute lecture**, `405` en `POST`, et le chemin nominal rend une charge utile que l'analyseur du contrat relit — jamais une adresse de boucle locale |
 | **Le QR est lisible par une implémentation INDÉPENDANTE** | la matrice du bundle est rendue en BMP (sans dépendance) et **décodée par Vision/macOS** : `payloadStringValue` rend la charge utile exacte |
@@ -1315,9 +1325,10 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 - **Un code frappé mais non échangé reste en mémoire jusqu'à son expiration**, et
   huit au maximum. Un panneau qu'on ouvre et qu'on ferme dix fois consomme le
   plafond de frappe (30/minute) : c'est un « réessayez », pas une panne.
-- **La révocation passe par la session navigateur**, donc par le cookie. Qui
-  obtient ce cookie (voir la chaîne `share-qr`) peut révoquer des appareils — un
-  déni de service sur ses propres appareils, jamais une fuite.
+- **La révocation passe par la session navigateur**, donc par le cookie de
+  l'interface web. Qui obtient ce cookie — la session de l'utilisateur, sur sa
+  machine — peut révoquer des appareils : un déni de service sur ses propres
+  appareils, jamais une fuite.
 - **Révoquer le jeton historique ne le remplace pas tout de suite** : le plugin en
   tire un neuf au prochain démarrage du harness, et c'est le seul moyen — il n'y a
   pas de « tourner le jeton » à chaud.

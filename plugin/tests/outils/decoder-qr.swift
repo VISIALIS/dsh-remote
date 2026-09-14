@@ -6,7 +6,8 @@
 // Vision, le framework d'Apple — et il rend la charge utile qu'il lit.
 //
 // C'est la même méthode qui a validé l'encodeur de `share-qr` (décodage par
-// Vision/macOS), appliquée ici à la COPIE EMBARQUÉE dans le bundle du panneau.
+// Vision/macOS) avant que ce plugin ne quitte le dépôt, appliquée ici à la COPIE
+// EMBARQUÉE dans le bundle du panneau.
 //
 // Usage : swift decoder-qr.swift <fichier.bmp>
 // Sortie : une ligne par code trouvé (la charge utile), exit 3 si aucun code.

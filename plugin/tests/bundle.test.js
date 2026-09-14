@@ -12,9 +12,9 @@
 // CE QUI EST ÉPROUVÉ ICI :
 //
 //   1. le bundle s'exécute et s'annonce avec le nom du paquet (`id`) ;
-//   2. l'encodeur qu'il embarque est IDENTIQUE, caractère pour caractère, à
-//      celui de `share-qr` — la copie est assumée (RÈGLE #2), sa dérive ne
-//      l'est pas ;
+//   2. l'encodeur qu'il embarque est IDENTIQUE, caractère pour caractère, à la
+//      référence figée sous `encodeur-reference.js` — la copie est assumée
+//      (RÈGLE #2), sa dérive ne l'est pas ;
 //   3. les invariants de la matrice (taille, motifs de repérage) tiennent ;
 //   4. la charge utile RÉELLE est décodée par une implémentation INDÉPENDANTE
 //      (Vision/macOS, via `tests/outils/decoder-qr.swift`) ;
@@ -34,7 +34,7 @@ import { ecrireBmp } from './outils/qr-vers-bmp.js'
 const ICI = dirname(fileURLToPath(import.meta.url))
 const PAQUET = join(ICI, '..', 'package.json')
 const BUNDLE = join(ICI, '..', 'dynamic', 'client.js')
-const ENCODEUR_ORIGINE = join(ICI, '..', '..', 'share-qr', 'dynamic', 'client.js')
+const ENCODEUR_ORIGINE = join(ICI, 'encodeur-reference.js')
 
 // ── Chargement du bundle hors navigateur ─────────────────────────────────────
 //
@@ -89,11 +89,17 @@ test('le bundle expose un plugin client complet', () => {
   assert.equal(typeof moduleClient.essai?.dureeLisible, 'function')
 })
 
-test('l encodeur embarque est identique a celui de share-qr', () => {
+test('l encodeur embarque est identique a la reference figee', () => {
   // LA COPIE EST ASSUMÉE (RÈGLE #2 : un plugin est autonome), SA DÉRIVE NON.
-  // On compare les deux blocs par leur TEXTE, pas par une empreinte figée :
-  // si `share-qr` corrige son encodeur, ce test le dit, et la re-copie devient
-  // un geste délibéré au lieu d'un oubli.
+  // On compare les deux blocs par leur TEXTE, pas par une empreinte figée.
+  //
+  // LA RÉFÉRENCE ÉTAIT LE FICHIER DE `share-qr`, ELLE EST MAINTENANT UNE COPIE
+  // FIGÉE (`encodeur-reference.js`) : le plugin d'origine a quitté le dépôt le
+  // 14 septembre 2026, et le test ne pouvait pas partir avec lui sans que plus
+  // rien ne dise qu'une correction d'encodage reste d'un seul côté. La
+  // comparaison garde donc son objet, et perd seulement le lien vivant : si
+  // l'encodeur embarque change, ce test le dit, et la re-copie de référence
+  // devient un geste délibéré au lieu d'un oubli.
   const bloc = (chemin) => {
     const lignes = readFileSync(chemin, 'utf8').split('\n')
     const debut = lignes.findIndex((ligne) => ligne.startsWith('const SPEC = {'))
@@ -105,8 +111,8 @@ test('l encodeur embarque est identique a celui de share-qr', () => {
   }
   const origine = bloc(ENCODEUR_ORIGINE)
   const copie = bloc(BUNDLE)
-  assert.ok(origine.length > 2000, 'bloc d origine suspicieusement court')
-  assert.equal(copie, origine, 'la copie de l encodeur a derive de share-qr')
+  assert.ok(origine.length > 2000, 'bloc de reference suspicieusement court')
+  assert.equal(copie, origine, 'la copie de l encodeur a derive de la reference figee')
 })
 
 test('la matrice respecte les invariants de la norme', () => {

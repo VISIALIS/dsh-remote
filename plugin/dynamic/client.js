@@ -13,10 +13,12 @@
 //     ci-dessous, et `id` DOIT être le nom du paquet déclaré au `package.json`,
 //     sans quoi le chargement échoue (« bundle loaded without registering »).
 //
-// POURQUOI CETTE FORME, ET PAS UN PLUGIN DYNAMIQUE. `share-qr` est posé par
-// `cordis_define` : il disparaît au redémarrage du harness. Le panneau
-// d'appairage, lui, doit survivre — c'est par lui qu'on rattache un appareil, et
-// un panneau qu'il faut reposer à la main serait un piège.
+// POURQUOI CETTE FORME, ET PAS UN PLUGIN DYNAMIQUE. La forme dynamique — un
+// corps de fonction posé par `cordis_define` — disparaît au redémarrage du
+// harness : c'était celle de `share-qr`, qui a quitté le dépôt le 14 septembre
+// 2026. Le panneau d'appairage, lui, doit survivre — c'est par lui qu'on
+// rattache un appareil, et un panneau qu'il faut reposer à la main serait un
+// piège.
 //
 // CE QUE CE FICHIER NE FAIT PAS : il n'importe rien du dépôt (le bundle est
 // servi seul au navigateur), il ne lit aucun secret, et il ne décide de rien. Il
@@ -47,8 +49,14 @@ window.__ModuleLoader__.load({
 
     // ── L'ENCODEUR QR ────────────────────────────────────────────────────────
     //
-    // REPRIS TEL QUEL de `plugins/share-qr/dynamic/client.js`, où il est éprouvé
-    // (vecteurs normatifs, et décodage par Vision/macOS). Il est COPIÉ et non
+    // REPRIS TEL QUEL de `share-qr`, où il était éprouvé (vecteurs normatifs, et
+    // décodage par Vision/macOS). Il est COPIÉ et non importé : le bundle est
+    // servi seul au navigateur, sans aucun import du dépôt (RÈGLE #2).
+    //
+    // LA COPIE NE DOIT PAS DÉRIVER, et c'est un test qui le dit : ce bloc est
+    // comparé caractère pour caractère à la référence figée
+    // `tests/encodeur-reference.js` — le texte d'origine, gelé le 14 septembre
+    // 2026 quand `share-qr` a quitté le dépôt (voir `bundle.test.js`).
 const SPEC = {
   1: [26, 10, 1], 2: [44, 16, 1], 3: [70, 26, 1], 4: [100, 18, 2], 5: [134, 24, 2],
   6: [172, 16, 4], 7: [196, 18, 4], 8: [242, 22, 4], 9: [292, 22, 5], 10: [346, 26, 5],

@@ -1111,12 +1111,15 @@ export function apply(ctx, config) {
   // NON PAS le jeton d'appareil, mais la SESSION NAVIGATEUR — c'est la page de
   // l'utilisateur, sur sa propre machine, qui l'appelle pour afficher un QR.
   //
-  // LA BORNE, ECRITE AUSSI AUX DEUX READMEs. `share-qr` affiche un QR de l'URL
-  // navigateur AUTHENTIFIEE : une photo de ce panneau donne un cookie valide,
-  // qui ouvre cette route-ci. Deux plugins actifs composent donc un chemin
-  // qu'aucun des deux ne decrit seul. Ce qui borne les degats : le jeton rendu
-  // est en portee `lecture` par defaut, il ne repond a aucune approbation, et
-  // il se revoque en supprimant un enregistrement du coffre.
+  // LA BORNE, ECRITE AUSSI AU README. Tant que `share-qr` vivait dans ce depot,
+  // il affichait un QR de l'URL navigateur AUTHENTIFIEE : une photo de ce
+  // panneau donnait un cookie valide, qui ouvrait cette route-ci, et deux
+  // plugins actifs composaient donc un chemin qu'aucun des deux ne decrivait
+  // seul. Ce plugin a ete supprime le 14 septembre 2026 ; la composition n'est
+  // plus atteignable DEPUIS CE DEPOT, et la borne qui la rendait supportable
+  // reste vraie pour cette route : le jeton rendu est en portee `lecture` par
+  // defaut, il ne repond a aucune approbation, et il se revoque en supprimant un
+  // enregistrement du coffre.
   //
   // CE QU'ELLE NE FAIT PAS : aucune surface reseau nouvelle (le serveur existe),
   // aucun ecoute, et AUCUNE E/S AVANT L'AUTHENTIFICATION — une requete refusee
@@ -1171,9 +1174,10 @@ export function apply(ctx, config) {
    * POURQUOI CE N'EST PLUS LE JETON QUI EST PUBLIÉ. À l'étape A, cette route
    * rendait le jeton d'appareil lui-même. C'était une dérogation assumée, et elle
    * avait une conséquence écrite noir sur blanc : une photo de l'écran valait le
-   * jeton POUR TOUJOURS, et cette photo pouvait venir d'un autre panneau
-   * (`share-qr` publie l'URL navigateur authentifiée). Un code change cela : il
-   * expire en deux minutes, ne sert qu'une fois, et ne vit qu'en mémoire.
+   * jeton POUR TOUJOURS, et cette photo pouvait venir d'un autre panneau (celui
+   * de `share-qr`, qui publiait l'URL navigateur authentifiée — ce plugin a
+   * quitté le dépôt le 14 septembre 2026). Un code change cela : il expire en
+   * deux minutes, ne sert qu'une fois, et ne vit qu'en mémoire.
    *
    * LA PORTÉE EST ANNONCÉE, PAS ACCORDÉE ICI : le code ne donne aucun droit, il
    * donne un JETON dont la portée est celle que le harness applique à un appareil
