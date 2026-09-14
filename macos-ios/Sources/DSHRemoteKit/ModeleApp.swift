@@ -1128,6 +1128,18 @@ public final class ModeleApp {
     sessions = []
     viderLeJournal()
     terminees = []
+    // LES ESPACES DE TRAVAIL SONT UNE DONNÉE DU SERVEUR, PAS DE L'APPLICATION.
+    // Ils venaient du registre de l'hôte PRÉCÉDENT, et ils survivaient au
+    // changement de machine : la liste latérale montrait donc les dossiers de
+    // l'ancien serveur, mêlés aux sessions du nouveau — ou seule, si la
+    // connexion au nouveau échouait. Le rechargement a lieu dès que la nouvelle
+    // cible est jointe (`chargerEspacesDeLhote`) ; ici, on efface, parce que ce
+    // qui reste à l'écran entre les deux décrit une machine qui n'est plus visée.
+    espacesHote = []
+    // LA LISTE DES MACS, ELLE, N'EST PAS TOUCHÉE — et c'est délibéré, comme le
+    // dit `appliquerServeursDuTailnet` : c'est un fait du TAILNET, pas une donnée
+    // d'un serveur. La vider ici la ferait disparaître au moment précis où
+    // l'utilisateur s'en sert — il vient de cliquer une machine de cette liste.
     // On repart de zéro : la liste des machines a changé de source, un verdict
     // sur l'ancienne ne dit rien de la nouvelle.
     sonde = .inconnue

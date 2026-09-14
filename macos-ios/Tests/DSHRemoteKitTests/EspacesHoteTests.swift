@@ -119,3 +119,67 @@ func repliSansRegistre() {
   #expect(espaces[0].sansSession == false)
   #expect(espaces[0].horsEspaces == false)
 }
+
+// ── LES ESPACES SUIVENT LE SERVEUR CHOISI ─────────────────────────────────────
+//
+// POURQUOI CES TESTS EXISTENT. Les espaces de travail viennent du REGISTRE DE
+// L'HÔTE : ils décrivent une machine, pas l'application. Or ils survivaient au
+// changement de serveur — la liste latérale montrait donc les dossiers de
+// l'ancien, mêlés aux sessions du nouveau, ou seuls si la connexion au nouveau
+// échouait. Constaté à l'usage : « workspaces / Espace de travail dépend du
+// serveur, il faut actualiser en fonction du serveur choisi ».
+//
+// CE QUI N'EST PAS TOUCHÉ, ET QUI DOIT LE RESTER : ouvrir la PAGE d'une machine
+// n'est pas changer de cible (une page peut s'ouvrir sur un hôte auquel on n'est
+// pas connecté), et re-choisir la machine DÉJÀ visée ne doit rien vider — sinon
+// l'arbre clignoterait à chaque appui sur la vignette courante.
+
+@MainActor
+@Test("Changer de serveur efface les espaces de l'ancien")
+func espacesEffacesAuChangement() {
+  let modele = modeleDeTest()
+  modele.definirAdresse("http://premier.exemple.test")
+  modele.appliquerEspaces(
+    [espaceHote(id: "e1", titre: "dsh-plugins", chemin: "/x/dsh-plugins", creeLe: 1, sessions: [])],
+    vu: modele.generationDuDepart())
+  #expect(modele.espacesHote.count == 1)
+
+  modele.choisir(ServeurMac(nom: "Second", nomDNS: "second.exemple.test", enLigne: true))
+
+  #expect(modele.adresse == "http://second.exemple.test")
+  #expect(modele.espacesHote.isEmpty, "les espaces de l'ancien serveur ne doivent pas survivre")
+}
+
+@MainActor
+@Test("Re-choisir la machine DÉJÀ visée ne vide rien")
+func espacesConservesSiMemeCible() {
+  // Sinon l'arbre clignoterait à chaque appui sur la vignette du serveur courant —
+  // et c'est le geste qu'on fait pour revenir à la liste.
+  let modele = modeleDeTest()
+  modele.definirAdresse("http://premier.exemple.test")
+  modele.appliquerEspaces(
+    [espaceHote(id: "e1", titre: "dsh-plugins", chemin: "/x/dsh-plugins", creeLe: 1, sessions: [])],
+    vu: modele.generationDuDepart())
+
+  modele.choisir(ServeurMac(nom: "Premier", nomDNS: "premier.exemple.test", enLigne: true))
+
+  #expect(modele.espacesHote.count == 1, "même adresse : rien à effacer")
+}
+
+@MainActor
+@Test("Ouvrir la page d'une autre machine ne touche pas aux espaces")
+func espacesIntactsSurUnePage() {
+  // UNE PAGE N'EST PAS UNE CIBLE. On peut consulter la fiche d'une machine sans
+  // être connecté à elle : effacer l'arbre à ce moment-là ferait disparaître ce
+  // qu'on est en train de lire.
+  let modele = modeleDeTest()
+  modele.definirAdresse("http://premier.exemple.test")
+  modele.appliquerEspaces(
+    [espaceHote(id: "e1", titre: "dsh-plugins", chemin: "/x/dsh-plugins", creeLe: 1, sessions: [])],
+    vu: modele.generationDuDepart())
+
+  modele.ouvrirPage(ServeurMac(nom: "Second", nomDNS: "second.exemple.test", enLigne: true))
+
+  #expect(modele.adresse == "http://premier.exemple.test", "la cible n'a pas bougé")
+  #expect(modele.espacesHote.count == 1)
+}
