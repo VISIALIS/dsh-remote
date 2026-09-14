@@ -1642,7 +1642,77 @@ Le chargement tient désormais à un `.task(id: session.id)` dans la vue du jour
 et non à un effet de bord de la sélection : changer de session relit le journal,
 et l'écran ne peut plus mentir sur son contenu.
 
+### Les gestes, et la surface macOS
+
+Deux manques relevés par l'audit UX/UI, et comblés ensemble parce qu'ils disent la
+même chose : l'application ne se pilotait qu'à l'appui simple, et sur le Mac, qu'à
+la souris.
+
+**Sur iPhone, les gestes qui manquaient.**
+
+| Geste | Ce qu'il fait |
+|---|---|
+| Tirer la liste vers le bas | `modele.rafraichir()` — le suivi automatique est à trois secondes, mais il est **conditionnel** (« Suivre l'activité ») et il ne dit rien de la fraîcheur de ce qu'on regarde |
+| Glisser une session vers la droite | « Vu » (si un rappel de fin est armé) et « Copier le titre » |
+| Appui long sur une session | Les mêmes actions, plus « Copier l'identifiant » — la clé qui relie une session à ce que l'hôte en dit |
+| Appui long sur une machine | « Se connecter », « Copier l'adresse », et « Oublier ce serveur » — **réservée à la machine courante**, parce que `oublierServeur()` oublie l'adresse mémorisée : l'offrir ailleurs aurait fait agir un bouton sur une machine non désignée |
+| Copier une commande, choisir une machine, envoyer | Retour haptique (`.sensoryFeedback`) — trois choses qui se passent pendant qu'on regarde ailleurs |
+
+Le glissement est réservé à iOS : sur macOS, `swipeActions` se compile mais aucun
+matériel ne le produit. Le menu contextuel, lui, existe sur les deux plateformes —
+c'est le seul chemin qui reste au clavier et sous VoiceOver.
+
+**Sur macOS, les réglages et les raccourcis.** L'écran de réglages était **vide** et
+s'ouvrait quand même, par un bouton de barre d'outils — deux choses que la directive
+macOS déconseille. Il existe maintenant une scène `Settings`, donc l'entrée
+« Réglages… » du menu et son **⌘,** ; le bouton de barre d'outils ne subsiste que sur
+iOS, où la feuille est le lieu prévu.
+
+| Raccourci | Effet |
+|---|---|
+| ⌘, | Ouvre les réglages (fourni par la scène `Settings`) |
+| ⌘R | Rafraîchit sessions et machines |
+| ⌘F | Donne le focus à la recherche — par une `FocusedValue`, la commande ne voyant pas les vues ; l'entrée est **grisée** quand aucune fenêtre ne publie l'action |
+
+L'écran de réglages ne dit plus qu'il est vide : il porte l'état de **cet appareil**
+(Tailscale, tailnet, exceptions ATS du paquet construit), le chemin du fichier de
+diagnostic — copiable —, et les versions. L'état de l'appareil y est à sa place : il
+est la première étape du parcours de **chaque** machine, et il n'était lisible nulle
+part quand aucune machine n'est connue — exactement l'état d'un appareil neuf.
+
+**Ce que cela a demandé, et qui ne se voyait pas.** Le modèle vivait dans la vue :
+une scène `Settings` et des commandes de menu doivent parler à **celui de la
+fenêtre** — sinon ⌘R rafraîchit une instance que personne ne voit, et les réglages
+décrivent un autre appareil que celui affiché. `VuePrincipale` reçoit donc un modèle
+injectable, et l'application macOS le tient au niveau de la scène.
+
+**Trois finitions, trouvées en regardant les captures.** La légende d'une vignette
+passait de 9 points à `.caption2` : neuf points est sous le minimum de la directive,
+et c'est la seule ligne qui dit « pas de DSH ». La recherche portait **trois
+épaisseurs** — une matière sur une bande elle-même en matière, plus un contour —, ce
+que la documentation du SDK 26 demande précisément d'éviter ; elle reprend le dessin
+du composeur. Et le nom d'une machine s'écrivait **deux fois** sur sa page (barre de
+titre de fenêtre et bande d'identité), à quarante points d'écart.
+
 ### Ce qui reste non prouvé
+
+- **Les gestes eux-mêmes.** Le glissement, l'appui long et le retour haptique sont
+  écrits, compilés, et leurs actions sont celles du modèle — éprouvées par ailleurs.
+  Mais aucun n'a été **déclenché** : cet environnement n'injecte pas de glissement
+  dans une liste, et un retour haptique n'existe pas sur un simulateur, faute de
+  moteur. Ce qui EST prouvé de cette tranche, c'est le menu contextuel macOS
+  (énuméré dans le menu de l'application) et la scène `Settings` (ouverte par le
+  menu et capturée).
+- **L'EFFET de ⌘R et de ⌘F.** Les deux entrées sont déclarées — énumérées dans le
+  menu « Présentation » de l'application lancée — et leur cible est du code
+  compilé. La frappe elle-même n'a pas été observée : `rafraichir()` n'écrit pas de
+  trace, et le focus d'un champ ne se lit pas de l'extérieur.
+- **Le titre des menus FOURNIS PAR LE SYSTÈME reste en anglais** quand
+  l'application est lancée comme binaire nu (`swift run`) : elle n'a alors ni
+  paquet ni `Info.plist`, donc aucune région de développement, et « Settings… »
+  s'affiche là où l'écran lui-même est en français. Le paquet iOS, lui, déclare
+  `CFBundleDevelopmentRegion = fr`. **Non vérifié dans un `.app` macOS**, qui n'est
+  pas produit par ce paquet.
 
 - **Le PIXEL du point orange.** La décision est prouvée de bout en bout — la charge
   utile réelle de l'hôte donne `attendReponse: true` pour une session bloquée sur
@@ -1998,3 +2068,10 @@ inactive.
 | L'application est INSTALLÉE sur l'iPhone | `devicectl device info apps` liste `DSH Remote — org.example.DSHRemote — 0.1` |
 | Elle est signée par l'équipe du propriétaire | `codesign -dv` : `TeamIdentifier=<équipe du propriétaire>`, `embedded.mobileprovision` présent |
 | L'IP tailnet avec port ne sert RIEN | `http://100.101.102.103:3080` → `000` ; le nom MagicDNS → `200` |
+| **La scène `Settings` existe et s'ouvre** | menu de l'application énuméré : « Settings… » présent ; fenêtre **Réglages** 900×552 ouverte par le menu et capturée — Tailscale installé, tailnet connecté, chemin du diagnostic, protocole version 1 |
+| **Les réglages ne disent plus qu'ils sont vides** | captures de la fenêtre `Settings` (macOS) et de la feuille (`--reglages`) : trois sections, « Cet appareil », « Diagnostic », « À propos » |
+| **⌘R et ⌘F sont déclarés** | énumération du menu « Présentation » : « Rafraîchir » et « Rechercher une session », entre « Show All Tabs » et « Enter Full Screen » |
+| **Le bouton Réglages a quitté la barre d'outils macOS** | capture de la fenêtre principale : la barre ne porte plus que le basculeur de panneau ; l'engrenage ne subsiste que sur iOS |
+| **La légende d'une vignette est lisible** | captures : « DSH · hôte », « pas de DSH » et « hors ligne » rendus en `.caption2` (11 pt), deux lignes autorisées |
+| **La recherche n'a plus qu'un fond** | capture : un champ discret sur la bande en matière, au lieu d'une matière posée sur une autre plus un contour |
+| **Le nom d'une machine ne s'écrit qu'une fois** | captures avant/après : barre de titre de fenêtre ET bande d'identité → barre de titre seule |
