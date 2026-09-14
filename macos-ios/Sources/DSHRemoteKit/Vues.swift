@@ -109,6 +109,21 @@ public struct VuePrincipale: View {
     return modele.serveurs.first { $0.id == identifiant }
   }
 
+  /// CE QUE LE VOLET DE DÉTAIL DOIT MONTRER, calculé par la règle pure.
+  ///
+  /// POURQUOI ICI, ET PAS DANS LE `switch` DE LA VUE : la vue fournit les faits
+  /// (session choisie, page ouverte, cible, liste), la règle décide. C'est ce qui
+  /// permet de l'éprouver sans interface.
+  private var detailAAfficher: DetailAffiche {
+    DetailAffiche.pour(
+      session: sessionSelectionnee?.id,
+      ajout: ajoutOuvert,
+      pageOuverte: serveurDeLaPage,
+      cibleEnErreur: serveurDUneErreur,
+      vise: modele.serveurChoisi,
+      serveurs: modele.serveurs)
+  }
+
   /// La machine visée par l'adresse courante, quand une erreur l'attend.
   private var serveurDUneErreur: ServeurMac? {
     guard modele.erreur != nil else { return nil }
@@ -175,22 +190,36 @@ public struct VuePrincipale: View {
           modele.fermerPage()
           ajoutOuvert = true
         },
-        // Toucher une machine ouvre SA page : c'est là que vivent son état
-        // détaillé, ses actions et les remèdes. La sélection de session est
-        // effacée, sans quoi le journal resterait affiché par-dessus.
+        // TOUCHER UNE MACHINE LA SÉLECTIONNE ; LA RETOUCHER OUVRE SA PAGE.
+        //
+        // La règle vit dans le modèle (`ModeleApp.toucher`, décidée par
+        // `GesteSurServeur`) : ici on ne fait que l'appeler. La sélection de
+        // session est effacée, sans quoi le journal resterait affiché par-dessus
+        // la liste d'un autre serveur.
         surSelectionServeur: { serveur in
           sessionSelectionnee = nil
           ajoutOuvert = false
-          modele.ouvrirPage(serveur)
+          Task { await modele.toucher(serveur) }
         })
     } detail: {
-      if let session = sessionSelectionnee {
-        VueJournal(modele: modele, session: session)
-      } else if ajoutOuvert {
+      // LA RÈGLE VIT DANS `DetailAffiche`, ET ELLE EST ÉPROUVÉE LÀ-BAS. Ce bloc ne
+      // fait plus que la traduire en vues : cinq branches enchaînées ici
+      // finissaient sur « Aucune session ouverte », donc sur un écran vide au
+      // lancement alors qu'une machine était sélectionnée.
+      switch detailAAfficher {
+      case let .journal(identifiant):
+        // La session est résolue dans la liste courante : un identifiant qui
+        // n'existe plus ne doit pas fabriquer une session de toutes pièces.
+        if let session = modele.sessionsAffichees.first(where: { $0.id == identifiant }) {
+          VueJournal(modele: modele, session: session)
+        } else if let session = sessionSelectionnee {
+          VueJournal(modele: modele, session: session)
+        }
+      case .ajout:
         VueAjoutServeur(modele: modele) { adresseOuverte = true }
-      } else if let serveur = serveurDeLaPage ?? serveurDUneErreur {
+      case let .serveur(serveur):
         VueServeur(modele: modele, serveur: serveur)
-      } else {
+      case .rien:
         ContentUnavailableView {
           Label { T("Aucune session ouverte") } icon: { Image(systemName: "terminal") }
         } description: {
@@ -887,8 +916,11 @@ struct CarrouselServeurs: View {
       // est ouverte (pour que la vignette l'indique) ET lance la connexion.
       .simultaneousGesture(
         TapGesture().onEnded {
+          // UN SEUL APPEL, ET LA RÈGLE DÉCIDE : sélectionner, ou ouvrir la page si
+          // la machine est déjà la cible. Le `choisirEtConnecter` qui vivait ici
+          // est parti dans `ModeleApp.toucher` — c'est ce qui permet à la règle
+          // d'exister une fois au lieu de cinq.
           surSelectionServeur(serveur)
-          Task { await modele.choisirEtConnecter(serveur) }
         })
       .accessibilityLabel(
         EtatMachine.libelleAccessible(
@@ -910,22 +942,21 @@ struct CarrouselServeurs: View {
       //
       // SUR macOS, RIEN À AJOUTER : la vignette y est un `Button` dont l'action
       // connecte déjà, et son menu contextuel porte « Se connecter ».
-      .accessibilityHint(T("Ouvre la page de cette machine"))
+      .accessibilityHint(T("Sélectionne cette machine ; un second appui ouvre sa page"))
       .accessibilityAction(named: T("Se connecter")) {
         surSelectionServeur(serveur)
-        Task { await modele.choisirEtConnecter(serveur) }
       }
     #else
       Button {
-        // OUVRIR **ET** CONNECTER — les deux, et c'est une correction.
+        // SÉLECTIONNER, OU OUVRIR LA PAGE — la règle est dans le modèle.
         //
-        // J'avais séparé les deux gestes : l'appui ouvrait la page, et il
-        // fallait ensuite viser « Se connecter ». Le propriétaire a demandé le
-        // contraire : « je voulais lancer une méthode ». Toucher une machine,
-        // c'est vouloir s'y connecter ; la page, elle, est ce qui l'EXPLIQUE
-        // quand ça ne marche pas.
+        // L'historique de ce geste vaut d'être gardé : il a d'abord ouvert la page
+        // seule (« il fallait ensuite viser “Se connecter” »), puis les deux à la
+        // fois (« toucher une machine, c'est vouloir s'y connecter »). Il fait
+        // maintenant ce que l'usage demande : un appui SÉLECTIONNE — on reste sur
+        // la liste, avec les sessions de la nouvelle machine — et un second appui
+        // ouvre sa fiche.
         surSelectionServeur(serveur)
-        Task { await modele.choisirEtConnecter(serveur) }
       } label: {
         IconeServeur(
           serveur: serveur,
@@ -954,12 +985,14 @@ struct CarrouselServeurs: View {
   @ViewBuilder
   private func menuDeMachine(_ serveur: ServeurMac) -> some View {
     Button {
-      // SUR macOS, LE MENU REMPLACE LE CONTENU DE DROITE COMME L'APPUI ; sur
-      // iPhone, il n'y a rien à empiler depuis un menu contextuel — on connecte,
-      // et la page reste atteignable par la vignette.
-      #if os(macOS)
-        surSelectionServeur(serveur)
-      #endif
+      // « SE CONNECTER » EST UNE ACTION NOMMÉE, DONC ELLE CONNECTE — elle ne
+      // décide d'aucune page. C'est `ModeleApp.toucher` qui porte la règle de
+      // l'appui sur la vignette (sélectionner, ou ouvrir si c'est déjà la cible),
+      // et la mêler ici rendrait le menu imprévisible : on ne saurait plus si
+      // « Se connecter » ouvre une fiche ou change de machine.
+      //
+      // La branche `#if os(macOS)` qui vivait ici a disparu avec elle : le menu
+      // fait la même chose sur les deux plateformes.
       Task { await modele.choisirEtConnecter(serveur) }
     } label: {
       Label(

@@ -445,6 +445,27 @@ public final class ModeleApp {
 
   /// Ouvre la page d'une machine. Ne se connecte pas : la connexion est un
   /// bouton de la page.
+  /// TOUCHER UNE MACHINE — la sélectionner, ou ouvrir sa page si elle l'est déjà.
+  ///
+  /// POURQUOI CE N'EST PAS DANS LA VUE. Deux branches, deux effets très différents
+  /// — changer de cible et se reconnecter, ou simplement ouvrir une fiche —, et
+  /// QUATRE vignettes les appelaient à la main. Une règle écrite quatre fois finit
+  /// par diverger : celle-ci vit dans `GesteSurServeur`, et elle est éprouvée.
+  ///
+  /// LA PAGE DE L'ANCIENNE MACHINE EST FERMÉE quand on en sélectionne une autre :
+  /// sinon `serveurOuvert` continue de désigner la précédente, et le volet de
+  /// détail afficherait une machine qui n'est plus visée — le défaut exact que la
+  /// règle d'affichage (`DetailAffiche`) rend visible sur macOS et sur iPad.
+  public func toucher(_ serveur: ServeurMac) async {
+    switch GesteSurServeur.pour(serveur, choisi: serveurChoisi) {
+    case .ouvrirLaPage:
+      ouvrirPage(serveur)
+    case .selectionner:
+      fermerPage()
+      await choisirEtConnecter(serveur)
+    }
+  }
+
   public func ouvrirPage(_ serveur: ServeurMac) {
     serveurOuvert = serveur.id
   }
