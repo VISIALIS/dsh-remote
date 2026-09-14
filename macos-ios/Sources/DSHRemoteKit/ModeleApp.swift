@@ -2937,6 +2937,45 @@ public final class ModeleApp {
     return ExceptionATS.hote(adresse)
   }
 
+  /// LES ÉTAPES D'UNE MACHINE — ou la liste de travail quand il n'y en a pas.
+  ///
+  /// POURQUOI CETTE FABRIQUE EST DANS LE MODÈLE, ET PAS DANS LES VUES. Le diagnostic
+  /// s'affiche maintenant à DEUX endroits — la fiche d'un serveur, et la barre
+  /// latérale quand la machine choisie n'est pas appairée (demande du
+  /// propriétaire) —, et l'assemblage des faits (tailnet de l'appareil, visibilité,
+  /// port, plugin, appairage) était recopié dans chacune. Une seule fabrique, donc
+  /// une seule vérité : c'est la règle qui avait déjà fait sortir `EtapesServeur`
+  /// des vues.
+  ///
+  /// `serveur == nil` rend la LISTE DE TRAVAIL de la page d'ajout : on ne juge pas
+  /// une machine qu'on n'a pas encore.
+  public func etapes(pour serveur: ServeurMac?) -> [EtapesServeur.Etape] {
+    guard let serveur else {
+      return EtapesServeur.etapesDAjout(tailnetDeLAppareil: tailnetDeLAppareil)
+    }
+    return EtapesServeur.etapes(
+      tailnetDeLAppareil: tailnetDeLAppareil,
+      enLigne: serveur.enLigne,
+      sertDsh: sertDsh(serveur),
+      cause: causeSansDsh(serveur),
+      appairage: etatAppairage(pour: serveur))
+  }
+
+  /// LE SERVEUR CHOISI N'EST PAS APPAIRÉ — la barre latérale montre alors le
+  /// DIAGNOSTIC à la place des espaces de travail.
+  ///
+  /// Demande du propriétaire : « si je sélectionne un serveur, s'il n'est pas
+  /// appairé, le diagnostic s'affiche à la place de l'espace de travail ». C'est
+  /// cohérent : sans appairage, il n'y a AUCUN espace à montrer — ni session, ni
+  /// arbre —, et ce qu'il faut lire est justement ce qui manque.
+  ///
+  /// LE REFUS COMPTE COMME « PAS APPAIRÉ ». Un jeton rangé mais refusé ne donne
+  /// accès à rien : la barre doit dire quoi faire, pas afficher un arbre vide.
+  public var serveurChoisiSansAppairage: Bool {
+    guard let machine = serveurChoisi else { return false }
+    return etatAppairage(pour: machine) != .appaire
+  }
+
   /// LA BARRE A-T-ELLE QUELQUE CHOSE À DIRE D'UNE MACHINE ?
   ///
   /// POURQUOI CETTE QUESTION SE POSE. Sur un appareil neuf — rien d'appairé,

@@ -71,6 +71,22 @@ public struct VuePrincipale: View {
     ProcessInfo.processInfo.arguments.contains("--serveur")
   }
 
+  /// Le nom demandé par `--cible=<fragment>`, s'il y en a un.
+  ///
+  /// ANCRE DE VÉRIFICATION, comme `--serveur=` : elle CHOISIT une machine — ce que
+  /// fait un appui sur sa vignette — sans se connecter. C'est ce qui rend
+  /// capturable ce que la barre latérale montre d'une machine NON APPAIRÉE (le
+  /// diagnostic à la place des espaces de travail) : au lancement, `demarrer()`
+  /// remplace une cible mémorisée par une machine UTILISABLE, et rien d'autre ne
+  /// permet de viser celle qui ne l'est pas.
+  private static var cibleDemandee: String? {
+    for argument in ProcessInfo.processInfo.arguments where argument.hasPrefix("--cible=") {
+      let valeur = argument.dropFirst("--cible=".count).lowercased()
+      if !valeur.isEmpty { return valeur }
+    }
+    return nil
+  }
+
   /// Le fragment demandé par `--session=<fragment>`, s'il y en a un.
   ///
   /// ANCRE DE VÉRIFICATION, comme `--serveur=` : cet environnement n'injecte pas
@@ -279,6 +295,16 @@ public struct VuePrincipale: View {
       // connecter. `demarrerDecouverte` reste pour le rafraîchissement manuel.
       await modele.demarrer()
       Trace.siActive("[demarrage] demarrer() : \(Int(Date().timeIntervalSince(debutDemarrage) * 1000)) ms")
+      // `--cible=<fragment>` CHOISIT la machine visée, après le choix automatique
+      // du démarrage : c'est le seul moyen de viser une machine que l'application
+      // n'aurait pas retenue (elle préfère une machine utilisable).
+      if let demande = VuePrincipale.cibleDemandee,
+        let machine = modele.serveursAffiches.first(where: {
+          $0.nom.lowercased().contains(demande) || $0.nomDNS.lowercased().contains(demande)
+        })
+      {
+        modele.choisir(machine)
+      }
       if serveurParArgument, modele.serveurOuvert == nil {
         // `--serveur=macmini` ouvre UNE machine nommée ; `--serveur` seul ouvre
         // celle qui est visée. La forme nommée est ce qui permet de capturer la
@@ -491,6 +517,37 @@ struct VueListeSessions: View {
         }
       }
 
+      // ── LE DIAGNOSTIC, QUAND LA MACHINE CHOISIE N'EST PAS APPAIRÉE ─────────
+      //
+      // Demande du propriétaire : « si je sélectionne un serveur, s'il n'est pas
+      // appairé, le diagnostic s'affiche à la place de l'espace de travail ». C'est
+      // cohérent : sans appairage il n'y a AUCUN espace à montrer — ni arbre, ni
+      // session —, et ce qu'il faut lire est justement ce qui manque. Le diagnostic
+      // vient donc à la place, avec sa méthode dépliée : sur iPhone, la barre
+      // latérale EST l'écran principal, et l'action utile y est ainsi à un appui.
+      //
+      // C'EST LA MÊME VUE QUE CELLE DE LA FICHE (`DiagnosticDuServeur`), et c'est
+      // délibéré : deux dessins des mêmes cinq constats auraient divergé.
+      if modele.serveurChoisiSansAppairage, let machine = modele.serveurChoisi {
+        // LA CONCLUSION D'ABORD, parce que la barre n'a pas la bande « verdict »
+        // de la fiche : sans elle, cinq constats s'affichent sans que rien ne
+        // dise ce qu'ils valent ensemble.
+        let verdict = EtatMachine.conclusion(
+          enLigne: machine.enLigne, etapes: modele.etapes(pour: machine))
+        Section {
+          Label(verdict.texte, systemImage: verdict.symbole)
+            .font(.callout.weight(.medium))
+            .foregroundStyle(verdict.ton.couleur)
+            .fixedSize(horizontal: false, vertical: true)
+            .sansSeparateurMac()
+
+          DiagnosticDuServeur(modele: modele, serveur: machine)
+            .sansSeparateurMac()
+        } header: {
+          EnteteSection(L("Diagnostic"), surtitre: machine.nom)
+        }
+      } else if modele.aQuelqueChoseADireDUneMachine {
+
       // ── Arbre des sessions, groupé par espace de travail ───────────────────
       //
       // Une liste plate de plus de cent sessions mêlant dix projets est
@@ -506,7 +563,6 @@ struct VueListeSessions: View {
       // dans le modèle (`aQuelqueChoseADireDUneMachine`) parce qu'elle a un cas
       // délicat : une adresse SAISIE À LA MAIN n'est dans aucune liste, et ses
       // sessions doivent rester visibles.
-      if modele.aQuelqueChoseADireDUneMachine {
         Section {
         ForEach(modele.espaces) { espace in
           // Un espace ENREGISTRÉ mais sans session n'est pas un dossier à

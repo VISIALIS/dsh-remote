@@ -222,3 +222,31 @@ func sectionDesEspacesAvecAdresseSaisie() {
 
   #expect(saisie.aQuelqueChoseADireDUneMachine)
 }
+
+@MainActor
+@Test("Un serveur choisi NON APPAIRÉ fait place au diagnostic dans la barre")
+func diagnosticAlaPlaceDesEspaces() {
+  // Demande du propriétaire : « si je sélectionne un serveur, s'il n'est pas
+  // appairé, le diagnostic s'affiche à la place de l'espace de travail ». C'est
+  // cohérent : sans appairage il n'y a aucun espace à montrer — ni arbre, ni
+  // session —, et ce qu'il faut lire est justement ce qui manque.
+  let modele = modeleDeTest()
+  let machine = ServeurMac(nom: "MacMini", nomDNS: "macmini.exemple.test", enLigne: true)
+  modele.remplacerServeursPourEssai([machine])
+
+  // AUCUNE MACHINE CHOISIE : la question ne se pose pas.
+  #expect(!modele.serveurChoisiSansAppairage)
+
+  modele.choisir(machine)
+  #expect(modele.serveurChoisiSansAppairage, "aucun jeton : la barre doit montrer le diagnostic")
+
+  // UN JETON BIEN FORMÉ : la barre reprend ses espaces, comme avant.
+  modele.definirJeton(String(repeating: "a", count: 43), pour: machine.adresse)
+  #expect(!modele.serveurChoisiSansAppairage)
+
+  // UN JETON REFUSÉ COMPTE COMME NON APPAIRÉ, et c'est la définition même de la
+  // règle (`!= .appaire`) : un secret que le service rejette ne donne accès à rien,
+  // donc afficher un arbre vide à sa place serait mentir. Le cas `.refuse` est
+  // éprouvé par `SondeSansJetonTests` ; on ne le rejoue pas ici, faute de quoi ce
+  // test ne ferait que répéter la règle au lieu de la tenir.
+}

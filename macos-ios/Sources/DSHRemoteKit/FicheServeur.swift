@@ -61,28 +61,9 @@ struct FicheServeur: View {
   /// on peut donc appeler les deux sans savoir laquelle s'applique.
   @Environment(\.dismiss) private var depiler
 
-  private var estAjout: Bool { serveur == nil }
-
-  /// COMMENT LIRE LES ÉTAPES : ce qu'on constate, ou ce qu'il reste à faire.
-  ///
-  /// Les deux cas vivent dans `EtapesServeur` (`Mode`) : ce qu'ils décident — ce
-  /// qui est verrouillé, donc ce qui est ATTEIGNABLE — est une règle, et elle est
-  /// éprouvée là-bas.
-  private var mode: EtapesServeur.Mode { estAjout ? .objectifs : .diagnostic }
-
-  /// Les étapes de CETTE page, recalculées à chaque rendu : la sonde peut rendre
-  /// son verdict entre deux affichages.
-  private var etapes: [EtapesServeur.Etape] {
-    guard let serveur else {
-      return EtapesServeur.etapesDAjout(tailnetDeLAppareil: modele.tailnetDeLAppareil)
-    }
-    return EtapesServeur.etapes(
-      tailnetDeLAppareil: modele.tailnetDeLAppareil,
-      enLigne: serveur.enLigne,
-      sertDsh: modele.sertDsh(serveur),
-      cause: modele.causeSansDsh(serveur),
-      appairage: modele.etatAppairage(pour: serveur))
-  }
+  /// Les étapes de CETTE machine — la fabrique est dans le modèle, pour que la
+  /// fiche et la barre latérale ne puissent pas diverger.
+  private var etapes: [EtapesServeur.Etape] { modele.etapes(pour: serveur) }
 
   var body: some View {
     ScrollView {
@@ -217,15 +198,15 @@ struct FicheServeur: View {
     }
   }
 
-  // MARK: - 2. Le parcours
+  // MARK: - 2. Le diagnostic
 
+  /// LA DEUXIÈME BANDE — les cinq constats, et la méthode de celui qui bloque.
+  ///
+  /// ELLE EST DESSINÉE PAR UNE VUE À PART (`DiagnosticDuServeur`), parce que la
+  /// barre latérale la montre AUSSI, quand la machine choisie n'est pas appairée :
+  /// c'est ce qui garantit que les deux surfaces disent la même chose.
   private var parcours: some View {
-    // PAS DE TITRE, ET C'EST VOULU. « Diagnostic », « Le parcours », « Les étapes »
-    // : la conclusion est juste au-dessus, et la première ligne s'annonce
-    // elle-même. Un titre de plus ne serait qu'un mot de plus à parcourir.
-    ParcoursDesEtapes(etapes: etapes, mode: mode) { etape in
-      methode(pour: etape)
-    }
+    DiagnosticDuServeur(modele: modele, serveur: serveur, surAppairage: surAppairage)
   }
 
   // MARK: - 3. Les réglages de cette machine
@@ -537,156 +518,5 @@ struct FicheServeur: View {
   private func autreMacJoignable(_ serveur: ServeurMac) -> ServeurMac? {
     let autres = modele.serveursAffiches.filter { $0.id != serveur.id && $0.enLigne }
     return autres.first { modele.sertDsh($0) == true } ?? autres.first
-  }
-
-  // MARK: - Les méthodes, une par étape
-
-  /// LA MÉTHODE POUR FRANCHIR L'ÉTAPE — ou pour la VÉRIFIER quand on ne sait pas.
-  ///
-  /// ELLE VIT ICI, UNE SEULE FOIS. Les deux pages en avaient chacune un `switch`,
-  /// et les deux avaient déjà divergé sur les deux premières étapes : mêmes gestes,
-  /// deux textes, deux ordres de commandes. L'utilisateur, lui, compare.
-  @ViewBuilder
-  private func methode(pour etape: EtapesServeur.Etape) -> some View {
-    switch etape.numero {
-    case 1:
-      // TAILSCALE SUR CET APPAREIL. Il n'y a pas de commande à copier sur un
-      // iPhone : on dit quoi faire, et le bouton fait ce que la carte fait déjà
-      // — ouvrir l'application, ou son magasin si elle manque.
-      methodeTailscale
-    case 2:
-      // LA MACHINE VISÉE, pas cet appareil-ci : ces commandes se tapent SUR ELLE.
-      methodeVisibilite(connue: etape.etat == .aFaire)
-    case 3:
-      if etape.etat == .aFaire {
-        DemarchePublicationPort()
-      } else {
-        T("Vérifiez sur cette machine ce qui est publié :")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-        LigneCommande(commande: "tailscale serve status")
-      }
-    case 4:
-      // L'installation du plugin : la démarche complète, avec le bloc à copier.
-      DemarcheInstallationPlugin()
-    default:
-      methodeAppairage
-    }
-  }
-
-  @ViewBuilder
-  private var methodeTailscale: some View {
-    Text(
-      modele.tailscaleInstalle
-        ? L("Ouvrez Tailscale sur cet appareil, et connectez-le au tailnet.")
-        : L("Installez Tailscale sur cet appareil, puis connectez-le au tailnet.")
-    )
-    .font(.caption)
-    .foregroundStyle(.secondary)
-    .fixedSize(horizontal: false, vertical: true)
-    Button {
-      if !modele.ouvrirTailscale() {
-        modele.signaler(L("Tailscale n'a pas pu être ouvert sur cet appareil."))
-      }
-    } label: {
-      Label(
-        modele.tailscaleInstalle ? L("Ouvrir Tailscale") : L("Installer Tailscale"),
-        systemImage: "arrow.up.forward.app")
-    }
-    .buttonStyle(.borderless)
-    .font(.caption)
-    #if os(macOS)
-      // SUR macOS, l'appareil qui affiche la page est aussi celui qui a le CLI :
-      // la commande est le moyen le plus direct, et elle se copie.
-      T("Ou, en ligne de commande :")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      LigneCommande(commande: "tailscale status")
-      LigneCommande(commande: "tailscale up")
-    #endif
-  }
-
-  /// La visibilité de la machine VISÉE — et le texte suit ce qu'on SAIT.
-  ///
-  /// Quand l'état est inconnu, on ne donne que la commande de constat : envoyer
-  /// publier un port dont on ignore s'il l'est déjà ferait douter de tout.
-  @ViewBuilder
-  private func methodeVisibilite(connue: Bool) -> some View {
-    if connue {
-      T("Allumez cette machine-là, et vérifiez que Tailscale y est connecté :")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-      LigneCommande(commande: "tailscale status")
-      T("S'il n'y est pas connecté :")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      LigneCommande(commande: "tailscale up")
-    } else {
-      T("Vérifiez l'état du tailnet, sur cette machine-là ou sur une autre :")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-      LigneCommande(commande: "tailscale status")
-    }
-  }
-
-  /// L'APPAIRAGE — la cinquième étape, et le seul geste qui se fait des deux côtés.
-  ///
-  /// POURQUOI CE TEXTE EST COURT. Il dit où est le panneau — c'est la seule chose
-  /// que l'application ne peut pas montrer, parce qu'il vit sur l'AUTRE machine —
-  /// et il laisse les boutons faire le reste. Le reste, précisément : ce que
-  /// contient la charge utile, sa durée de vie, ce que l'hôte enregistre, est
-  /// écrit dans le README et n'a jamais aidé personne à appuyer.
-  ///
-  /// LE REFUS A SON MOT, ET IL EN A BESOIN. Un jeton rangé mais refusé n'est pas
-  /// « pas encore appairé » : c'est le jeton d'une AUTRE machine, et le geste est
-  /// le même — appairer à nouveau —, mais la raison, elle, se dit.
-  @ViewBuilder
-  private var methodeAppairage: some View {
-    BoutonsAppairage(modele: modele, surSucces: apresAppairage, prominent: estAjout)
-
-    T("Sur le Mac : le bouton « DSH Remote », en bas de la barre latérale — il ouvre un QR code et son texte, valables deux minutes.")
-      .font(.caption)
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
-
-    if let serveur, modele.etatAppairage(pour: serveur) == .refuse {
-      Label {
-        T("Le jeton rangé a été refusé : c'est celui d'une autre machine. Appairez à nouveau pour le remplacer.")
-      } icon: {
-        Image(systemName: "key.slash")
-      }
-      .font(.caption)
-      .foregroundStyle(EtatVisuel.attention.couleur)
-      .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
-  /// APRÈS UN APPAIRAGE RÉUSSI — LA PAGE D'AJOUT S'EFFACE.
-  ///
-  /// POURQUOI ELLE, ET PAS LA PAGE D'UNE MACHINE. Sur la fiche d'une machine qu'on
-  /// vient d'appairer, il y a encore à lire : le verdict change, les cinq constats
-  /// passent au vert, et la page se met à jour TOUTE SEULE (le modèle est
-  /// observé). La page d'ajout, elle, a fini son travail : elle n'existe que pour
-  /// amener une machine dans la liste, et la garder à l'écran après coup laissait
-  /// l'utilisateur devant un écran qui ne bougeait plus — le défaut signalé.
-  ///
-  /// ELLE PART AVANT LA CONNEXION, et c'est voulu : `BoutonsAppairage` appelle ce
-  /// rappel entre l'échange du code et `connecter()`. L'écran se libère donc
-  /// pendant que la connexion se fait, et la liste des sessions arrive ensuite
-  /// dans la barre latérale, sans que personne ait à attendre sur une page morte.
-  private func apresAppairage() {
-    guard estAjout else { return }
-    surAppairage()
-    // `depiler` N'EST APPELÉ QUE SUR iOS, et c'est délibéré : c'est la seule
-    // plateforme où la page est POUSSÉE. Sur macOS, elle occupe la colonne de
-    // détail, et `dismiss` y viserait la fenêtre — pas la page. Le geste qui
-    // convient là-bas est celui de l'appelant (`surAppairage`), qui change ce
-    // qu'on regarde au lieu de fermer quelque chose.
-    #if os(iOS)
-      depiler()
-    #endif
   }
 }

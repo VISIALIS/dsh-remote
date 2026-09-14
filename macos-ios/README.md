@@ -892,6 +892,17 @@ diagnostic entier, jusqu'aux commandes destinées à l'autre Mac. Le message le 
 prenait la place des sessions, et il fallait faire défiler pour voir son propre travail.
 Le diagnostic appartient à la MACHINE : il vit donc sur sa page.
 
+**ET ELLE CÈDE LA PLACE AU DIAGNOSTIC QUAND LA MACHINE CHOISIE N'EST PAS APPAIRÉE.**
+Demande du propriétaire : « si je sélectionne un serveur, s'il n'est pas appairé, le
+diagnostic s'affiche à la place de l'espace de travail ». C'est cohérent : sans
+appairage il n'y a **aucun** espace à montrer — ni arbre, ni session —, et ce qu'il
+faut lire est justement ce qui manque. Le diagnostic vient donc **à la place**, et les
+deux sections sont exclusives : la conclusion d'abord (la barre n'a pas la bande
+« verdict » de la fiche), puis les cinq constats et la méthode de celui qui bloque.
+C'est **la même vue** que la deuxième bande de la fiche (`DiagnosticDuServeur`) : deux
+dessins des mêmes constats auraient divergé. Sur iPhone, la barre latérale EST l'écran
+principal — l'action utile y est donc à un appui, sans ouvrir la fiche.
+
 **LA SECTION « ESPACES DE TRAVAIL » DISPARAÎT QUAND ELLE N'A RIEN À DIRE.** Demande du
 propriétaire : « pour l'espace de travail, le fait qu'un serveur n'existe pas encore —
 faire disparaître espace de travail s'il n'y a pas de serveur sélectionné ». Sur un
