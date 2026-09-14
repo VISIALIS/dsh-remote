@@ -52,7 +52,12 @@ func unJetonParHote() {
 func leLocalNestPasRecopie() {
   let gardien = GardienEnMemoire()
   let modele = ModeleApp(gardien: gardien)
-  modele.remplacerServeursPourEssai([distant, local])
+  // LA LISTE PASSE PAR LA VOIE LOCALE, ET C'EST LE POINT. Depuis que « cette
+  // machine » ne se décide plus sur un marqueur REÇU (`ModeleApp.estHoteLocal`),
+  // une liste posée à la main ne peut plus déclarer qui est l'hôte local : c'est
+  // la découverte LOCALE qui l'apprend, et elle seule. Ce test-ci décrit un Mac
+  // dressé sur lui-même, donc il emprunte cette voie.
+  modele.appliquerServeursDuTailnetPourEssai([distant, local])
 
   // Distant : gardé, parce que rien d'autre ne peut le retrouver.
   modele.choisir(distant)
@@ -175,7 +180,9 @@ func localJamaisRecopieParAdresse() {
   // secret du coffre vers le trousseau.
   let gardien = GardienEnMemoire()
   let modele = ModeleApp(gardien: gardien)
-  modele.remplacerServeursPourEssai([distant, local])
+  // Même raison que ci-dessus : la voie LOCALE, parce qu'une liste reçue ne
+  // déclare plus qui est cette machine.
+  modele.appliquerServeursDuTailnetPourEssai([distant, local])
 
   modele.definirJeton(jetonUn, pour: local.adresse)
   #expect(gardien.lire(pour: IdentiteHote.cle(local.adresse)) == nil)

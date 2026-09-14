@@ -207,10 +207,14 @@ public final class ModeleApp {
         "[jeton] gardien de l'hote : longueur=\(garde.count) empreinte=\(Empreinte.de(garde).prefix(8))")
       return garde
     }
-    guard serveurVise?.estLocal == true else {
+    // LE JETON DU COFFRE NE VA QU'À CETTE MACHINE. Le test est `estHoteLocal`, et
+    // non `serveurVise?.estLocal` : le second lisait le marqueur d'une liste reçue,
+    // donc envoyait le secret local à l'hôte distant qui s'était marqué lui-même.
+    guard estHoteLocal(cible.adresse) else {
       Trace.siActive("[jeton] AUCUN jeton pour \(cle)")
       return ""
     }
+
     let duCoffre = CoffreDuHarness.jetonDeLaMachine() ?? ""
     Trace.siActive(
       "[jeton] coffre du harness : longueur=\(duCoffre.count) empreinte=\(duCoffre.isEmpty ? "aucun" : String(Empreinte.de(duCoffre).prefix(8)))"
@@ -412,6 +416,14 @@ public final class ModeleApp {
   /// serveur encore connu), et la saisie manuelle reste toujours disponible.
   public private(set) var serveurs: [ServeurMac] = []
 
+  /// LES ADRESSES DE LA MACHINE QUI EXÉCUTE CETTE APPLICATION — apprises de la
+  /// seule découverte LOCALE (voir `appliquerServeursDuTailnet`).
+  ///
+  /// VIDE SUR IPHONE, et c'est exact : un iPhone n'héberge pas de harness, donc
+  /// aucune adresse reçue ne peut être « la sienne ». La boucle locale reste
+  /// couverte à part (`ModeleApp.estBoucleLocale`).
+  private var adressesDeCetAppareil: Set<String> = []
+
   /// LES MACHINES TELLES QU'ELLES S'AFFICHENT — joignables d'abord, prêtes en premier.
   ///
   /// POURQUOI CE N'EST PAS `serveurs`. La liste rangée vient de la découverte ou de
@@ -558,6 +570,18 @@ public final class ModeleApp {
     serveurs = liste
     diagnosticServeurs = diagnostic
     sourceServeurs = .tailscaleLocal
+    // LES ADRESSES DE CET APPAREIL, APPRISES ICI ET NULLE PART AILLEURS.
+    //
+    // POURQUOI CE N'EST PAS `estLocal` LU À LA DEMANDE. Le marqueur `local` d'une
+    // liste reçue dit « je suis l'hôte que tu interroges » — pas « je suis la
+    // machine qui exécute cette application ». MacMini se marque donc LUI-MÊME
+    // local dans sa propre liste, et l'application a cru que son adresse était la
+    // sienne : elle lui a présenté le jeton du coffre LOCAL (43 caractères,
+    // empreinte `cacde495`, `401` mesuré). Ce que la découverte LOCALE marque
+    // `local`, en revanche, est bien CETTE machine — c'est le seul endroit d'où ce
+    // fait peut venir, et il est conservé ici.
+    adressesDeCetAppareil = Set(
+      liste.filter(\.estLocal).map { IdentiteHote.cle($0.adresse) }.filter { !$0.isEmpty })
     relireEtatTailscale()
     // Après une réponse, on n'écrase pas une cible : on rattache seulement.
     assurerUneSelection(auLancement: false, listeVientDeLHote: false)
@@ -626,6 +650,11 @@ public final class ModeleApp {
     /// La liste des machines découvertes, pour éprouver les transitions de la
     /// cible sans dépendre de Tailscale.
     func remplacerServeursPourEssai(_ valeur: [ServeurMac]) { serveurs = valeur }
+    /// Alimenter la liste par la VOIE RÉELLE de la découverte locale : c'est elle
+    /// qui apprend quelles adresses sont celles de cet appareil.
+    func appliquerServeursDuTailnetPourEssai(_ liste: [ServeurMac], diagnostic: String? = nil) {
+      appliquerServeursDuTailnet(liste, diagnostic: diagnostic)
+    }
     /// L'invariant « il y a toujours une machine sélectionnée », éprouvé sans
     /// réseau : c'est le même appel que celui des deux endroits où la liste
     /// devient connue.
@@ -2291,13 +2320,16 @@ public final class ModeleApp {
   /// CETTE ADRESSE EST-ELLE CELLE DE LA MACHINE QUI HÉBERGE LE HARNESS ?
   ///
   /// DEUX CHEMINS, ET LES DEUX EXISTENT. Sur iOS, la liste vient d'un hôte, qui
-  /// marque la machine ayant répondu (`estLocal`). Sur macOS, la découverte est
+  /// CETTE APPLICATION — jamais « l'hôte qui a répondu ». Sur macOS, la découverte est
   /// LOCALE et laisse ce champ faux pour tout le monde : la machine locale s'y
   /// reconnaît par son adresse — le harness n'écoute que sur la boucle locale.
   func estHoteLocal(_ adresse: String) -> Bool {
-    if let serveur = ModeleApp.serveurA(adresse: adresse, dans: serveurs), serveur.estLocal {
-      return true
-    }
+    // DEUX FAITS LOCAUX, ET RIEN D'AUTRE : la boucle locale, et les adresses que
+    // la découverte locale a marquées comme étant celles de CET appareil. Le
+    // marqueur `estLocal` d'une liste REÇUE n'est pas consulté — c'est lui qui a
+    // fait envoyer le jeton du coffre local à un Mac distant.
+    let cle = IdentiteHote.cle(adresse)
+    if !cle.isEmpty, adressesDeCetAppareil.contains(cle) { return true }
     return ModeleApp.estBoucleLocale(adresse)
   }
 
