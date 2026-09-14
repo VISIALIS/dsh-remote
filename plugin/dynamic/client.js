@@ -683,6 +683,36 @@ function encodeQr(text) {
         return () => clearInterval(minuterie)
       }, [ouvert])
 
+      // L'ICÔNE EST CELLE DE L'APPLICATION, PAS UN PICTOGRAMME DE FONCTION.
+      //
+      // C'est le SIFFLET de DSH Remote — le signe même de l'icône macOS et iOS,
+      // et non un QR code générique. Le tracé est repris TEL QUEL de
+      // `packages/dsh-remote-swift/Scripts/generer-icone.py`
+      // (`SIFFLET_ARRONDI_PATH`, viewBox 328 × 302, variante `arrondi` retenue
+      // le 14 septembre 2026) : un second dessin, tracé à la main pour le web,
+      // aurait fini par diverger du signe livré dans les applications.
+      //
+      // LA COULEUR VIENT DE LA CHARTE WEB, PAS DE L'ICÔNE. Le signe de
+      // l'application est un aplat bleu DeepSeek `#4D6BFE` sur blanc ; posé tel
+      // quel dans le pied de la barre latérale, il serait la seule couleur
+      // étrangère de la colonne — et sur le thème sombre, un bleu sur fond
+      // sombre. `currentColor` prend donc la couleur du bouton
+      // (`--dsw-alias-label-primary`, voir `COULEURS.texte`) : le sifflet suit
+      // le thème clair ou sombre exactement comme « Settings » juste en dessous.
+      const icone = React.createElement(
+        'svg',
+        {
+          width: 15,
+          height: 14,
+          viewBox: '0 0 328 302',
+          fill: 'currentColor',
+          'aria-hidden': 'true',
+        },
+        React.createElement('path', {
+          d: 'M160 54 C75 57 0 93 0 180 C0 251 45 302 119 302 C194 302 237 251 237 184 C237 163 234 145 229 128 L328 78 L309 0 L193 38 L218 80 L185 94 Z',
+        }),
+      )
+
       const bouton = React.createElement(
         'button',
         {

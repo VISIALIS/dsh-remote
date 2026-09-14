@@ -275,33 +275,65 @@ finiraient par diverger — c'est précisément ce que le fixture partagé évit
 ailleurs. Il ne garde rien non plus : la charge utile quitte l'état React et le DOM
 dès la fermeture.
 
+**Le bouton porte le signe de l'application, et la couleur du thème.** Le pied de
+la barre latérale affiche le **sifflet** de DSH Remote — le tracé même de l'icône
+macOS et iOS, `SIFFLET_ARRONDI_PATH` de
+[`packages/dsh-remote-swift/Scripts/generer-icone.py`](../dsh-remote-swift/Scripts/generer-icone.py)
+(viewBox 328 × 302) — avec le libellé **« DSH Remote »** quand la colonne est
+dépliée ; dans le rail de 56 px, l'icône reste seule. Le tracé est **repris tel
+quel**, et non redessiné pour le web : deux dessins du même signe auraient fini par
+diverger.
+
+La couleur, elle, ne vient **pas** de l'icône. Le bleu DeepSeek `#4D6BFE` de
+l'application serait la seule couleur étrangère de la colonne — et sur le thème
+sombre, un bleu sur fond sombre. Le SVG est donc en `fill: currentColor` : il prend
+la couleur du bouton (`--dsw-alias-label-primary`, l'entrée `COULEURS.texte`), donc
+celle du thème clair ou sombre, exactement comme « Settings » juste en dessous.
+
+Ce qui est **vérifié sans navigateur** de ce dessin : le `d` embarqué dans
+`client.js` est **caractère pour caractère** celui du générateur d'icône, et rendu
+par le pipeline de ce générateur il reproduit `icone-1024.png` **au pixel près**
+(0 écart sur 1 048 576 pixels — épreuve locale, hors du dépôt). Ce qui reste à
+observer dans le navigateur, c'est le rendu réel : ligne **P1**.
+
 **Deux points du shell ont été vérifiés dans le code installé**, parce que deux
 hypothèses silencieuses auraient pu rendre le panneau inatteignable ou muet :
 
 | Question | Réponse mesurée | Conséquence |
 |---|---|---|
-| Le pied de la barre latérale est-il rendu quand elle est REPLIÉE ? | `renderSlot("sidebar.footer.action", { wide })` est rendu **sans condition** dans `footArea` ; `wide` n'est qu'une prop | le bouton reste atteignable en 56 px de rail — d'où le libellé affiché seulement si `wide` |
+| Le pied de la barre latérale est-il rendu quand elle est REPLIÉE ? | `renderSlot("sidebar.footer.action", { wide })` est rendu **sans condition** dans `footArea` ; `wide` n'est qu'une prop | le bouton reste atteignable en 56 px de rail — d'où le libellé (« DSH Remote ») affiché seulement si `wide`, l'icône seule sinon |
 | Une CSP interdirait-elle le `fetch` same-origin du panneau ? | **aucune** `Content-Security-Policy` n'est servie pour la page du shell (la seule du harness garde les références média : `sandbox; default-src 'none'`) | la route est joignable depuis la page ; si un jour une CSP apparaissait, le panneau afficherait « L'hôte n'a pas répondu », pas un écran vide |
 
 ### L'épreuve, après un redémarrage du harness
 
-Le code du panneau n'est **pas** rechargé à chaud (voir « Ce que `patchReload: live`
-recharge ») : il exige un **processus neuf**. C'est la seule épreuve que ce dépôt ne
-peut pas faire à ta place, et voici exactement ce qu'il faut regarder.
+Le **module hôte** (`dynamic/host.js`) n'est **pas** rechargé à chaud (voir « Ce que
+`patchReload: live` recharge ») : il exige un **processus neuf**. Le **bundle
+client**, lui, est surveillé : `dsh-client-hmr` — monté **sans condition** par le
+profil web — `stat` chaque bundle du graphe toutes les 500 ms, et republie sa
+révision dès que la taille ou la date change (`dsh-client-hmr/lib/index.js`,
+`pollIntervalMs`, puis `clientModules.rebuilt`). Une retouche de `dynamic/client.js`
+n'exige donc **pas** de redémarrage : un onglet ouvert sur l'interface doit reprendre
+le nouveau bundle tout seul. **Cette reprise à chaud n'a pas encore été observée
+ici** — elle se lit dans le code installé, et c'est **P11** qui la constate. Tant
+qu'elle n'est pas constatée, considérer qu'un redémarrage est nécessaire.
+
+C'est la seule épreuve que ce dépôt ne peut pas faire à ta place, et voici
+exactement ce qu'il faut regarder.
 
 ```bash
 # 1. les vérifications qui, elles, ne demandent AUCUN redémarrage
 bash scripts/verifier.sh --tout
 node --test plugins/dsh-remote/tests/
 
-# 2. puis relancer le harness, et regarder la sortie du terminal : trois lignes
-#    doivent apparaître, dont celle-ci, avec le nombre d'appareils connus
+# 2. puis relancer le harness — sauf pour une retouche de `dynamic/client.js`, que
+#    l'onglet ouvert doit reprendre seul (P11) — et regarder la sortie du terminal :
+#    trois lignes doivent apparaître, dont celle-ci, avec le nombre d'appareils connus
 #    [dsh-remote] appairage (appareil): POST /dsh-remote/v1/appairage/echange — N appareil(s) connu(s)
 ```
 
 | # | À observer | Ce que ça prouve |
 |---|---|---|
-| P1 | le panneau « Appairer » est dans le pied de la barre latérale ; l'icône ouvre une carte avec un **QR code** et un **compte à rebours** | un `client.js` écrit à la main est servi et exécuté **sans compilation** |
+| P1 | le bouton **« DSH Remote »** — le sifflet de l'application, à la couleur du thème — est dans le pied de la barre latérale ; l'icône ouvre une carte avec un **QR code** et un **compte à rebours** | un `client.js` écrit à la main est servi et exécuté **sans compilation** |
 | P2 | `curl -i -X POST http://127.0.0.1:3080/dsh-remote/v1/appairage` → `401` ; avec un cookie de navigateur → `200` **et aucun jeton dans le corps** | la route est gatée par la session du navigateur, et le jeton n'est plus publié |
 | P3 | l'adresse affichée est le **nom MagicDNS**, jamais `127.0.0.1` ; `expireLe` est à ~2 minutes | l'hôte publie une adresse joignable, et le code est daté |
 | P4 | le QR se scanne depuis l'iPhone (Ajouter un serveur → Adresse → **Scanner le QR code**) et la connexion part seule | un geste remplace deux saisies |
@@ -311,6 +343,7 @@ node --test plugins/dsh-remote/tests/
 | P8 | **Révoquer** cet appareil (deux appuis : « Révoquer », puis « Confirmer ») : il disparaît de la liste, et l'application de cet appareil reçoit `401` à la requête suivante | la révocation est **par appareil** — la limite que l'étape A ne levait pas |
 | P9 | `curl -s http://127.0.0.1:3080/dsh-remote/v1/sante -H "Authorization: Bearer <jeton d'un appareil>"` → `portee`, `capacites.ecriture` et `appareils` | la portée est **par appareil**, et le compte est publié sans la liste |
 | P10 | rejouer le même code (`curl -X POST …/appairage/echange -H "Authorization: Bearer <code>"`) une seconde fois → `403 code inconnu ou deja utilise` | un code ne sert **qu'une fois** |
+| P11 | après une retouche de `dynamic/client.js`, le bouton se met à jour **dans l'onglet déjà ouvert**, sans redémarrage du harness (visible en changeant le libellé ou le survol) | `dsh-client-hmr` surveille les bundles clients (`stat` toutes les 500 ms, puis `rebuilt`) — **non observé à ce jour** |
 
 Ce qui est **déjà** prouvé sans redémarrage, par les tests : l'encodeur embarqué
 est identique caractère pour caractère à celui de `share-qr` ; sa matrice est
@@ -1177,7 +1210,7 @@ limite la surface de casse.
 | **Un nom d'appareil hostile est nettoyé** | même fichier : `\n`, commande bidi et 200 caractères → nom sans retour à la ligne, sans inversion d'affichage, borné à 40 |
 | **Trois `403` ne se confondent plus** | `AppairageEchangeTests.swift` : un `403` de code devient `appairageRefuse` (motif traduit), la portée reste `ecritureRefusee`, l'origine reste `origineRefusee` |
 | **L'appareil échange, il ne range pas le code** | `AppairageAppliqueTests.swift` : le code part à l'échange avec l'adresse et un nom ; c'est le jeton REÇU qui va au trousseau, jamais le code |
-| **Reste à éprouver APRÈS REDÉMARRAGE** : le panneau, le compte à rebours, le scan iPhone, le collage macOS et la révocation depuis l'écran | procédure en **10 points** dans « Appairer un appareil » — **non faite à ce jour** |
+| **Reste à éprouver APRÈS REDÉMARRAGE** : le panneau (bouton **« DSH Remote »** et son **sifflet**), le compte à rebours, le scan iPhone, le collage macOS et la révocation depuis l'écran | procédure en **11 points** dans « Appairer un appareil » — **non faite à ce jour** |
 
 Un bug réel a été trouvé par cette méthode : le client Swift attendait du
 `snake_case` quand le plugin émet du `camelCase`. Les tests Swift « passaient »
