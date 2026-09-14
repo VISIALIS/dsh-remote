@@ -261,7 +261,7 @@ struct VueJournal: View {
     .accessibilityLabel(
       arrivesDepuis > 1
         ? "\(arrivesDepuis) nouveaux événements — aller à la fin du journal"
-        : "Un nouvel événement — aller à la fin du journal")
+        : L("Un nouvel événement — aller à la fin du journal"))
   }
 }
 

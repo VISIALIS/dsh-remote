@@ -94,11 +94,11 @@ public enum EtatSession: Sendable, Equatable {
   /// inventé ici : « attend votre réponse » dit à qui l'état s'adresse.
   public var libelle: String {
     switch self {
-    case .rien: return "au repos"
-    case .enCours: return "tour en cours"
-    case .attendReponse: return "attend votre réponse"
-    case .terminee: return "terminée, pas encore lue"
-    case .inconnue: return "état inconnu"
+    case .rien: return L("au repos")
+    case .enCours: return L("tour en cours")
+    case .attendReponse: return L("attend votre réponse")
+    case .terminee: return L("terminée, pas encore lue")
+    case .inconnue: return L("état inconnu")
     }
   }
 }

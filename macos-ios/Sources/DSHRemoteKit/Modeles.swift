@@ -414,7 +414,7 @@ public enum ErreurRemote: Error, CustomStringConvertible {
       return
         "jeton refusé (401) — le jeton d'appareil est absent, révoqué ou faux. Recopiez celui qu'affiche le harness, puis collez-le dans le champ « Jeton d'appareil » : sur la page de cette machine, ou dans la feuille « Adresse » quand vous saisissez une adresse à la main."
     case .origineRefusee:
-      return "origine refusée (403) — un client natif ne doit jamais envoyer d'en-tête Origin"
+      return L("origine refusée (403) — un client natif ne doit jamais envoyer d'en-tête Origin")
     case .ecritureRefusee:
       // LE REMÈDE EST NOMMÉ, ET IL EST AILLEURS : la portée se change sur la
       // MACHINE qui héberge le harness, pas dans l'application. Un message qui

@@ -205,7 +205,14 @@ def clefs_du_code() -> set[str]:
         for ligne in fichier.read_text(encoding="utf-8").splitlines():
             if ligne.lstrip().startswith("//"):
                 continue
-            clefs.update(desechapper(c) for c in APPEL.findall(ligne))
+            for brut in APPEL.findall(ligne):
+                # Une clé interpolée devient à l'exécution un motif de format
+                # (`%lld sessions…`) que la table ne peut pas porter telle quelle ;
+                # une clé vide ne dit rien. Les deux restent donc en français, et
+                # c'est écrit dans le README parmi ce qui reste à faire.
+                if "\\(" in brut or brut.strip() == "":
+                    continue
+                clefs.add(desechapper(brut))
     return clefs
 
 
@@ -246,6 +253,111 @@ def main() -> int:
         print(f"  {langue}.lproj/Localizable.strings : {len(clefs)} clés")
     return 0
 
+
+
+# ── Les messages du MODÈLE ────────────────────────────────────────────────────
+#
+# DEUXIÈME MOITIÉ DE LA TRANCHE DE LOCALISATION. Ces phrases ne sont pas dans les
+# vues : elles sont CONSTRUITES par le modèle — états d'une machine, constats du
+# diagnostic, refus d'écriture, alertes —, puis affichées telles quelles. Elles se
+# traduisent au même endroit que les autres, et la parité est tenue par le même
+# test.
+TRADUCTIONS.update({
+    # Les mots d'état d'une machine.
+    "hors ligne": "offline",
+    "pas de DSH": "no DSH",
+    "vérification…": "checking…",
+    "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet.":
+        "Nothing can be reached on this machine while it is offline on the tailnet.",
+
+    # Les mots d'état d'une session, lus par VoiceOver.
+    "au repos": "idle",
+    "tour en cours": "turn in progress",
+    "attend votre réponse": "waiting for your answer",
+    "terminée, pas encore lue": "finished, not read yet",
+    "état inconnu": "unknown state",
+
+    # Le parcours d'un serveur — titres et constats.
+    "Tailscale est connecté sur cet appareil": "Tailscale is connected on this device",
+    "Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre.":
+        "Without it, no machine on the tailnet can be reached — neither this one nor any other.",
+    "Cette machine est visible": "This machine is visible",
+    "Il est en ligne sur le tailnet, donc la découverte le propose.":
+        "It is online on the tailnet, so discovery offers it.",
+    "Il est hors ligne sur le tailnet : la découverte ne le propose donc pas.":
+        "It is offline on the tailnet: discovery does not offer it.",
+    "On ne peut pas le savoir d'ici : Tailscale n'est pas connecté sur cet appareil.":
+        "It cannot be known from here: Tailscale is not connected on this device.",
+    "Le port de DSH est ouvert": "The DSH port is open",
+    "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas.":
+        "Nothing answers on its port 80: `tailscale serve` does not publish it.",
+    "Le plugin `dsh-remote` est installé": "The `dsh-remote` plugin is installed",
+    "DSH Remote y répond : la machine peut servir l'application.":
+        "DSH Remote answers there: the machine can serve the application.",
+    "DSH Remote n'y répond pas : la machine ne peut pas servir l'application.":
+        "DSH Remote does not answer there: the machine cannot serve the application.",
+    "DSH Remote doit y répondre pour que la machine serve l'application.":
+        "DSH Remote must answer there for the machine to serve the application.",
+
+    # Le parcours « Ajouter un serveur » — les mêmes étapes, en travail à faire.
+    "La machine à ajouter est sur le tailnet": "The machine to add is on the tailnet",
+    "Le port de DSH y est ouvert": "The DSH port is open there",
+    "Le plugin `dsh-remote` y est installé": "The `dsh-remote` plugin is installed there",
+    "DSH Remote doit y répondre : publier DSH ne suffit pas.":
+        "DSH Remote must answer there: publishing DSH is not enough.",
+
+    # Les messages du modèle affichés par les vues.
+    "Le serveur joint ne voit aucune machine sur le tailnet. Saisissez l'adresse ci-dessous.":
+        "The server you reached sees no machine on the tailnet. Enter the address below.",
+    "aucun": "none",
+
+    # Les alertes.
+    "Une session attend votre réponse": "A session is waiting for your answer",
+    "L'agent est bloqué sur une décision.": "The agent is blocked on a decision.",
+    "L'agent est bloqué sur une décision, dans plusieurs sessions.":
+        "The agent is blocked on a decision, in several sessions.",
+    "Un tour vient de se terminer": "A turn just finished",
+    "Le résultat est dans le journal de cette session.":
+        "The result is in this session's journal.",
+    "Le résultat est dans le journal de ces sessions.":
+        "The result is in these sessions' journals.",
+
+    # Les refus d'écriture, traduits pour l'utilisateur.
+    "cette session n'existe plus sur l'hôte": "this session no longer exists on the host",
+    "aucun modèle n'est disponible pour cette session : choisissez-en un sur l'hôte":
+        "no model is available for this session: choose one on the host",
+    "l'agent n'a pas pu prendre ce message maintenant":
+        "the agent could not take this message right now",
+    "cette session ne peut pas être interrompue maintenant":
+        "this session cannot be interrupted right now",
+    "le fuseau horaire envoyé n'est pas reconnu": "the time zone sent is not recognised",
+    "l'hôte a refusé la demande": "the host refused the request",
+    "à la suite": "queued",
+    "tout de suite (interrompt le tour en cours)": "right away (interrupts the current turn)",
+
+    # Les erreurs du protocole.
+    "origine refusée (403) — un client natif ne doit jamais envoyer d'en-tête Origin":
+        "origin refused (403) — a native client must never send an Origin header",
+})
+
+# Les en-têtes de section et les valeurs de l'écran de réglages.
+TRADUCTIONS.update({
+    "Serveur DeepSeek Harness": "DeepSeek Harness server",
+    "Demande votre attention": "Needs your attention",
+    "Espaces de travail": "Workspaces",
+    "Un nouvel événement — aller à la fin du journal":
+        "A new event — go to the end of the journal",
+    "installé": "installed",
+    "absent": "absent",
+    "connecté": "connected",
+})
+
+# Les formes abrégées de l'état d'une machine, sous sa vignette.
+TRADUCTIONS.update({
+    "DSH": "DSH",
+    "DSH · hôte": "DSH · host",
+    "DSH · hôte interrogé": "DSH · host queried",
+})
 
 if __name__ == "__main__":
     raise SystemExit(main())

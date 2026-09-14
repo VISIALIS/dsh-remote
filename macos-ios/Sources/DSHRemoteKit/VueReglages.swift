@@ -112,7 +112,7 @@ public struct FeuilleReglages: View {
   @ViewBuilder
   private var appareil: some View {
     Section {
-      LabeledContent("Tailscale", value: modele.tailscaleInstalle ? "installé" : "absent")
+      LabeledContent("Tailscale", value: modele.tailscaleInstalle ? L("installé") : L("absent"))
       LabeledContent("Réseau tailnet", value: etatTailnet)
       if ExceptionATS.sousATS {
         LabeledContent("Transport en clair", value: etatTransport)
@@ -172,9 +172,9 @@ public struct FeuilleReglages: View {
   /// d'interfaces réseau, et tant qu'il n'a pas eu lieu, l'écran n'affirme rien.
   private var etatTailnet: String {
     switch modele.tailnetDeLAppareil {
-    case true: return "connecté"
-    case false: return "absent"
-    case nil: return "vérification…"
+    case true: return L("connecté")
+    case false: return L("absent")
+    case nil: return L("vérification…")
     }
   }
 

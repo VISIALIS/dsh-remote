@@ -60,11 +60,11 @@ public extension Alerte {
       alertes.append(
         Alerte(
           titre: nouvellesAttentes.count > 1
-            ? "\(nouvellesAttentes.count) sessions attendent votre réponse"
-            : "Une session attend votre réponse",
+            ? L("\(nouvellesAttentes.count) sessions attendent votre réponse")
+            : L("Une session attend votre réponse"),
           corps: nouvellesAttentes.count > 1
-            ? "L'agent est bloqué sur une décision, dans plusieurs sessions."
-            : "L'agent est bloqué sur une décision."))
+            ? L("L'agent est bloqué sur une décision, dans plusieurs sessions.")
+            : L("L'agent est bloqué sur une décision.")))
     }
 
     let nouvellesFins = terminees
@@ -74,11 +74,11 @@ public extension Alerte {
       alertes.append(
         Alerte(
           titre: nouvellesFins.count > 1
-            ? "\(nouvellesFins.count) tours viennent de se terminer"
-            : "Un tour vient de se terminer",
+            ? L("\(nouvellesFins.count) tours viennent de se terminer")
+            : L("Un tour vient de se terminer"),
           corps: nouvellesFins.count > 1
-            ? "Le résultat est dans le journal de ces sessions."
-            : "Le résultat est dans le journal de cette session."))
+            ? L("Le résultat est dans le journal de ces sessions.")
+            : L("Le résultat est dans le journal de cette session.")))
     }
 
     return alertes

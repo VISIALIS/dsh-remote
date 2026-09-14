@@ -383,7 +383,7 @@ struct VueListeSessions: View {
         // utilisable, et l'annoncer la faisait passer pour tel. Le nombre est
         // donc celui des machines EN LIGNE **ET** dont DSH répond — la liste,
         // elle, continue de toutes les montrer, avec leurs états.
-        EnteteSection("Serveur DeepSeek Harness", detail: resumeServeurs)
+        EnteteSection(L("Serveur DeepSeek Harness"), detail: resumeServeurs)
       }
 
       // ── Ce qui est PARTI sur la page du serveur ──────────────────────────
@@ -416,7 +416,7 @@ struct VueListeSessions: View {
           }
         } header: {
           EnteteSection(
-            "Demande votre attention",
+            L("Demande votre attention"),
             detail: "\(modele.sessionsQuiAttendent.count)")
         }
       }
@@ -559,7 +559,7 @@ struct VueListeSessions: View {
         // session est ouverte — la vignette du carrousel, elle, n'affiche que le
         // premier mot du nom, et deux Macs peuvent le partager.
         EnteteSection(
-          "Espaces de travail",
+          L("Espaces de travail"),
           detail: "\(modele.sessionsFiltrees.count) session\(modele.sessionsFiltrees.count > 1 ? "s" : "")",
           surtitre: modele.nomDuServeurAffiche)
       }

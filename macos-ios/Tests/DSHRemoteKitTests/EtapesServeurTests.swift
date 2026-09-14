@@ -54,14 +54,14 @@ func explicationDeLaVisibilite() {
     tailnetDeLAppareil: true, enLigne: false, sertDsh: nil, cause: nil)
   let visibilite = horsLigne.first { $0.numero == 2 }
   #expect(visibilite?.etat == .aFaire)
-  #expect(visibilite?.explication.contains("hors ligne") == true)
+  #expect(visibilite?.explication.contains(L("hors ligne")) == true)
   // La phrase de l'étape franchie ne doit plus pouvoir s'afficher ici.
   #expect(visibilite?.explication.contains("est en ligne") == false)
 
   // Le cas symétrique reste dit comme avant.
   let enLigne = EtapesServeur.etapes(
     tailnetDeLAppareil: true, enLigne: true, sertDsh: nil, cause: nil)
-  #expect(enLigne.first { $0.numero == 2 }?.explication.contains("en ligne") == true)
+  #expect(enLigne.first { $0.numero == 2 }?.explication == L("Il est en ligne sur le tailnet, donc la découverte le propose."))
 
   // Et depuis un appareil hors tailnet, on ne peut RIEN dire de la visibilité de
   // ce Mac-là : l'explication le dit, au lieu d'affirmer qu'il est en ligne.
@@ -82,14 +82,14 @@ func explicationsCoherentesAvecLEtat() {
     tailnetDeLAppareil: true, enLigne: true, sertDsh: false, cause: .rienNEcoute)
   let port = portFerme.first { $0.numero == 3 }
   #expect(port?.etat == .aFaire)
-  #expect(port?.explication.contains("ne le publie pas") == true)
+  #expect(port?.explication == L("Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas."))
   #expect(port?.explication.contains("est publié") == false)
 
   let sansPlugin = EtapesServeur.etapes(
     tailnetDeLAppareil: true, enLigne: true, sertDsh: false, cause: .pluginAbsent)
   let plugin = sansPlugin.first { $0.numero == 4 }
   #expect(plugin?.etat == .aFaire)
-  #expect(plugin?.explication.contains("n'y répond pas") == true)
+  #expect(plugin?.explication == L("DSH Remote n'y répond pas : la machine ne peut pas servir l'application."))
   #expect(plugin?.explication.contains("y répond :") == false)
 }
 
@@ -178,7 +178,7 @@ func ordreDesEtapes() {
   #expect(etapes.map(\.numero) == [1, 2, 3, 4])
   #expect(etapes.allSatisfy { !$0.titre.isEmpty && !$0.explication.isEmpty })
   // Et la première parle bien de l'appareil, pas du Mac visé.
-  #expect(etapes[0].titre.contains("cet appareil"))
+  #expect(etapes[0].titre == L("Tailscale est connecté sur cet appareil"))
 }
 
 @Test("La liste d'ajout : seule la première étape se constate d'ici")
@@ -195,7 +195,7 @@ func etapesDAjout() {
   #expect(avecTailscale[0].etat == .franchie)
   #expect(EtapesServeur.premiereAEtapesFranchir(avecTailscale) == 2)
   // Les étapes parlent du Mac À AJOUTER, pas d'une machine connue.
-  #expect(avecTailscale[1].titre.contains("à ajouter"))
+  #expect(avecTailscale[1].titre == L("La machine à ajouter est sur le tailnet"))
 }
 
 @Test("Les étapes SUIVANT la frontière sont verrouillées")

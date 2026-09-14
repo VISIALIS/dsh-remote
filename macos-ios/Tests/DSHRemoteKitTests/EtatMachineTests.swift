@@ -14,27 +14,27 @@ import Testing
 @Test("Les deux formes disent le même état : la vignette abrège, elle ne traduit pas")
 func vocabulairePartage() {
   let horsLigne = EtatMachine.decrire(enLigne: false, sertDsh: nil, estLocal: false, court: true)
-  #expect(horsLigne.texte == "hors ligne")
+  #expect(horsLigne.texte == L("hors ligne"))
   // Une machine éteinte n'est pas une panne : c'est une attente, pas un échec.
   #expect(horsLigne.ton == .attente)
 
   let hote = EtatMachine.decrire(enLigne: true, sertDsh: true, estLocal: true, court: true)
-  #expect(hote.texte == "DSH · hôte")
+  #expect(hote.texte == L("DSH · hôte"))
   #expect(hote.ton == .pret)
 
   // La page dit la phrase entière — MÊMES MOTS, et même gravité : la longueur ne
   // change pas le verdict, sinon les deux vues finiraient par se contredire.
   let hoteLong = EtatMachine.decrire(enLigne: true, sertDsh: true, estLocal: true, court: false)
   #expect(hoteLong.texte.contains("DSH"))
-  #expect(hoteLong.texte.contains("hôte"))
+  #expect(hoteLong.texte.contains(L("DSH · hôte interrogé")))
   #expect(hoteLong.ton == hote.ton)
 
   let sansDsh = EtatMachine.decrire(enLigne: true, sertDsh: false, estLocal: false, court: false)
-  #expect(sansDsh.texte == "pas de DSH")
+  #expect(sansDsh.texte == L("pas de DSH"))
   #expect(sansDsh.symbole == "exclamationmark.triangle.fill")
 
   let inconnu = EtatMachine.decrire(enLigne: true, sertDsh: nil, estLocal: false, court: false)
-  #expect(inconnu.texte == "vérification…")
+  #expect(inconnu.texte == L("vérification…"))
   #expect(inconnu.ton == .inconnu)
 }
 
@@ -68,7 +68,7 @@ func conclusionDuDiagnostic() {
   let horsLigne = EtapesServeur.etapes(
     tailnetDeLAppareil: true, enLigne: false, sertDsh: nil, cause: nil)
   let conclusion = EtatMachine.conclusion(enLigne: false, etapes: horsLigne)
-  #expect(conclusion.texte.contains("hors ligne"))
+  #expect(conclusion.texte.contains(L("hors ligne")))
   #expect(!conclusion.texte.contains("MacBook"))
   #expect(conclusion.ton == .attente)
 

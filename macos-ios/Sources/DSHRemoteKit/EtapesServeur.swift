@@ -217,39 +217,39 @@ public enum EtapesServeur {
     let explication: String
     switch numero {
     case 1:
-      titre = "Tailscale est connecté sur cet appareil"
-      explication = "Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre."
+      titre = L("Tailscale est connecté sur cet appareil")
+      explication = L("Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre.")
     case 2:
-      titre = "Cette machine est visible"
+      titre = L("Cette machine est visible")
       switch etat {
       case .franchie:
-        explication = "Il est en ligne sur le tailnet, donc la découverte le propose."
+        explication = L("Il est en ligne sur le tailnet, donc la découverte le propose.")
       case .aFaire:
-        explication = "Il est hors ligne sur le tailnet : la découverte ne le propose donc pas."
+        explication = L("Il est hors ligne sur le tailnet : la découverte ne le propose donc pas.")
       case .inconnue:
-        explication = "On ne peut pas le savoir d'ici : Tailscale n'est pas connecté sur cet appareil."
+        explication = L("On ne peut pas le savoir d'ici : Tailscale n'est pas connecté sur cet appareil.")
       }
     case 3:
-      titre = "Le port de DSH est ouvert"
+      titre = L("Le port de DSH est ouvert")
       switch etat {
       case .franchie:
         explication =
           "Son port 80 est publié par `tailscale serve`, donc quelque chose répond à son adresse."
       case .aFaire:
-        explication = "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas."
+        explication = L("Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas.")
       case .inconnue:
         explication =
           "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse."
       }
     default:
-      titre = "Le plugin `dsh-remote` est installé"
+      titre = L("Le plugin `dsh-remote` est installé")
       switch etat {
       case .franchie:
-        explication = "DSH Remote y répond : la machine peut servir l'application."
+        explication = L("DSH Remote y répond : la machine peut servir l'application.")
       case .aFaire:
-        explication = "DSH Remote n'y répond pas : la machine ne peut pas servir l'application."
+        explication = L("DSH Remote n'y répond pas : la machine ne peut pas servir l'application.")
       case .inconnue:
-        explication = "DSH Remote doit y répondre pour que la machine serve l'application."
+        explication = L("DSH Remote doit y répondre pour que la machine serve l'application.")
       }
     }
     return Etape(numero: numero, titre: titre, explication: explication, etat: etat)
@@ -267,26 +267,26 @@ public enum EtapesServeur {
     [
       Etape(
         numero: 1,
-        titre: "Tailscale est connecté sur cet appareil",
+        titre: L("Tailscale est connecté sur cet appareil"),
         explication:
           "Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre.",
         etat: tailnetDeLAppareil == nil ? .inconnue : (tailnetDeLAppareil! ? .franchie : .aFaire)),
       Etape(
         numero: 2,
-        titre: "La machine à ajouter est sur le tailnet",
+        titre: L("La machine à ajouter est sur le tailnet"),
         explication:
           "Il doit avoir Tailscale installé et connecté : c'est ce qui le rend visible depuis cet appareil.",
         etat: .aFaire),
       Etape(
         numero: 3,
-        titre: "Le port de DSH y est ouvert",
+        titre: L("Le port de DSH y est ouvert"),
         explication:
           "Son port 80 doit être publié par `tailscale serve` — sans quoi rien ne répond à son adresse.",
         etat: .aFaire),
       Etape(
         numero: 4,
-        titre: "Le plugin `dsh-remote` y est installé",
-        explication: "DSH Remote doit y répondre : publier DSH ne suffit pas.",
+        titre: L("Le plugin `dsh-remote` y est installé"),
+        explication: L("DSH Remote doit y répondre : publier DSH ne suffit pas."),
         etat: .aFaire),
     ]
   }

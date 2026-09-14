@@ -1517,7 +1517,7 @@ public final class ModeleApp {
     if let diagnosticServeurs, !diagnosticServeurs.isEmpty {
       return "Le serveur joint ne voit aucune machine sur le tailnet (\(diagnosticServeurs)). Saisissez l'adresse ci-dessous."
     }
-    return "Le serveur joint ne voit aucune machine sur le tailnet. Saisissez l'adresse ci-dessous."
+    return L("Le serveur joint ne voit aucune machine sur le tailnet. Saisissez l'adresse ci-dessous.")
   }
 
   /// Légende d'une machine : son état, et le fait qu'elle soit l'hôte interrogé.
@@ -1623,7 +1623,7 @@ public final class ModeleApp {
   /// indiscernable d'un jeton tronqué. Une empreinte SHA-256 tronquée permet de
   /// dire lequel est détenu, sans jamais exposer la valeur.
   public var empreinteJeton: String {
-    guard !jetonSaisi.isEmpty else { return "aucun" }
+    guard !jetonSaisi.isEmpty else { return L("aucun") }
     return String(Empreinte.de(jetonSaisi).prefix(8))
   }
 

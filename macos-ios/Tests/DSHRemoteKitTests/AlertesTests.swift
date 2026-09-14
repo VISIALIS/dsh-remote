@@ -31,7 +31,7 @@ func attenteNouvelleSeulement() {
     attendent: ["s1", "s2"], attendaientAvant: ["s1"], terminees: [], termineesAvant: [],
     regardee: nil)
   #expect(nouvelles.count == 1)
-  #expect(nouvelles[0].titre == "Une session attend votre réponse")
+  #expect(nouvelles[0].titre == L("Une session attend votre réponse"))
 }
 
 @Test("Plusieurs attentes ensemble font UNE alerte, avec leur compte")
@@ -59,7 +59,7 @@ func sessionRegardeeTaire() {
     attendent: ["s1", "s2"], attendaientAvant: [], terminees: [], termineesAvant: [],
     regardee: "s1")
   #expect(melange.count == 1)
-  #expect(melange[0].titre == "Une session attend votre réponse")
+  #expect(melange[0].titre == L("Une session attend votre réponse"))
 }
 
 @Test("Une fin de tour nouvelle alerte, et l'attente passe AVANT elle")
@@ -67,15 +67,15 @@ func finDeTourEtOrdre() {
   let seulementFin = Alerte.aEnvoyer(
     attendent: [], attendaientAvant: [], terminees: ["s1"], termineesAvant: [], regardee: nil)
   #expect(seulementFin.count == 1)
-  #expect(seulementFin[0].titre == "Un tour vient de se terminer")
+  #expect(seulementFin[0].titre == L("Un tour vient de se terminer"))
 
   // L'ordre est une décision : l'attente demande une ACTION, la fin est une
   // bonne nouvelle à lire. La première doit se voir en haut de la pile.
   let deux = Alerte.aEnvoyer(
     attendent: ["a"], attendaientAvant: [], terminees: ["b"], termineesAvant: [], regardee: nil)
   #expect(deux.count == 2)
-  #expect(deux[0].titre.contains("attend"))
-  #expect(deux[1].titre.contains("terminer"))
+  #expect(deux[0].titre == L("Une session attend votre réponse"))
+  #expect(deux[1].titre == L("Un tour vient de se terminer"))
 }
 
 @Test("Rien qui change, rien à dire")
@@ -166,7 +166,7 @@ func allumeesAlertentSurTransition() async throws {
 
   let recues = await espion.alertes()
   #expect(recues.count == 1)
-  #expect(recues.first?.titre == "Une session attend votre réponse")
+  #expect(recues.first?.titre == L("Une session attend votre réponse"))
 
   // Et la TROISIÈME liste, identique à la deuxième, n'ajoute rien : c'est le
   // rafraîchissement de trois secondes, pas un nouvel événement.

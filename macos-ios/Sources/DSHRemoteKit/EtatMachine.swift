@@ -41,19 +41,24 @@ enum EtatMachine {
   ///   - court: la forme de la vignette (68 points) plutôt que la phrase entière.
   static func decrire(enLigne: Bool, sertDsh: Bool?, estLocal: Bool, court: Bool) -> Description {
     guard enLigne else {
-      return Description(texte: "hors ligne", symbole: "moon.zzz.fill", ton: .attente)
+      return Description(texte: L("hors ligne"), symbole: "moon.zzz.fill", ton: .attente)
     }
     switch sertDsh {
     case true:
       return Description(
-        texte: court ? (estLocal ? "DSH · hôte" : "DSH") : (estLocal ? "DSH · hôte interrogé" : "DSH"),
+        // LES QUATRE FORMES PASSENT PAR `L`, y compris les deux qui n'étaient que
+        // des ternaires : « hôte » est un mot de l'interface, et la vignette
+        // l'affichait en français dans une application anglaise.
+        texte: court
+          ? (estLocal ? L("DSH · hôte") : L("DSH"))
+          : (estLocal ? L("DSH · hôte interrogé") : L("DSH")),
         symbole: "checkmark.seal.fill",
         ton: .pret)
     case false:
       return Description(
-        texte: "pas de DSH", symbole: "exclamationmark.triangle.fill", ton: .attente)
+        texte: L("pas de DSH"), symbole: "exclamationmark.triangle.fill", ton: .attente)
     case nil:
-      return Description(texte: "vérification…", symbole: "clock", ton: .inconnu)
+      return Description(texte: L("vérification…"), symbole: "clock", ton: .inconnu)
     }
   }
 
@@ -86,7 +91,7 @@ enum EtatMachine {
   static func conclusion(enLigne: Bool, etapes: [EtapesServeur.Etape]) -> Description {
     guard enLigne else {
       return Description(
-        texte: "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet.",
+        texte: L("Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet."),
         symbole: "moon.zzz.fill",
         ton: .attente)
     }

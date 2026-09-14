@@ -1603,10 +1603,12 @@ non tenue :
 
 | Élément | État |
 |---|---|
-| Les **89 phrases de l'interface** (titres, boutons, libellés, infobulles, libellés VoiceOver) | **traduites** — tables `fr` et `en`, parité tenue par un test |
+| Les **phrases de l'interface** (titres, boutons, libellés, infobulles, libellés VoiceOver) | **traduites** |
+| Les **messages construits par le modèle** — états d'une machine (« hors ligne », « pas de DSH »), constats du diagnostic en quatre étapes, refus d'écriture, alertes | **traduits** : **141 clés** au total, et la parité des deux tables est tenue par un test |
 | Les **langues de l'application** sont déclarées (`CFBundleDevelopmentRegion = fr`, `CFBundleLocalizations = [fr, en]`) | **fait**, sur les deux plateformes |
-| Les **messages construits par le modèle** (« installé », « connecté », « hors ligne sur le tailnet », les remèdes du diagnostic, les erreurs du protocole) | **restent en français** — prochaine tranche |
-| Les phrases **interpolées** avec un nombre (`« 3 sessions »`, `« 42 évts »`) | **restent en français** : elles demandent des règles de pluriel, donc un traitement à part |
+| Les phrases **interpolées** avec un nombre (`« 3 sessions »`, `« 42 évts »`, `« 6 · 1 en attente »`) | **restent en français** : elles demandent des règles de pluriel, donc un traitement à part |
+| L'**aide sous le champ d'adresse** (`ConseilAdresse`) | **reste en français** : ses trois phrases sont des littéraux multi-lignes, que le générateur ne sait pas encore relire |
+| Les **âges abrégés** (« 5min », « 3h », « 2mois ») et les messages **venus de l'hôte** (motifs de refus du plugin) | **restent en français** — les uns sont des abréviations, les autres appartiennent au protocole |
 
 **Trois choses mesurées en chemin, et qui expliquent la forme du code.**
 
@@ -1624,10 +1626,17 @@ non tenue :
    `Info.plist` déclarent donc `fr` et `en` : sur l'application empaquetée, un
    système français affiche le français, et un système anglais l'anglais.
 
-Le générateur des deux tables (`/tmp/generer-tables.py` pendant la session) **relit
-les clés dans les sources et refuse de produire une table anglaise incomplète** :
-la parité n'est pas seulement vérifiée à l'exécution par un test, elle est exigée à
-l'écriture.
+Le générateur est versionné — `Scripts/traduire.py` — et **relit les clés dans les
+sources** : il refuse de produire une table anglaise incomplète. La parité n'est donc
+pas seulement vérifiée à l'exécution par un test, elle est exigée à l'écriture.
+
+**UNE LEÇON QUE LA SUITE DE TESTS A PAYÉE.** Traduire a fait échouer **dix-huit
+assertions** d'un coup, dans quatre fichiers : elles comparaient l'affichage à des
+phrases françaises **recopiées** — or le processus de test, comme le binaire nu,
+n'annonce aucune langue et tourne donc en anglais. Les assertions comparent
+maintenant à la **même fonction que l'application** (`L(« phrase »)`) : elles
+vérifient le SENS d'un message sans dépendre de la langue dans laquelle il
+s'affiche, et une phrase qui cesserait d'être traduite les ferait échouer.
 
 ### L'iPad : une cible réelle, et ce qu'elle a révélé
 
@@ -1930,6 +1939,10 @@ redécouvre pas comme des oublis.
 - **Le multitâche iPad et le clavier/pointeur** n'ont pas été essayés : la HIG les
   attend d'une application iPad, et rien dans le code ne s'y oppose — mais « rien ne
   s'y oppose » n'est pas une mesure.
+- **L'application iOS n'a pas été revue dans les deux langues.** Le mécanisme est le
+  même (mêmes tables, même paquet de ressources, `CFBundleLocalizations` déclaré dans
+  `App/Info.plist`), mais aucune capture du simulateur en anglais n'a été prise : ce
+  qui est prouvé l'est sur l'application macOS.
 - **La notification ELLE-MÊME n'a pas été observée.** Ce qui est prouvé, c'est la
   DÉCISION (9 tests, dont un canal espion qui vérifie qu'aucune alerte ne part
   quand elles sont éteintes) et la garde qui empêche le plantage hors paquet. La
@@ -2307,6 +2320,8 @@ inactive.
 | **Deux machines qui partageaient « MacBook » se distinguent** | capture des données réelles : « MacBook Air » et « MacBook Pro », là où deux vignettes disaient « MacBook » — 5 tests sur `NomsCourts` |
 | **L'état de navigation fait un aller-retour** | 2 tests : espaces triés relus par un SECOND modèle sur le même domaine ; une session mémorisée n'est rouverte que si l'hôte la nomme |
 | **Le collage iOS ne lit plus le presse-papiers à l'insu de l'utilisateur** | `PasteButton` des deux côtés (feuille Adresse, page d'une machine) ; compilation iOS complète par `Scripts/construire-app-ios.sh --simulateur` → `BUILD SUCCEEDED` |
+| **L'interface anglaise couvre AUSSI les messages du modèle** | capture de l'application empaquetée en anglais : « DeepSeek Harness server », « Needs your attention », « Workspaces », « No session open », « Choose a session in the list to read its journal. », et sous les vignettes « DSH · host », « no DSH », « offline » |
+| **Le français reste le défaut** | capture de l'application empaquetée sans argument : « Serveur DeepSeek Harness », « Espaces de travail », « DSH · hôte », « Aucune session ouverte » |
 | **Les deux tables de traduction sont complètes** | 4 tests : les deux tables se lisent depuis le paquet, elles portent EXACTEMENT les mêmes clés (89), aucune valeur n'est vide, une clé absente rend `nil` |
 | **L'anglais s'affiche vraiment** | capture avec la langue forcée : « Settings », « This device », « Check now », « Alerts », « Diagnostic », « Copy the file path », « About » — et le champ de recherche « Search a session or a project… » |
 | **Le français reste le défaut** | capture de l'application EMPAQUETÉE, sans argument : tout en français. Le défaut anglais ne touchait que le binaire nu, qui n'annonce aucune langue |

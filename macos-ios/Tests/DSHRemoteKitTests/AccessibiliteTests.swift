@@ -19,11 +19,11 @@ import Testing
 
 @Test("Chaque état de session a son mot, et aucun ne ressemble à un autre")
 func libellesDesEtats() {
-  #expect(EtatSession.rien.libelle == "au repos")
-  #expect(EtatSession.enCours.libelle == "tour en cours")
-  #expect(EtatSession.attendReponse.libelle == "attend votre réponse")
-  #expect(EtatSession.terminee.libelle == "terminée, pas encore lue")
-  #expect(EtatSession.inconnue.libelle == "état inconnu")
+  #expect(EtatSession.rien.libelle == L("au repos"))
+  #expect(EtatSession.enCours.libelle == L("tour en cours"))
+  #expect(EtatSession.attendReponse.libelle == L("attend votre réponse"))
+  #expect(EtatSession.terminee.libelle == L("terminée, pas encore lue"))
+  #expect(EtatSession.inconnue.libelle == L("état inconnu"))
 
   // LES CINQ SONT DISTINCTS, et c'est le fond du sujet : deux états qui se
   // disent pareil sont deux états qu'un lecteur d'écran ne sépare pas — le
@@ -73,7 +73,7 @@ func libelleDuneLigne() {
   #expect(affiche.etat == .enCours)
   let libelle = affiche.libelleAccessible
   #expect(libelle.hasPrefix("Corriger le portail"), "le titre vient en premier : c'est ce qu'on cherche")
-  #expect(libelle.contains("tour en cours"))
+  #expect(libelle.contains(L("tour en cours")))
   #expect(libelle.contains("1 événement"))
   #expect(!libelle.contains("événements"), "un seul événement ne se dit pas au pluriel")
 }
@@ -101,7 +101,7 @@ func libelleDunEtatInconnu() {
     session: sessionDeTest(titre: "Ancienne", statut: nil, vivante: false), rappelDeFin: false)
 
   #expect(affiche.etat == .inconnue)
-  #expect(affiche.libelleAccessible.contains("état inconnu"))
+  #expect(affiche.libelleAccessible.contains(L("état inconnu")))
 }
 
 @Test("Une session qui attend une réponse le DIT, avant tout le reste")
@@ -112,7 +112,7 @@ func libelleDuneSessionQuiAttend() {
     rappelDeFin: false)
 
   #expect(affiche.etat == .attendReponse)
-  #expect(affiche.libelleAccessible.contains("attend votre réponse"))
+  #expect(affiche.libelleAccessible.contains(L("attend votre réponse")))
 }
 
 @Test("Une ligne illisible le dit aussi à voix haute")
@@ -133,17 +133,17 @@ func libelleDuneMachine() {
   // d'appuyer — l'appui ne peut rien donner.
   #expect(
     EtatMachine.libelleAccessible(nom: "MacMini", enLigne: true, sertDsh: false, estLocal: false)
-      == "MacMini, pas de DSH")
+      == "MacMini, " + L("pas de DSH"))
   #expect(
     EtatMachine.libelleAccessible(nom: "MacMini", enLigne: true, sertDsh: true, estLocal: false)
       == "MacMini, DSH")
   #expect(
     EtatMachine.libelleAccessible(nom: "Mac mini", enLigne: true, sertDsh: true, estLocal: true)
-      == "Mac mini, DSH · hôte interrogé")
+      == "Mac mini, " + L("DSH · hôte interrogé"))
   #expect(
     EtatMachine.libelleAccessible(nom: "MacMini", enLigne: false, sertDsh: nil, estLocal: false)
-      == "MacMini, hors ligne")
+      == "MacMini, " + L("hors ligne"))
   #expect(
     EtatMachine.libelleAccessible(nom: "MacMini", enLigne: true, sertDsh: nil, estLocal: false)
-      == "MacMini, vérification…")
+      == "MacMini, " + L("vérification…"))
 }
