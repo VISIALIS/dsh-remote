@@ -160,6 +160,61 @@ rendrait le jeton serait un oracle.
 Rotation : supprimer l'enregistrement du coffre, le plugin en crée un nouveau au
 chargement suivant. Tous les appareils existants perdent l'accès.
 
+### Portée du jeton — `lecture` ou `ecriture`
+
+**Le problème que la portée résout.** Le jeton était tout-puissant : il ouvrait la
+lecture **et** l'écriture (`/v1/session/<id>/prompt`, `/v1/session/<id>/annuler`).
+Un jeton qui fuit donnait donc à son porteur le pouvoir d'**écrire dans l'agent de
+quelqu'un d'autre** — la première question qu'on pose à un client publié. La portée
+y répond par construction : un jeton `lecture` lit tout et n'écrit rien.
+
+| Situation | Portée | Ce que ça donne |
+|---|---|---|
+| Jeton **neuf** (installation neuve) | `lecture` | Lit ; l'écriture répond `403 jeton en lecture seule` |
+| Jeton neuf avec `DSH_REMOTE_PORTEE=ecriture` | `ecriture` | Lit et écrit |
+| Enregistrement **d'avant la portée** (aucun champ `portee`) | `ecriture` | Inchangé : une mise à jour du plugin ne retire pas un droit acquis |
+
+**Pourquoi la lecture seule par défaut.** Une installation neuve n'a aucune raison
+d'accorder l'écriture, et le dépôt public doit pouvoir répondre « un jeton fuité
+n'écrit rien » sans condition. Qui veut écrire le demande, explicitement :
+
+```bash
+DSH_REMOTE_PORTEE=ecriture dsh web          # tire un jeton qui écrit
+```
+
+La portée se décide **à la création du jeton**, et pas après : pour changer de
+portée, il faut supprimer l'enregistrement `dsh-remote/device-token` du coffre et
+relancer le harness, qui en tire un neuf. Le terminal dit alors, à la création, ce
+que le jeton autorise — c'est le seul endroit où l'utilisateur l'apprend.
+
+**Ce qui est protégé, et ce qui ne l'est pas.** La portée borne ce que le **jeton**
+autorise ; elle ne remplace pas le jeton (sans jeton valide, rien ne passe : `401`),
+elle ne chiffre rien (le transport est celui de Tailscale), et elle ne restreint pas
+la lecture — un jeton `lecture` voit **tout** ce que voit un jeton `ecriture`,
+journaux compris.
+
+**Deux refus, un seul code.** Le `403` sert à deux causes, et le corps les
+distingue par `erreur` :
+
+```json
+{ "erreur": "origine refusee" }
+{ "erreur": "jeton en lecture seule", "portee": "lecture", "detail": "…" }
+```
+
+Un client qui ne lirait pas ce champ afficherait « un client natif ne doit jamais
+envoyer d'en-tête Origin » à quelqu'un dont le jeton lit simplement sans écrire —
+un message faux, donc un remède faux. Le côté application lit ce champ
+(`ErreurRemote.ecritureRefusee`), et les deux moitiés ont un test sur la chaîne
+exacte (`tests/portee.test.js`, `Tests/DSHRemoteKitTests/PorteeLectureTests.swift`).
+
+**La portée est annoncée** dans `GET /v1/sante` (champ `portee`), et
+`capacites.ecriture` / `capacites.annulation` valent `false` quand elle est
+`lecture` : l'application cache alors son composeur **et dit pourquoi**. Sans cette
+annonce, elle proposerait un bouton qui recevrait un `403`.
+
+`portee` est **absent** des réponses d'un hôte antérieur à la portée : un client
+doit lire `nil` comme « ne sait pas », jamais comme « lecture seule ».
+
 ---
 
 ## Protocole
@@ -173,7 +228,7 @@ d'URL — un paramètre finit dans un journal d'accès ou un historique.
 
 | Route | Méthode | Rôle |
 |---|---|---|
-| `/dsh-remote/v1/sante` | `GET` | Poignée de main : version du protocole, capacités. Aucune donnée. |
+| `/dsh-remote/v1/sante` | `GET` | Poignée de main : version du protocole, capacités, **portée du jeton**. Aucune donnée. |
 | `/dsh-remote/v1/sessions` | `GET`, `POST` | Liste des sessions, de la plus récente à la plus ancienne. |
 | `/dsh-remote/v1/espaces` | `GET` | Espaces de travail du registre de l'hôte, **ceux sans session compris**, dans son ordre de création décroissante. |
 | `/dsh-remote/v1/serveurs` | `GET` | Liste des machines du tailnet qui peuvent héberger DSH, **découverte par l'hôte** — c'est ce qui donne une liste à l'iPhone. |
@@ -208,6 +263,15 @@ Réponse `202` :
 ```json
 { "protocole": 1, "accepte": true, "mode": "queue", "requestId": "…", "reprise": false }
 ```
+
+**Un jeton en `lecture` est refusé ici, et nulle part ailleurs dans cette route** :
+
+```json
+403 { "erreur": "jeton en lecture seule", "portee": "lecture", "detail": "…" }
+```
+
+Le refus tombe **avant toute action** : ni le contrôleur de session ni le journal ne sont
+touchés. Voir « Portée du jeton » plus haut.
 
 **`accepte` veut dire « l'hôte a pris le message »**, pas « le modèle a répondu » : la
 réponse arrive par le journal ou par le flux, comme tout le reste.
@@ -742,6 +806,8 @@ limite la surface de casse.
 | L'observateur doit être EN TÊTE | 4 écouteurs inscrits sur le waterfall, le nôtre jamais atteint avant `{ prepend: true }` |
 | Le flux fonctionne depuis Swift | `dsh-remote-ctl <adresse> flux <id>` : 5 évènements et 3 deltas reçus en direct, 0 doublon, curseur conservé |
 | Sans jeton : refus | `401` sur `/v1/sante` et sur l'`Upgrade` WebSocket |
+| **Un jeton en lecture seule n'écrit pas** | 10 tests (`tests/portee.test.js`) : l'écriture et l'annulation rendent `403 jeton en lecture seule` ET le contrôleur de session n'est **jamais** appelé ; un jeton d'écriture passe ; un enregistrement sans portée reste en écriture |
+| **La capacité d'écriture suit la portée** | `capacites.ecriture` et `capacites.annulation` valent `false` en lecture seule, `true` en écriture — l'application cache son composeur sur ce booléen |
 | Avec `Origin` : refus | `403` |
 | L'identité tailnet est falsifiable | `curl` local avec `Tailscale-User-Login: attaquant@exemple.fr` → accepté |
 | Le jeton est stocké en `0600` | permissions lues sur `~/.dsh/.credentials.yaml` |

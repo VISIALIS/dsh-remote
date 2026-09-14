@@ -123,6 +123,49 @@ const TYPES_VOLUMINEUX = new Set([
 
 const CLE_JETON = 'dsh-remote/device-token'
 
+// ── Portée du jeton ──────────────────────────────────────────────────────────
+//
+// POURQUOI ELLE EXISTE. Le jeton était tout-puissant : il ouvrait la lecture ET
+// l'écriture (`/prompt`, `/annuler`). Un jeton qui fuit donnait donc à son
+// porteur le pouvoir d'ÉCRIRE dans l'agent de quelqu'un d'autre — la première
+// question qu'on pose à un client publié. La portée y répond par construction :
+// un jeton `lecture` lit tout et n'écrit rien.
+//
+// CE QUI EST PROTÉGÉ, ET CE QUI NE L'EST PAS. La portée borne ce que le JETON
+// autorise. Elle ne remplace pas le jeton : sans portée valide, on n'accède à
+// rien. Elle ne chiffre rien non plus — le transport est celui de Tailscale.
+//
+// ELLES SONT EXPORTÉES pour que les tests les emploient plutôt que de recopier
+// des chaînes : une faute de frappe dans un test ne prouverait plus rien.
+export const PORTEE_LECTURE = 'lecture'
+export const PORTEE_ECRITURE = 'ecriture'
+
+/**
+ * La portée d'un enregistrement de jeton.
+ *
+ * UN ENREGISTREMENT SANS PORTÉE EST D'AVANT LA PORTÉE : il vaut `ecriture`.
+ * Le traiter en lecture seule retirerait silencieusement un droit à son
+ * propriétaire — une mise à jour du plugin ne doit pas casser ce qui marchait.
+ */
+export function porteeEnregistree(payload) {
+  return payload?.portee === PORTEE_LECTURE ? PORTEE_LECTURE : PORTEE_ECRITURE
+}
+
+/**
+ * La portée d'un jeton NOUVEAU.
+ *
+ * `lecture` PAR DÉFAUT, et c'est un choix : une installation neuve n'a aucune
+ * raison d'accorder l'écriture, et le dépôt public doit pouvoir répondre « un
+ * jeton fuité n'écrit rien » sans condition. Qui veut écrire le demande :
+ *
+ *     DSH_REMOTE_PORTEE=ecriture
+ */
+export function porteeDemandee(valeur) {
+  return String(valeur ?? '').trim().toLowerCase() === PORTEE_ECRITURE
+    ? PORTEE_ECRITURE
+    : PORTEE_LECTURE
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Lecture d'un journal de session
 // ─────────────────────────────────────────────────────────────────────────────
@@ -208,6 +251,9 @@ export function apply(ctx, config) {
 
   // ── Jeton ──────────────────────────────────────────────────────────────────
   let jeton = null
+  // Ce que le jeton autorise. Voir `PORTEE_LECTURE` / `PORTEE_ECRITURE` : la
+  // valeur de départ est celle d'un jeton d'avant la portée.
+  let portee = PORTEE_ECRITURE
 
   const coffre = () => {
     const credentials = ctx.get('credentials') ?? ctx.credentials
@@ -225,14 +271,24 @@ export function apply(ctx, config) {
     const existant = await credentials.readRecord(CLE_JETON)
     if (existant !== undefined && existant !== null && existant.kind === 'grant') {
       const valeur = existant.payload?.token
-      if (typeof valeur === 'string' && valeur.length >= 32) return valeur
+      if (typeof valeur === 'string' && valeur.length >= 32) {
+        portee = porteeEnregistree(existant.payload)
+        return valeur
+      }
     }
     const nouveau = randomBytes(32).toString('base64url')
-    await credentials.modifyRecord(CLE_JETON, async () => ({ kind: 'grant', payload: { token: nouveau, creeLe: Date.now() } }))
+    portee = porteeDemandee(process.env.DSH_REMOTE_PORTEE)
+    await credentials.modifyRecord(CLE_JETON, async () => ({ kind: 'grant', payload: { token: nouveau, creeLe: Date.now(), portee } }))
     // Affichage UNIQUE, dans le terminal de l'utilisateur, a la creation.
     // Jamais reecrit ensuite, jamais journalise, jamais renvoye par une route.
-    console.log('[dsh-remote] NOUVEAU JETON D APPAREIL (a saisir une fois dans l application, puis oublier) :')
+    // LA PORTEE EST DITE ICI, et c'est le seul endroit ou l'utilisateur apprend
+    // ce que son jeton autorise — sans quoi il decouvrirait en lisant le code
+    // pourquoi son application n'ecrit pas.
+    console.log('[dsh-remote] NOUVEAU JETON D APPAREIL, PORTEE ' + portee.toUpperCase() + ' (a saisir une fois dans l application, puis oublier) :')
     console.log('[dsh-remote] ' + nouveau)
+    if (portee === PORTEE_LECTURE) {
+      console.log('[dsh-remote] ce jeton LIT sans pouvoir ecrire. Pour autoriser l ecriture, relancer avec DSH_REMOTE_PORTEE=ecriture et un jeton neuf (supprimer l enregistrement ' + CLE_JETON + ' du coffre).')
+    }
     return nouveau
   }
 
@@ -607,6 +663,36 @@ export function apply(ctx, config) {
     return true
   }
 
+  /**
+   * La portée refuse-t-elle cette écriture ? Rend `true` si la requête est
+   * REFUSÉE (et la réponse envoyée).
+   *
+   * POURQUOI ELLE EST SÉPARÉE DE `autoriser`. Les routes d'écriture vivent dans
+   * le même gestionnaire que celles de lecture (`/v1/session/<id>/<action>`) :
+   * le jeton y est déjà vérifié une fois pour toutes, et le contrôle de portée
+   * doit donc pouvoir s'appliquer SEUL, dans la branche qui écrit.
+   *
+   * LE CORPS PORTE UNE RAISON DISTINCTE de `origine refusee` (même code 403) :
+   * le client lit ce champ, et deux causes différentes ne doivent pas produire
+   * le même message.
+   */
+  const refuserSiLectureSeule = (req, res) => {
+    if (portee === PORTEE_ECRITURE) return false
+    envoyer(res, 403, {
+      erreur: 'jeton en lecture seule',
+      portee,
+      detail: "ce jeton autorise la lecture, pas l ecriture dans le harness. Relancer le harness avec DSH_REMOTE_PORTEE=ecriture pour obtenir un jeton qui ecrit (l enregistrement " + CLE_JETON + ' doit etre supprime pour qu un nouveau jeton soit tire).',
+    })
+    tracer(req, 403, 'portee ' + portee)
+    return true
+  }
+
+  /** Barrière complète d'une route qui écrit : jeton, puis portée. */
+  const autoriserEcriture = (req, res) => {
+    if (!autoriser(req, res)) return false
+    return !refuserSiLectureSeule(req, res)
+  }
+
   const tracer = (req, code, complement = '') => {
     if (options.journaliser === false) return
     console.log('[dsh-remote] ' + req.method + ' ' + String(req.url).split('?')[0] + ' -> ' + code + (complement.length > 0 ? ' ' + complement : ''))
@@ -635,6 +721,10 @@ export function apply(ctx, config) {
         hote: process.env.HOSTNAME ?? null,
         acces: identite(req),
         versionDsh: versionHarness(),
+        // La portée du jeton, dite TELLE QUELLE : c'est ce qui permet à
+        // l'application d'expliquer « ce jeton lit sans écrire » plutôt que de
+        // laisser croire à une panne.
+        portee,
         capacites: {
           sessions: true,
           journal: true,
@@ -647,10 +737,13 @@ export function apply(ctx, config) {
           // n'ont AUCUNE session ? Sans cette capacite, le client deduit ses
           // espaces des sessions, ce qui est le comportement d'avant.
           espaces: registreEspaces() !== null,
-          ecriture: controleurEcriture() !== null,
+          // L'ÉCRITURE DÉPEND DE DEUX CHOSES : que le service soit monté, ET que
+          // le jeton porte la portée. Un client qui lit `false` ne propose pas de
+          // composeur — la règle du dépôt : un bouton sans effet est un mensonge.
+          ecriture: portee === PORTEE_ECRITURE && controleurEcriture() !== null,
           // Annuler le tour en cours. Meme service que l'ecriture : un client qui
           // lit `false` ne propose pas de bouton « Arreter » qui ne ferait rien.
-          annulation: controleurEcriture() !== null,
+          annulation: portee === PORTEE_ECRITURE && controleurEcriture() !== null,
           // L'hote sait-il dire qu'une session ATTEND une decision humaine ?
           // Annonce a part de `approbations` : ici on ne fait que SIGNALER
           // l'attente, jamais y repondre.
@@ -830,6 +923,9 @@ export function apply(ctx, config) {
           envoyer(res, 405, { erreur: 'methode non autorisee' })
           return tracer(req, 405)
         }
+        // LA PORTÉE SE VÉRIFIE AVANT TOUTE ACTION, et après la méthode : une
+        // requête mal formée se refuse sans révéler l'état du droit d'écriture.
+        if (refuserSiLectureSeule(req, res)) return
         // Le service est resolu ICI, a la requete. Voir `controleurEcriture` :
         // fourni tardivement, il serait `undefined` pour toujours si on le
         // lisait au chargement du plugin.
@@ -931,6 +1027,9 @@ export function apply(ctx, config) {
       // `keepInbox: true` par le controleur, donc ce qui attend son tour attend
       // toujours.
       if (action === 'annuler') {
+        // Même barrière que l'écriture : annuler un tour MODIFIE l'état du
+        // harness, et un jeton en lecture seule ne le fait pas.
+        if (refuserSiLectureSeule(req, res)) return
         if (req.method !== 'POST') {
           envoyer(res, 405, { erreur: 'methode non autorisee' })
           return tracer(req, 405)
