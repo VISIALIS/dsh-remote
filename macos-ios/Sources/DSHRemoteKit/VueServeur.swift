@@ -74,7 +74,13 @@ struct VueServeur: View {
           .foregroundStyle(serveur.enLigne ? Color.accentColor : Color.secondary)
           .frame(width: 40)
         VStack(alignment: .leading, spacing: 6) {
-          Text(serveur.nom).font(.title2)
+          // LE NOM N'EST PAS RÉPÉTÉ ICI. Il est déjà dans la barre de navigation
+          // sur iPhone, et dans la BARRE DE TITRE DE LA FENÊTRE sur macOS — où
+          // `NavigationSplitView` reprend le titre de la colonne de détail.
+          // Constaté sur capture : « MacMini » s'écrivait deux fois, à quarante
+          // points d'écart, et la seconde ligne coûtait la place d'un constat du
+          // diagnostic. L'identité de la bande, c'est l'icône, l'état et
+          // l'adresse.
           PastilleDeMachine(description: etat)
         }
         Spacer(minLength: 8)

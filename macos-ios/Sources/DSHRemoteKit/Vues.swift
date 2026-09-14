@@ -173,6 +173,12 @@ public struct VuePrincipale: View {
     }
     .sheet(isPresented: $adresseOuverte) {
       FeuilleAdresse(modele: modele)
+        #if os(iOS)
+          // UNE ADRESSE, UN JETON, DEUX BOUTONS : la moitié d'un écran suffit, et
+          // laisser la liste visible derrière évite de perdre le contexte. La
+          // feuille peut monter en plein écran quand le clavier s'ouvre.
+          .presentationDetents([.medium, .large])
+        #endif
     }
     .task {
       if modele.jetonSaisi.isEmpty, let local = CoffreDuHarness.jetonDeLaMachine() {
@@ -893,8 +899,17 @@ struct IconeServeur: View {
       // La légende dit l'état RÉEL : « hôte » pour la machine interrogée, et
       // « pas de DSH » pour celle dont la sonde a montré qu'elle ne répondra
       // pas. Réservée en place (`opacity`) pour que les icônes restent alignées.
+      //
+      // ELLE EST EN `.caption2`, ET NON EN 9 POINTS. Neuf points est sous le
+      // minimum que la directive donne pour du texte utile — onze sur iOS, dix sur
+      // macOS —, et c'est la SEULE ligne qui dit « pas de DSH » : la rendre
+      // illisible revient à ne pas la dire. Deux lignes sont autorisées parce que
+      // la vignette fait 68 points de large, et qu'un mot long vaut mieux coupé
+      // que rapetissé.
       Text(legende)
-        .font(.system(size: 9))
+        .font(.caption2)
+        .multilineTextAlignment(.center)
+        .lineLimit(2)
         .foregroundStyle(.tertiary)
         .frame(width: 68)
         .opacity(legende.isEmpty ? 0 : 1)
@@ -1123,11 +1138,15 @@ struct BarreRecherche: View {
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 9)
-    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-    .overlay {
-      RoundedRectangle(cornerRadius: 12)
-        .strokeBorder(.quaternary, lineWidth: 1)
-    }
+    // UN SEUL FOND, ET PAS DEUX. Le champ portait une matière (`.regularMaterial`)
+    // POSÉE SUR une bande elle aussi en matière (`.bar`), plus un contour : trois
+    // épaisseurs pour un champ de recherche, et c'est exactement ce que la
+    // documentation du SDK 26 demande d'éviter — les fonds maison derrière les
+    // barres recouvrent le verre du système au lieu de le laisser faire.
+    //
+    // Le champ prend donc le même dessin que celui du composeur, qui n'a jamais
+    // eu ce défaut : un fond discret, sans matière propre, sur la bande unique.
+    .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
     .padding(.horizontal, 16)
     // La barre FLOTTE au-dessus du contenu, avec de l'air : collée à la
     // dernière ligne, elle se lisait comme une ligne de plus sur le prototype.
