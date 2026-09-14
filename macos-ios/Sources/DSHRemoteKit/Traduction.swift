@@ -36,17 +36,104 @@ public enum Traduction {
     table(langue).map { Set($0.keys) }
   }
 
-  /// La table d'une langue, lue depuis le paquet de la BIBLIOTHÈQUE.
+  /// LE PAQUET DE RESSOURCES, CHERCHÉ AUX ENDROITS PLAUSIBLES — et pourquoi pas
+  /// `Bundle.module`.
   ///
-  /// POURQUOI ON LA LIT À LA MAIN, ET POURQUOI C'EST UTILE AUSSI AUX TESTS.
-  /// `Bundle.module` est l'accesseur engendré par SwiftPM pour les ressources de
-  /// cette cible : c'est le seul endroit où les tables sont copiées, et le seul
-  /// que les deux chaînes de construction — SwiftPM pour macOS, Xcode pour iOS —
-  /// alimentent pareillement.
+  /// DÉFAUT RÉEL, MESURÉ. Le paquet macOS installé ne contenait AUCUNE table de
+  /// traduction : le script d'empaquetage copiait le binaire et l'icône, pas le
+  /// `<Paquet>_<Cible>.bundle` où vivent les `.strings`. L'anglais ne tenait donc
+  /// qu'à un CHEMIN ABSOLU du dossier de construction — le repli de l'accesseur
+  /// engendré par SwiftPM :
+  ///
+  ///     let buildPath = "/Users/<qui-a-compile>/.build/…/DSHRemote_DSHRemoteKit.bundle"
+  ///
+  /// Sur la machine qui avait compilé, tout allait bien. Ailleurs, `L()` et `T()`
+  /// retombaient sur la CLÉ — c'est-à-dire sur la phrase française : une
+  /// application annoncée bilingue s'affichait en français, sans erreur.
+  ///
+  /// ET CE N'EST PAS SEULEMENT LA LECTURE DES TABLES QUI EN DÉPEND : `L()` et
+  /// `T()` y passaient AUSSI (`bundle: .module`), donc le plantage arrivait au
+  /// premier mot traduit — au lancement de l'application, sur une machine où le
+  /// dossier de construction n'existe pas. Reproduit, trace à l'appui.
+  ///
+  /// POURQUOI ON NE PEUT PAS SE CONTENTER DE `Bundle.module`, ET POURQUOI CE N'EST
+  /// PAS SEULEMENT UNE QUESTION DE COPIE. L'accesseur cherche d'abord à la RACINE
+  /// du `.app`, seul endroit d'où il accepte un voisinage de `Contents/` — or
+  /// `codesign` REFUSE un paquet dont la racine porte autre chose que `Contents/`
+  /// (« unsealed contents present in the bundle root », mesuré). La bonne place
+  /// dans un paquet signé est `Contents/Resources/`, que l'accesseur ne regarde
+  /// pas. On cherche donc soi-même, dans l'ordre, et on n'échoue JAMAIS : sans
+  /// tables, l'application parle français — c'est le repli documenté, pas un
+  /// plantage.
+  private static let paquetDeRessources: Bundle? = {
+    let nom = "DSHRemote_DSHRemoteKit.bundle"
+    let principaux = Bundle.main
+    var candidats: [URL] = []
+    // 1. `Contents/Resources/` — la place CORRECTE dans un `.app` signé. Sur iOS,
+    //    le paquet est plat et `resourceURL` est sa racine : c'est aussi la bonne
+    //    réponse.
+    if let ressources = principaux.resourceURL {
+      candidats.append(ressources.appendingPathComponent(nom))
+    }
+    // 2. La racine du paquet, et le dossier du binaire : ce que SwiftPM engendre
+    //    pour un exécutable nu (`swift run`).
+    candidats.append(principaux.bundleURL.appendingPathComponent(nom))
+    candidats.append(principaux.bundleURL.deletingLastPathComponent().appendingPathComponent(nom))
+
+    // 3. LE DOSSIER DE CONSTRUCTION, DÉDUIT DU CHEMIN DE CE FICHIER — pour
+    //    `swift test` et `swift run`, où `Bundle.main` n'est PAS dans l'arbre du
+    //    paquet (mesuré : c'est le `xctest` de la chaîne d'outils). On ne peut pas
+    //    se servir de `Bundle.module` à la place : son repli est un `fatalError`,
+    //    donc un plantage au premier mot traduit — précisément ce que cette
+    //    fonction existe pour éviter.
+    //
+    //    Ces candidats ne valent que sur une machine qui a les SOURCES : ailleurs
+    //    ils ne trouvent rien, et l'application parle français. C'est le repli
+    //    voulu, et il est silencieux pour l'utilisateur d'un paquet correct.
+    let racine = URL(fileURLWithPath: #filePath)  // …/Sources/DSHRemoteKit/Traduction.swift
+      .deletingLastPathComponent()  // …/Sources/DSHRemoteKit
+      .deletingLastPathComponent()  // …/Sources
+      .deletingLastPathComponent()  // …/<racine du paquet>
+    var deDeveloppement: [URL] = []
+    for architecture in ["arm64-apple-macosx", "x86_64-apple-macosx"] {
+      for configuration in ["debug", "release"] {
+        deDeveloppement.append(
+          racine.appendingPathComponent(".build/\(architecture)/\(configuration)/\(nom)"))
+      }
+    }
+
+    for candidat in candidats + deDeveloppement {
+      // `fileExists` ÉVITE DE DEMANDER À `Bundle` UN CHEMIN QUI N'EXISTE PAS : sur
+      // un paquet installé ailleurs, les quatre candidats de développement
+      // échouent, et c'est le cas NORMAL — pas une anomalie à signaler.
+      guard FileManager.default.fileExists(atPath: candidat.path) else { continue }
+      if let paquet = Bundle(url: candidat) { return paquet }
+    }
+    return nil
+  }()
+
+  /// LE PAQUET OÙ LIRE UNE PHRASE — celui qu'on a résolu, sinon le paquet principal.
+  ///
+  /// POURQUOI CE REPLI EST LE PAQUET PRINCIPAL, ET PAS `Bundle.module`. L'accesseur
+  /// engendré par SwiftPM **plante** (`fatalError`) quand ni la racine du `.app` ni
+  /// le dossier de construction ne portent le paquet de ressources — reproduit :
+  /// `L()` appelée au lancement, `EXC_BREAKPOINT` dans
+  /// `resource_bundle_accessor.swift:12`. Une traduction manquante ne doit pas tuer
+  /// l'application : elle doit la faire parler français, ce qui est exactement ce
+  /// qui se passe quand on cherche dans le paquet principal — la CLÉ est la phrase
+  /// française (voir l'en-tête de ce fichier).
+  static var paquet: Bundle { paquetDeRessources ?? .main }
+
+  /// La table d'une langue, lue depuis le paquet de ressources.
+  ///
+  /// Rend `nil` — et l'appelant retombe alors sur la clé — quand le paquet est
+  /// absent ou incomplet : c'est le repli documenté, et il vaut mieux que mourir
+  /// au lancement pour une traduction manquante.
   private static func table(_ langue: String) -> [String: String]? {
-    guard let chemin = Bundle.module.path(forResource: langue, ofType: "lproj"),
-      let paquet = Bundle(path: chemin),
-      let url = paquet.url(forResource: "Localizable", withExtension: "strings"),
+    guard let paquet = paquetDeRessources,
+      let chemin = paquet.path(forResource: langue, ofType: "lproj"),
+      let dossier = Bundle(path: chemin),
+      let url = dossier.url(forResource: "Localizable", withExtension: "strings"),
       let lue = NSDictionary(contentsOf: url) as? [String: String]
     else { return nil }
     return lue
@@ -71,7 +158,7 @@ public enum Traduction {
 /// La clé EST la phrase française (voir `Traduction`) : ce qui se lit dans le
 /// code est ce qui s'affiche.
 public func T(_ cle: String.LocalizationValue) -> Text {
-  Text(String(localized: cle, bundle: .module))
+  Text(String(localized: cle, bundle: Traduction.paquet))
 }
 
 /// La CHAÎNE d'une clé, localisée — pour les endroits qui prennent un `String`.
@@ -83,5 +170,5 @@ public func T(_ cle: String.LocalizationValue) -> Text {
 /// aussi ce qu'il faut au modèle, dont les messages sont construits en `String`
 /// avant d'être affichés.
 public func L(_ cle: String.LocalizationValue) -> String {
-  String(localized: cle, bundle: .module)
+  String(localized: cle, bundle: Traduction.paquet)
 }

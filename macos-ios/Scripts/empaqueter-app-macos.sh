@@ -48,6 +48,31 @@ mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$binaire" "$bundle/Contents/MacOS/DSHRemoteMac"
 cp "$icns" "$bundle/Contents/Resources/DSHRemote.icns"
 
+# ── LES TABLES DE TRADUCTION, SANS LESQUELLES L'ANGLAIS EST MORT ──────────────
+#
+# DÉFAUT RÉEL, TROUVÉ EN VÉRIFIANT LE PAQUET INSTALLÉ : il ne contenait AUCUN
+# `Localizable.strings`. L'anglais ne tenait donc qu'à un CHEMIN ABSOLU du
+# dossier de construction, que l'accesseur engendré par SwiftPM utilise en repli
+# (« /Users/<qui-a-compile>/.build/… ») : sur cette machine, tout allait bien ;
+# ailleurs, `L()` et `T()` retombaient sur la clé, donc sur le français, sans
+# erreur ni trace.
+#
+# POURQUOI `Contents/Resources/` ET NON LA RACINE. L'accesseur de SwiftPM cherche
+# à la racine du `.app` — et `codesign` REFUSE alors le paquet : « unsealed
+# contents present in the bundle root », mesuré. Un paquet signé ne tolère que
+# `Contents/` à sa racine. Côté code, `Traduction` cherche donc lui-même, en
+# commençant par `Contents/Resources/` (voir `paquetDeRessources`).
+#
+# La copie a lieu AVANT la signature, plus bas, pour qu'elle couvre les tables.
+ressources="$(dirname "$binaire")/DSHRemote_DSHRemoteKit.bundle"
+if [[ -d "$ressources" ]]; then
+  cp -R "$ressources" "$bundle/Contents/Resources/DSHRemote_DSHRemoteKit.bundle"
+  echo "[macos] tables de traduction : $(find "$bundle/Contents/Resources/DSHRemote_DSHRemoteKit.bundle" -name '*.strings' | wc -l | tr -d ' ') fichier(s)"
+else
+  echo "[macos] ATTENTION : paquet de ressources introuvable ($ressources)" >&2
+  echo "[macos]   l'application s'affichera en francais seulement (repli sur les cles)" >&2
+fi
+
 # Info.plist minimal, mais pas décoratif :
 #   - `CFBundleIconFile` est ce qui donne une icône dans le Dock ;
 #   - `LSMinimumSystemVersion` évite un lancement sur un système trop ancien ;
