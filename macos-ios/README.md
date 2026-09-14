@@ -480,10 +480,10 @@ fixture l'imbriquait — l'identifiant décodé était « (inconnu) ».
 
 **DEUX LECTURES DU MÊME CONTENU.** Le propriétaire a tranché : « en fait les
 étapes pour la page détail, c'est un diagnostic de santé ». Sur la page d'un
-serveur, les quatre lignes **constatent** l'état d'une machine — on veut tout
-savoir d'un coup, rien n'est verrouillé, et chaque étape non franchie porte sa
-méthode. Sur la page « Ajouter un serveur », elles **listent** un travail à faire,
-dans l'ordre.
+serveur, les cinq lignes **constatent** l'état d'une machine — on veut tout
+savoir d'un coup, et seule celle qui bloque porte sa méthode dépliée. Sur la page
+« Ajouter un serveur », elles **listent** un travail à faire, dans l'ordre, et le
+verrou n'y traverse pas les deux côtés (voir plus bas).
 
 | Page | Lecture | Verrou |
 |---|---|---|
@@ -492,7 +492,7 @@ dans l'ordre.
 
 Le diagnostic s'ouvre sur sa **conclusion** — « Ce serveur est prêt. » / « Il reste
 une étape : « … » » / « Vérification en cours… » — parce que « ce serveur est-il
-utilisable ? » est la question, et les quatre étapes la démonstration. Le titre de
+utilisable ? » est la question, et les cinq étapes la démonstration. Le titre de
 l'étape restante est **cité tel quel** : le mettre en minuscules abîmait les noms
 propres (« Cette machine est visible » devenait « cette machine est visible », constaté sur
 capture).
@@ -549,7 +549,7 @@ Tailscale n'était pas connecté alors que le Mac l'était. L'état est devenu
 **tri-état** (`Bool?`), et l'ancre de vérification mesure avant d'afficher — elle
 court-circuite le démarrage, donc rien n'était constaté.
 
-#### Le parcours d'un serveur : trois étapes, et la méthode pour chacune
+#### Le parcours d'un serveur : cinq étapes, et la méthode pour chacune
 
 Demande du propriétaire : « une ligne de goal à franchir », avec, pour chaque
 étape non remplie, la méthodologie pour y arriver. La page d'un serveur montre
@@ -561,15 +561,36 @@ donc un **parcours** — et non plus seulement un diagnostic.
 | 2. Cette machine est visible | elle est en ligne sur le tailnet, donc la découverte la propose | un FAIT de Tailscale (`Online`), lu, jamais mesuré par l'application |
 | 3. Le port de DSH est ouvert | quelque chose répond sur son port 80, publié par `tailscale serve` | la sonde : un `404` prouve que le port est ouvert |
 | 4. Le plugin `dsh-remote` est installé | DSH Remote y répond | la sonde : `200` ou `401` |
+| 5. **Cet appareil est appairé** | il a son propre jeton pour cette machine | le TROUSSEAU, pour cet hôte — et un refus (`401`) le dit aussi |
 
-**LA PREMIÈRE ÉTAPE A ÉTÉ AJOUTÉE APRÈS COUP**, à la demande du propriétaire :
-« j'ai oublié un goal avant, le fait que Tailscale est connecté ». Elle manquait
-effectivement — sur un iPhone sans Tailscale, les trois autres ne peuvent pas être
-franchies, et le parcours commençait pourtant par elles. Quand elle n'est pas
-franchie, **les suivantes passent à « inconnue »** : une liste de machines peut
-dater d'avant la coupure, et une sonde avoir répondu il y a une minute — affirmer
-quoi que ce soit depuis un appareil qui ne peut plus rien joindre serait parler du
-passé.
+**LA CINQUIÈME ÉTAPE A RÉPARÉ LE PIRE MENSONGE DE L'APPLICATION.** La sonde ne
+partait pas sans jeton : il y avait, dans `sonderLesServeurs`, une garde
+`guard jeton.count == 43` dont la raison — « sans jeton, aucune sonde n'est
+possible » — était **fausse**. `Sonde.interroger` compte déjà un `401` comme
+« DSH est là », puisqu'un jeton refusé PROUVE que le service a répondu. Le prix
+de la garde : un appareil non appairé ne sondait rien, publiait un verdict VIDE,
+et la vignette en concluait « pas de DSH » — donc envoyait installer un plugin
+**déjà installé** sur une machine parfaitement prête. C'est le cas le plus
+fréquent : on installe l'application sur un téléphone, le Mac tourne depuis
+longtemps. La page se contredisait même à l'intérieur d'elle-même : la pastille
+affirmait « pas de DSH », la conclusion disait « Vérification en cours… ».
+
+Ce que la machine a, c'est DSH ; ce qui manque est ailleurs, et le mot le dit
+maintenant : **« à appairer »** (vert — la machine va bien) ou **« jeton refusé »**
+(orange — le secret rangé n'est pas celui de cette machine). La distinction est
+dans le modèle (`ModeleApp.etatAppairage(pour:)`), pas dans la vue, et
+`EtatAppairage` porte trois cas — `appaire`, `absent`, `refuse` — parce que les
+deux derniers n'ont pas le même remède.
+
+**LA PREMIÈRE ÉTAPE AVAIT ÉTÉ AJOUTÉE DE LA MÊME FAÇON**, à la demande du
+propriétaire : « j'ai oublié un goal avant, le fait que Tailscale est connecté ».
+Elle manquait effectivement — sur un iPhone sans Tailscale, les trois autres ne
+peuvent pas être franchies, et le parcours commençait pourtant par elles. Quand
+elle n'est pas franchie, **les trois du milieu passent à « inconnue »** : une
+liste de machines peut dater d'avant la coupure, et une sonde avoir répondu il y a
+une minute — affirmer quoi que ce soit depuis un appareil qui ne peut plus rien
+joindre serait parler du passé. **L'appairage, lui, ne se déduit pas du réseau** :
+le jeton est rangé ici, ou il ne l'est pas — un tailnet coupé ne l'efface pas.
 
 **ON N'ACCUSE LE PLUGIN QUE SI QUELQU'UN A RÉPONDU.** Un `404` prouve que le port
 est ouvert, donc que ce qui manque est le plugin. Port fermé, ou échec
@@ -590,35 +611,65 @@ n'envoie donc personne publier un port sur un Mac éteint, et la ligne porte
 qu'avec la méthode complète. De même, une erreur qui n'explique rien (délai, DNS)
 ne fait pas conclure que le port est fermé.
 
+**LA CONCLUSION SE LIT SUR LA FRONTIÈRE, PAS SUR UN COMPTE.** C'était le second
+défaut, et il tenait au premier : la conclusion comptait les étapes « à faire » et,
+quand il n'y en avait aucune, annonçait « Vérification en cours… » — indéfiniment,
+sans jamais nommer ce qui manquait. Elle nomme maintenant la première étape non
+franchie quand elle est « à faire » (« Il reste une étape : « Cet appareil est
+appairé » »), et ne compte que s'il y en a plusieurs. Quand c'est une étape
+INCONNUE qui bloque, le doute l'emporte : on ne peut rien affirmer des suivantes.
+
 **ON N'OUTILLE QUE CE QUI RESTE.** Une étape franchie n'affiche ni explication ni
-commande : elles noieraient celle qui bloque. Et parmi les étapes non franchies, seule la
-PREMIÈRE porte sa méthode dépliée : c'est la seule exécutable maintenant, les autres
-supposent la précédente franchie. Leur marche à suivre existe toujours, derrière
-« Méthode » — trois jeux de commandes à l'écran noyaient celle qui compte.
+commande : elles noieraient celle qui bloque. Et parmi les étapes non franchies,
+seule la PREMIÈRE porte sa méthode dépliée : c'est la seule exécutable maintenant,
+les autres supposent la précédente franchie. Leur marche à suivre existe toujours,
+derrière « Méthode » — trois jeux de commandes à l'écran noyaient celle qui compte.
 
-**UNE EXPLICATION SUIT SON ÉTAT.** Les quatre explications étaient écrites au présent de
-l'étape FRANCHIE, et les deux copies de la liste — appareil hors tailnet, machine jugée —
-les répétaient telles quelles. Sur un Mac éteint, la page lisait donc, sous un titre
-déclarant l'étape « à faire » : « Il est en ligne sur le tailnet, donc la découverte le
-propose ». Constaté sur capture, et signalé par le propriétaire : « l'étape 2 si le serveur
-est off-line, le message doit le prendre en compte ». Une explication qui contredit son
-propre état fait douter du diagnostic entier, et envoie chercher au mauvais endroit.
+**DEUX RÈGLES DE VERROU, PARCE QUE LES DEUX LISTES NE DISENT PAS LA MÊME CHOSE.**
+Sur un **diagnostic**, on juge une machine : la frontière est MESURÉE, et les cinq
+étapes forment une chaîne — on n'installe pas le plugin avant d'avoir publié le
+port, et on ne scanne pas le QR code d'un panneau qui n'existe pas encore. Sur une
+**liste de travail** (la page d'ajout), le Mac n'a même pas encore d'adresse : ses
+étapes sont une liste, pas un verdict, et **seules les étapes DU MÊME CÔTÉ se
+précèdent**. Sans cette nuance, le seul geste que l'appareil a à faire ici —
+prendre le QR code — restait grisé derrière un travail qui se fait ailleurs, sur
+une machine que l'application ne connaît pas. Le verrou DIT d'ailleurs quel numéro
+le bloque (`etapeQuiBloque`) : l'appairage n'étant précédé que par Tailscale,
+écrire « après l'étape 4 » aurait renvoyé vers une étape déjà franchie.
 
-Les textes vivent maintenant dans une **fabrique unique** (`EtapesServeur.etape(_:_:)`), que
-les deux sorties de `etapes(...)` partagent — c'était la duplication qui avait laissé la
-phrase fausse à deux endroits. Trois formes, une par état : pour une étape **franchie**, ce
-que l'état EST ; pour une étape **à faire**, le constat INVERSE, sans la marche à suivre (la
-méthode s'affiche juste en dessous, et l'écrire deux fois dilue celle qui compte) ; pour une
-étape **inconnue**, ce que l'étape DEMANDE, puisqu'on ne peut rien constater. Deux tests
-l'éprouvent : sur l'étape 2 hors ligne, sur l'appareil hors tailnet, et sur les étapes 3 et
-4 quand c'est le port ou le plugin qui manque.
+**LE REPÈRE « SUR LE MAC » N'EXISTE QUE SUR LA LISTE DE TRAVAIL.** Sur la page
+d'une machine, le titre dit déjà de laquelle il s'agit. Sur la page d'ajout, les
+étapes du Mac et celles de l'appareil se mélangent sans qu'aucune machine soit
+nommée — et c'est ainsi qu'on finit par taper une commande sur le mauvais
+ordinateur. Le repère coûte deux mots, et il les vaut ; VoiceOver le lit aussi,
+puisqu'un lecteur d'écran ne voit pas la couleur discrète qui distingue les deux.
+
+**UNE EXPLICATION SUIT SON ÉTAT.** Les explications étaient écrites au présent de
+l'étape FRANCHIE, et les deux copies de la liste — appareil hors tailnet, machine
+jugée — les répétaient telles quelles. Sur un Mac éteint, la page lisait donc, sous
+un titre déclarant l'étape « à faire » : « Il est en ligne sur le tailnet, donc la
+découverte le propose ». Constaté sur capture, et signalé par le propriétaire :
+« l'étape 2 si le serveur est off-line, le message doit le prendre en compte ». Une
+explication qui contredit son propre état fait douter du diagnostic entier, et
+envoie chercher au mauvais endroit.
+
+Les textes vivent dans une **fabrique unique** (`EtapesServeur.etape(_:_:)`), que
+les deux sorties de `etapes(...)` partagent — c'était la duplication qui avait
+laissé la phrase fausse à deux endroits. Trois formes, une par état : pour une
+étape **franchie**, ce que l'état EST ; pour une étape **à faire**, le constat
+INVERSE, sans la marche à suivre (la méthode s'affiche juste en dessous, et
+l'écrire deux fois dilue celle qui compte) ; pour une étape **inconnue**, ce que
+l'étape DEMANDE, puisqu'on ne peut rien constater.
 
 Vérifié par capture, sur les deux cas qui comptent : MacMini (port ouvert, plugin
 absent → étapes 1 et 2 vertes, étape 3 à faire avec le bloc `cordis.patch.yml` à
 copier) et un Mac hors ligne (étape 1 à faire avec `tailscale status` / `tailscale
-up`, les suivantes « à vérifier »).
+up`, les suivantes « à vérifier »). Depuis la cinquième étape, une troisième
+capture a été prise sur cette machine même (`--page-seule`) : les cinq constats
+franchis, la conclusion « Ce serveur est prêt. », et les réglages repliés.
 
-8 tests couvrent le calcul des états, dont les quatre cas d'ignorance.
+11 tests couvrent le calcul des états, dont les cas d'ignorance, la cinquième
+étape et les deux règles de verrou.
 
 #### Quand la machine répond mais n'a pas le plugin : le dire, et donner la démarche
 
@@ -627,15 +678,47 @@ donner la démarche ». Deux choses, donc — un CONSTAT nommé, et une PROCÉDU
 
 Le cas mesuré sur MacMini : son port 80 est publié (la racine répond « dsh web authentication
 required »), mais `/dsh-remote/v1/sante` rend **404**. Ce n'est ni le tailnet, ni
-`tailscale serve`, ni le jeton : c'est le plugin qui n'y est pas chargé. La page l'annonce
-ainsi, puis donne les trois étapes :
+`tailscale serve`, ni le jeton : c'est le plugin qui n'y est pas chargé.
 
-1. avoir le dépôt `dsh-plugins` sur ce Mac, et y prendre `plugins/dsh-remote` ;
-2. le **déclarer** dans `~/.dsh/profiles/web/cordis.patch.yml` — le bloc YAML se copie d'un
-   appui, avec `CHEMIN/DU/DEPOT` en espace réservé (sur l'autre Mac, le dépôt n'est pas au
-   même endroit, et un chemin d'exemple recopié tel quel échouerait sans dire pourquoi) ;
-3. **relancer** le harness — ici `dsh web`. Le code d'un plugin n'est pas rechargé à chaud :
-   sans redémarrage, l'ancien processus continue de répondre.
+**LA DÉMARCHE EST DEVENUE UN PROMPT, ET ELLE A CHANGÉ DE NATURE.** Elle portait le bloc YAML
+entier, recopié du README du plugin — deux copies d'une même vérité, dont celle-ci décrit une
+ligne de configuration dont dépend tout le reste. La page affiche maintenant **une consigne
+courte, à coller dans une session DSH du Mac** :
+
+> Installe le plugin `dsh-remote` dans le profil web de ce harness : clone
+> `https://github.com/VISIALIS/dsh-remote`, puis suis la section « Chargement » de
+> `plugin/README.md` — c'est elle qui porte la ligne exacte à ajouter à
+> `~/.dsh/profiles/web/cordis.patch.yml`. Ne redémarre pas le harness : le profil recharge
+> ce patch à chaud. Vérifie ensuite que `curl … /dsh-remote/v1/sante` rend 401 ou 200, et
+> dis-moi où se trouve la fonction d'appairage dans l'interface web.
+
+Trois choses ont motivé ce changement, et chacune est un défaut de la version précédente :
+
+1. **ELLE DEMANDAIT DE REDÉMARRER LE HARNESS, ET C'ÉTAIT FAUX** — sur son point décisif. Le
+   profil est en `patchReload: live` : ajouter la ligne au patch est rechargé **à chaud**, et
+   les routes apparaissent en quelques secondes (mesuré, écrit au README du plugin). Ce qui
+   reste à constater — P11 du même README — est l'apparition du **bouton** du panneau sans
+   redémarrage : d'où la phrase qui demande de recharger l'onglet, puis de relancer `dsh web`
+   SI le bouton n'est toujours pas là. On ne fait donc redémarrer personne « au cas où » ;
+   pour une PREMIÈRE installation, il n'existe d'ailleurs aucun « ancien processus qui
+   continue de répondre » — l'argument était faux au moment où on le lisait.
+2. **ELLE ÉTAIT ÉCRITE SUR L'APPAREIL, POUR UNE MACHINE OÙ L'ON N'EST PAS.** C'est le Mac qui
+   doit cloner, déclarer et vérifier. La consigne le dit maintenant en toutes lettres (« sur
+   le Mac qui héberge DSH — pas sur cet appareil »), et c'est l'agent de ce Mac qui exécute :
+   il lit la section du README **dans la version du dépôt qu'il vient de cloner**, donc à
+   jour par construction.
+3. **IL MANQUAIT L'INSTALLATION DE DSH ELLE-MÊME.** Une machine qui n'a jamais eu DSH ne rend
+   pas de `404` : rien n'écoute, et c'est l'étape 3 qui s'affiche. Sa démarche commence donc
+   désormais par la commande vérifiée à la source — la page officielle du harness, « Quick
+   start : Install Node.js, then launch the Web UI with npx » :
+
+   ```sh
+   npx @deepseek-ai/dsh web
+   ```
+
+   Le README du paquet publié `@deepseek-ai/dsh` ne contient **aucune** section d'installation :
+   c'est la page du harness qui fait foi, et c'est écrit ici pour que personne ne la cherche
+   dans le paquet.
 
 Et la vérification qui marche **sans jeton** : `curl` sur `/dsh-remote/v1/sante` rend **401**
 quand aucun jeton n'est présenté, **200** quand il l'est. Les deux prouvent que le plugin est
@@ -815,9 +898,9 @@ rendue au même endroit, **au moment où une machine ne répond pas**. La carte,
 occupait le haut de la colonne en permanence, y compris quand tout allait bien.
 
 **CE QUI A FAILLI SE PERDRE, ET QUI ÉTAIT DÉJÀ CASSÉ.** Sur un appareil neuf, la carte
-portait l'unique bouton « Installer Tailscale ». Or la page qui donne les quatre étapes
+portait l'unique bouton « Installer Tailscale ». Or la page qui donne les cinq étapes
 n'était atteignable que par la vignette « Ajouter » du carrousel… **qui ne s'affiche pas
-quand la liste est vide** : l'appareil qui a le plus besoin des quatre étapes — celui qui
+quand la liste est vide** : l'appareil qui a le plus besoin des cinq étapes — celui qui
 n'a rien — n'y avait aucun accès. Le trou existait avant le retrait ; il serait devenu
 visible après. La liste vide offre donc maintenant **« Ajouter un serveur »**, en premier,
 au-dessus de « Saisir une adresse ».
@@ -840,27 +923,46 @@ français, Workspaces = Espaces de travail ». La RÈGLE #1 du dépôt le demand
 travail. Le protocole, lui, garde ses noms : `/v1/espaces` était déjà français, et
 `workspaceRegistry` reste l'API du harness.
 
-##### La page est structurée en quatre bandes, et rien ne s'y répète
+##### La fiche est structurée en quatre bandes — et c'est la MÊME pour les deux pages
 
-Constat du propriétaire : « la page détail des serveurs est moche, tu peux faire quelque
-chose ? À commencer par mieux structurer. » Le constat était juste, et la cause était
-**structurelle**, pas esthétique : six blocs de même poids s'empilaient dans l'ordre où le
-code avait grandi — en-tête, adresse, jeton, interrupteurs, bandeau d'erreur, diagnostic —,
-si bien que le DIAGNOSTIC, raison d'être de la page, se lisait en dernier : sur un iPhone,
-il fallait faire défiler le jeton d'un hôte et deux réglages pour savoir ce qui n'allait
-pas. Le même fait y était dit quatre fois (« hors ligne » sous le titre, dans le bandeau
-rouge, dans le résumé du parcours, et par le titre de l'étape 2), et deux avertissements de
-jeton passaient avant toute information sur la machine — dont un **faux**, puisque l'état
-« hors ligne » était pris pour un jeton refusé (voir `.jetonInvalide`).
+Deux constats du propriétaire, à un mois d'intervalle, et le second a commandé la refonte :
 
-L'ordre suit maintenant les questions qu'on se pose, et rien d'autre :
+> « la page détail des serveurs est moche, tu peux faire quelque chose ? À commencer par
+> mieux structurer. »
+
+> « Je souhaite revoir la page détail des serveurs qui est trop lourde et qui a l'historique
+> dépassé du projet. C'est surtout la partie diagnostic qui me pose problème. Cette page
+> n'est pas assez standardisée : ajouter un serveur devrait garder le même patron. »
+
+Le premier constat était **structurel**, pas esthétique : six blocs de même poids s'empilaient
+dans l'ordre où le code avait grandi — en-tête, adresse, jeton, interrupteurs, bandeau
+d'erreur, diagnostic —, si bien que le DIAGNOSTIC, raison d'être de la page, se lisait en
+dernier. Le second a montré ce qui restait : **deux mises en page pour un seul contenu** —
+`VueServeur` empilait identité, diagnostic, réglages et détail technique, `VueAjoutServeur`
+enchaînait un en-tête, les étapes de l'appareil, deux actions et un bloc replié pour le Mac —
+et **deux jeux de méthodes** qui avaient déjà divergé sur les deux premières étapes.
+
+Il n'y a plus qu'une vue, `FicheServeur`, et `serveur == nil` y veut dire « Ajouter un
+serveur ». L'ordre suit les questions qu'on se pose, et rien d'autre :
 
 | Bande | Contenu | Ce qu'elle règle |
 |---|---|---|
-| 1. Identité | nom, **une** pastille d'état, adresse copiable, **une** action | l'état se dit une fois, et l'action proposée peut aboutir |
-| 2. Diagnostic | la conclusion, puis les quatre constats | la démonstration, avec **une seule** méthode dépliée : celle de l'étape qui bloque |
-| 3. Réglages de cette machine | jeton, suivi, filtre — **repliés** | chaque réglage reste à l'endroit qui le rend vrai, sans s'interposer entre l'adresse et le verdict |
+| 1. Verdict | pastille, **la conclusion en une phrase**, adresse copiable, **une** action (ou, en mode ajout, la phrase qui sépare les deux mondes et les deux recours) | l'état se dit une fois, et l'action proposée peut aboutir |
+| 2. Parcours | les **cinq** constats, sans titre | la démonstration, avec **une seule** méthode dépliée : celle de l'étape qui bloque — ou, sur une liste de travail, celle de **cet appareil** |
+| 3. Réglages de cette machine | jeton d'appoint, suivi, filtre — **repliés** | chaque réglage reste à l'endroit qui le rend vrai, sans s'interposer entre l'adresse et le verdict |
 | 4. Détail technique | l'erreur brute — **repliée**, et seulement si rien ne l'explique | une phrase en français n'est pas un détail technique |
+
+**LES BANDES 3 ET 4 N'EXISTENT PAS EN MODE AJOUT** : il n'y a pas encore de machine dont on
+puisse régler le jeton ni lire l'erreur. Et **la conclusion a quitté la bande 2 pour la
+bande 1** : elle était sous un titre « Diagnostic », ce qui obligeait à lire quatre constats
+pour apprendre ce que la page avait à dire.
+
+**CE QUI A ÉTÉ RETIRÉ, ET POURQUOI.** Trois choses, toutes mesurées à l'écran ou dans le
+code : le titre « Diagnostic » (la conclusion est juste au-dessus, et la première ligne
+s'annonce elle-même) ; le paragraphe du jeton expliquant qu'il ne s'affiche qu'une fois —
+c'est vrai, mais le chemin normal est devenu l'appairage, et le champ n'est plus qu'une
+porte de service ; et la marche à suivre dupliquée dans les deux pages, qui n'existe plus
+qu'une fois (voir plus bas).
 
 **UNE SEULE PASTILLE, ET UN SEUL VOCABULAIRE.** La page disait l'état de la machine à
 quatre endroits, et avec d'autres mots que le panneau latéral — « hors ligne sur le
@@ -1067,11 +1169,14 @@ au **même** objet — un espace et ses sessions, une explication et sa commande
 donc masqués sur macOS (`.sansSeparateurMac()`), et **conservés sur iOS**, où une liste
 encartée les utilise pour séparer des réglages distincts.
 
-**Non vérifié à l'écran, et dit comme tel** : `screencapture` exige l'autorisation
-« Enregistrement de l'écran », refusée dans cet environnement. La modification emploie
-l'API de ligne documentée (`listRowSeparator`), appliquée à chaque ligne et non au
-conteneur — posée sur un conteneur, elle serait sans effet, ce qui est pire qu'un
-séparateur.
+**VÉRIFIÉ DEPUIS, ET LA REMARQUE QUI SUIVAIT ÉTAIT FAUSSE.** Ce paragraphe disait la
+modification « non vérifiée à l'écran » parce que `screencapture` exige l'autorisation
+« Enregistrement de l'écran », « refusée dans cet environnement ». Elle ne l'est pas :
+le 14 septembre 2026, deux captures macOS ont été prises sans intervention
+(`--page-seule`, `--page-seule --ajout`), et elles ont servi à juger la refonte de la
+fiche. La modification emploie l'API de ligne documentée (`listRowSeparator`),
+appliquée à chaque ligne et non au conteneur — posée sur un conteneur, elle serait sans
+effet, ce qui est pire qu'un séparateur.
 
 ### Installer sur l'iPhone : ce qui bloque, mesuré
 
@@ -1596,7 +1701,8 @@ Les libellés **nomment le QR code**, parce que c'est le mot qu'on cherche.
 seconde correction, demandée après usage : « les différentes étapes devraient être
 focus uniquement sur le fait que Tailscale est configuré, et ensuite la possibilité
 de prendre un QR code ; toutes les autres étapes sont dépendantes du plugin sur le
-harness ». C'était juste : une seule des quatre étapes se **constate** depuis
+harness ». C'était juste — et elles sont désormais DEUX : Tailscale, et l'appairage,
+qui se constate dans le trousseau. Les trois autres se **constatent** depuis
 l'appareil, et l'application **vérifie déjà** les trois autres (le diagnostic « Ce
 serveur est prêt », sur la page de la machine). Les enseigner au même niveau
 faisait apprendre au remote un travail qui n'est pas le sien. Le modèle porte
@@ -1764,10 +1870,10 @@ non tenue :
 | Élément | État |
 |---|---|
 | Les **phrases de l'interface** (titres, boutons, libellés, infobulles, libellés VoiceOver) | **traduites** |
-| Les **messages construits par le modèle** — états d'une machine (« hors ligne », « pas de DSH »), constats du diagnostic en quatre étapes, refus d'écriture, alertes | **traduits** : **141 clés** au total, et la parité des deux tables est tenue par un test |
+| Les **messages construits par le modèle** — états d'une machine (« hors ligne », « à appairer », « jeton refusé »), constats du diagnostic en cinq étapes, refus d'écriture, alertes | **traduits** : **206 clés** au total, et la parité des deux tables est tenue par un test — plus un contrôle dans `scripts/verifier.sh`, qui relit le CODE pour attraper une clé absente des DEUX tables |
 | Les **langues de l'application** sont déclarées (`CFBundleDevelopmentRegion = fr`, `CFBundleLocalizations = [fr, en]`) | **fait**, sur les deux plateformes |
-| Les phrases **interpolées** avec un nombre (`« 3 sessions »`, `« 42 évts »`, `« 6 · 1 en attente »`) | **restent en français** : elles demandent des règles de pluriel, donc un traitement à part |
-| L'**aide sous le champ d'adresse** (`ConseilAdresse`) | **reste en français** : ses trois phrases sont des littéraux multi-lignes, que le générateur ne sait pas encore relire |
+| Les phrases **interpolées** avec un nombre | **restent en français**, et il n'en reste que quatre : `« N évts »`, les deux titres d'alerte (`« N sessions attendent votre réponse »`) et les âges abrégés — le pluriel demande un traitement à part. Les phrases du DIAGNOSTIC, elles, ne sont plus dans ce cas : elles sont composées de morceaux traduits, seuls les nombres étant interpolés (`EtapesServeur.resume`), et un test les compare désormais dans la langue de l'application |
+| L'**aide sous le champ d'adresse** (`ConseilAdresse`) | **reste en français** : ses deux avertissements ATS sont des littéraux multi-lignes, que le générateur — qui relit le code LIGNE À LIGNE — ne sait pas encore voir |
 | Les **âges abrégés** (« 5min », « 3h », « 2mois ») et les messages **venus de l'hôte** (motifs de refus du plugin) | **restent en français** — les uns sont des abréviations, les autres appartiennent au protocole |
 
 **Trois choses mesurées en chemin, et qui expliquent la forme du code.**
@@ -2254,8 +2360,10 @@ redécouvre pas comme des oublis.
   niveaux : `dsh-remote-ctl prompt`, l'essai d'intégration `ecritureReelle` contre
   un hôte réel, et les tests d'encodage/décodage des types d'écriture.
 - **Le rendu de l'interface macOS.** `screencapture` exige l'autorisation
-  « Enregistrement de l'écran ». L'application **compile et démarre sans planter**
-  (processus vivant après 6 s, fenêtre 1100×720 présente), mais son rendu n'a pas été
+  « Enregistrement de l'écran » — **accordée sur cette machine depuis le 14 septembre
+  2026**, et deux captures de la fiche ont été prises ce jour-là. Avant cela,
+  l'application **compilait et démarrait sans planter**
+  (processus vivant après 6 s, fenêtre 1100×720 présente), mais son rendu n'avait pas été
   observé — alors que celui de la version iOS l'a été, par `simctl io screenshot`.
   Précision ajoutée après mesure : **le projet Xcode ne produit pas d'application
   macOS native** (`SDKROOT = iphoneos`, `SUPPORTED_PLATFORMS = "iphoneos
@@ -2487,10 +2595,10 @@ Sources/
 │   ├── CibleTactile.swift # la cible de 44 pt des boutons d'icône
 │   ├── Vues.swift         # liste des sessions
 │   ├── VueJournal.swift   # journal d'une session
-│   ├── VueServeur.swift   # page d'un serveur — quatre bandes : identité, diagnostic, réglages, détail
-│   ├── ParcoursDesEtapes.swift  # les quatre constats, en diagnostic ou en objectifs
+│   ├── FicheServeur.swift # LA page — quatre bandes : verdict, parcours, réglages, détail technique
+│   │                      #   `serveur == nil` en fait la page « Ajouter un serveur »
+│   ├── ParcoursDesEtapes.swift  # les cinq constats, en diagnostic ou en objectifs
 │   ├── Demarches.swift    # publier le port, installer le plugin : les deux procédures partagées
-│   ├── VueAjoutServeur.swift  # page « Ajouter un serveur »
 │   ├── FeuilleAdresse.swift  # adresse ET jeton — le seul écran qu'un appareil neuf puisse ouvrir
 │   ├── VueEcriture.swift  # composeur (écrire, interrompre)
 │   └── VueReglages.swift  # cet appareil, alertes, diagnostic, réinitialisation, versions
@@ -2606,10 +2714,11 @@ inactive.
 | **Les Réglages ne contiennent plus rien d'une machine** | capture iPhone : une phrase qui l'explique, puis les deux interrupteurs de sessions (préférences d'affichage, communes à toutes les machines) |
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
-| **La page dit que le plugin manque, et donne la démarche** | capture iPhone de la page de MacMini (alors que l'app vise une autre machine) : constat nommé, 3 étapes, bloc `cordis.patch.yml` copiable, vérification `curl` |
-| **Le diagnostic de santé d'un serveur** | captures iPhone : conclusion (« Il reste une étape : « … » ») puis les quatre constats, sans verrou ; sur un Mac hors ligne, l'étape 2 avec ses commandes et les suivantes « à vérifier » |
+| **La page dit que le plugin manque, et donne la démarche** | capture iPhone de la page de MacMini (alors que l'app vise une autre machine) : constat nommé, la consigne à coller copiable, la vérification `curl` |
+| **La démarche n'exige plus de redémarrage** | le README du plugin, tableau « Ce que `patchReload: live` recharge » (mesuré) : la LIGNE du patch est rechargée à chaud, seul un changement de CODE exige un processus neuf |
+| **Le diagnostic de santé d'un serveur** | captures iPhone : conclusion (« Il reste une étape : « … » ») puis les cinq constats, sans verrou ; sur un Mac hors ligne, l'étape 2 avec ses commandes et les suivantes « à vérifier » |
 | **Les étapes suivantes sont grisées, et lisibles** | capture iPhone : frontière (étape 2) avec sa méthode dépliée, étapes 3 et 4 grisées avec un cadenas, « après l'étape N », leur explication, et « Voir la méthode » — le détail n'est plus caché, seulement replié |
-| **La page d'un serveur est structurée en quatre bandes** | 3 captures macOS (`--page-seule`) : prêt, pas de DSH (MacMini), hors ligne — l'état est dit UNE fois, l'action proposée peut aboutir, les réglages sont repliés |
+| **La page d'un serveur est structurée en quatre bandes, et partagée avec l'ajout** | captures macOS (`--page-seule`) : prêt, pas de DSH (MacMini), hors ligne — l'état est dit UNE fois, l'action proposée peut aboutir, les réglages sont repliés ; **et deux captures après la refonte** (une machine prête, `--ajout --page-seule`) : mêmes bandes, mêmes constats, la seule différence étant le mode |
 | **Les mots de l'état sont partagés** | 2 tests sur `EtatMachine` : la vignette abrège, la page dit la phrase entière, et les deux portent le même ton ; la conclusion suit l'état |
 | **Tailscale a quitté le panneau latéral** | capture macOS (la colonne commence aux serveurs) et capture iPhone NEUF — conteneur vidé : la liste vide offre « Ajouter un serveur », qui porte l'étape 1 et son bouton d'installation |
 | **« Espaces de travail », et non « Workspaces »** | captures macOS et iPhone : le titre de la section est en français, comme le reste de l'interface |
