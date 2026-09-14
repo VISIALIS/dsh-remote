@@ -20,6 +20,11 @@ private final class ClientParAdresse: ClientDSH, @unchecked Sendable {
   init(_ resultat: Result<Sante, Error>) { self.resultat = resultat }
 
   func verifierSante() async throws -> Sante { try resultat.get() }
+  func echangerAppairage(nom: String) async throws -> AppareilAppaire {
+    // Cette sonde ne mesure que la poignee de main : l'echange n'a rien a y faire,
+    // et le refuser franchement vaut mieux que rendre un faux appareil.
+    throw ErreurRemote.reponseInattendue(code: 404)
+  }
   func listerSessions(limite: Int?) async throws -> ListeSessions {
     throw ErreurRemote.reponseInattendue(code: 500)
   }

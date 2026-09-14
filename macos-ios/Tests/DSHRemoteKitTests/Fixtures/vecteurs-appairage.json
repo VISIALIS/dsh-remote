@@ -1,0 +1,156 @@
+{
+  "_pourquoi": [
+    "VECTEURS PARTAGÉS ENTRE LES DEUX MOITIÉS. Ce fichier est lu par",
+    "plugins/dsh-remote/tests/appairage.test.js (JavaScript) ET par",
+    "packages/dsh-remote-swift/Tests/DSHRemoteKitTests/AppairageTests.swift",
+    "(Swift). C'est la seule chose qui empêche les deux analyseurs de diverger",
+    "en silence : sans lui, une moitié pourrait accepter ce que l'autre refuse,",
+    "et l'utilisateur ne le verrait qu'au moment de l'appairage, chez lui.",
+    "",
+    "TOUS LES SECRETS SONT FICTIFS ET LE DISENT (RÈGLE #0, interdit #8). Les",
+    "hôtes sont sous .test, un domaine réservé qui ne peut résoudre nulle part."
+  ],
+  "hote": "mac-mini-essai.exemple.test",
+  "seuils": {
+    "jeton": 32,
+    "code": 22
+  },
+  "valides": [
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "hote": "mac-mini-essai.exemple.test",
+      "genre": "jeton",
+      "version": "v1",
+      "secret": "JETONFICTIF-a-remplacer-0000000000000000000",
+      "adresse": "http://mac-mini-essai.exemple.test"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/code/v1/CODEFICTIF000000000000",
+      "hote": "mac-mini-essai.exemple.test",
+      "genre": "code",
+      "version": "v1",
+      "secret": "CODEFICTIF000000000000",
+      "adresse": "http://mac-mini-essai.exemple.test"
+    },
+    {
+      "charge": "dshremote://mac-mini-2.exemple.test/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "hote": "mac-mini-2.exemple.test",
+      "genre": "jeton",
+      "version": "v1",
+      "secret": "JETONFICTIF-a-remplacer-0000000000000000000",
+      "adresse": "http://mac-mini-2.exemple.test"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/JETONFICTIF000000000000000000000",
+      "hote": "mac-mini-essai.exemple.test",
+      "genre": "jeton",
+      "version": "v1",
+      "secret": "JETONFICTIF000000000000000000000",
+      "adresse": "http://mac-mini-essai.exemple.test"
+    }
+  ],
+  "refuses": [
+    {
+      "charge": "http://mac-mini-essai.exemple.test/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "motif": "schema",
+      "pourquoi": "l'URL du navigateur n'est pas une charge utile d'appairage"
+    },
+    {
+      "charge": "dshremote://127.0.0.1/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "motif": "hote-local",
+      "pourquoi": "la boucle locale du Mac n'est joignable par aucun autre appareil"
+    },
+    {
+      "charge": "dshremote://localhost/code/v1/CODEFICTIF000000000000",
+      "motif": "hote-local",
+      "pourquoi": "même refus, écrit autrement"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test:3080/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "motif": "hote",
+      "pourquoi": "le port est implicite (80) : un port dans la charge utile est un contrat différent"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/cle/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "motif": "genre",
+      "pourquoi": "un genre inconnu se refuse en le disant, jamais en l'essayant"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v2/JETONFICTIF-a-remplacer-0000000000000000000",
+      "motif": "version",
+      "pourquoi": "une version inconnue est un défaut d'accord, pas un jeton invalide"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/court",
+      "motif": "secret",
+      "pourquoi": "un secret tronqué (presse-papiers, scan partiel)"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/code/v1/CODEFICTIF00000000000",
+      "motif": "secret",
+      "pourquoi": "un code d'appairage d'un caractère de moins que le tirage"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/",
+      "motif": "secret",
+      "pourquoi": "secret absent"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000/suite",
+      "motif": "forme",
+      "pourquoi": "un segment de plus : la charge utile est mal formée, pas un cas particulier"
+    },
+    {
+      "charge": "dshremote:///jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "motif": "hote",
+      "pourquoi": "hôte vide"
+    },
+    {
+      "charge": "dshremote://-mauvais.exemple.test/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "motif": "hote",
+      "pourquoi": "un nom d'hôte ne commence pas par un tiret"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/JETON FICTIF-000000000000000000000000000",
+      "motif": "secret",
+      "pourquoi": "un espace dans le secret : il a été recopié à la main, pas collé"
+    },
+    {
+      "charge": "",
+      "motif": "forme",
+      "pourquoi": "rien à analyser"
+    },
+    {
+      "charge": "bonjour",
+      "motif": "forme",
+      "pourquoi": "du texte quelconque — le cas le plus fréquent d'un scan qui vise à côté"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/JETONFICTIF00000000000000000000",
+      "motif": "secret",
+      "pourquoi": "un caractere SOUS le plancher du jeton : le filet de troncature"
+    }
+  ],
+  "limites": [
+    {
+      "charge": "dshremote://mauvais-.exemple.test/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "accepte": true,
+      "pourquoi": "un tiret avant un point passe : la regle est « commence et finit alphanumerique », PAS une regle DNS par etiquette. Les deux moities doivent accepter PAREIL — c'est la divergence qui coute, pas la laxite. Le nom vient de Tailscale, il resout ou il ne resout pas."
+    },
+    {
+      "charge": "dshremote://mauvais.exemple.test-/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "accepte": false,
+      "pourquoi": "finir par un tiret est refuse : la borne est explicite des deux cotes"
+    },
+    {
+      "charge": "dshremote://a.b/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "accepte": true,
+      "pourquoi": "un nom court reste un nom"
+    },
+    {
+      "charge": "dshremote://a/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
+      "accepte": true,
+      "pourquoi": "une seule etiquette suffit : rien n'exige un point"
+    }
+  ]
+}

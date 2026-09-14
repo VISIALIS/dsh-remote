@@ -262,3 +262,40 @@ func resumeDuDiagnostic() {
     tailnetDeLAppareil: nil, enLigne: true, sertDsh: nil, cause: nil)
   #expect(EtapesServeur.resume(enCours) == "Vérification en cours…")
 }
+
+// ── DE QUI RELÈVE CHAQUE ÉTAPE ────────────────────────────────────────────────
+//
+// POURQUOI CES TESTS EXISTENT. La page « Ajouter un serveur » présentait les
+// quatre étapes sur le même plan, comme un travail à faire au même endroit. C'est
+// faux : sur l'application distante, UNE SEULE se constate depuis l'appareil, et
+// les trois autres appartiennent au Mac — que l'application vérifie déjà toute
+// seule. Le jour où cette répartition se déplace (une étape ajoutée, une
+// responsabilité changée), c'est la MISE EN PAGE qui change sans que rien ne le
+// dise : ces tests la tiennent.
+
+@Test("Une seule étape relève de l'appareil, et c'est Tailscale")
+func responsabiliteDeLAppareil() {
+  for etapes in [EtapesServeur.etapesDAjout(tailnetDeLAppareil: nil), EtapesServeur.etapesDAjout(tailnetDeLAppareil: true)] {
+    let appareil = EtapesServeur.deLAppareil(etapes)
+    #expect(appareil.count == 1, "l'application ne peut constater qu'une chose : Tailscale sur cet appareil")
+    #expect(appareil.first?.numero == 1)
+    #expect(appareil.first?.titre.contains("Tailscale") == true)
+  }
+}
+
+@Test("Les trois autres étapes relèvent du Mac, et aucune ne se perd")
+func responsabiliteDuHote() {
+  // LA RÉPARTITION DOIT COUVRIR TOUTES LES ÉTAPES : une étape qui ne serait ni de
+  // l'appareil ni du Mac disparaîtrait des deux blocs, donc de l'écran.
+  for etapes in [
+    EtapesServeur.etapesDAjout(tailnetDeLAppareil: true),
+    EtapesServeur.etapesDAjout(tailnetDeLAppareil: false),
+    EtapesServeur.etapes(tailnetDeLAppareil: true, enLigne: true, sertDsh: true, cause: nil),
+  ] {
+    let appareil = EtapesServeur.deLAppareil(etapes)
+    let hote = EtapesServeur.deLHote(etapes)
+    #expect(appareil.count + hote.count == etapes.count, "une étape n'est rattachée à personne")
+    #expect(hote.count == 3)
+    #expect(hote.map(\.numero) == [2, 3, 4])
+  }
+}

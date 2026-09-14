@@ -1781,6 +1781,136 @@ public final class ModeleApp {
   static let messageJetonIllisible =
     "Rien à coller : le presse-papier est vide, ou ne contient pas un jeton exploitable (moins de 20 caractères)."
 
+  // MARK: - Appairage (le QR du panneau web, scanné ou collé)
+
+  /// LE NOM DE CET APPAREIL, tel qu'il sera proposé à l'hôte.
+  ///
+  /// POURQUOI IL EST ENVOYÉ, ET POURQUOI IL N'EST PAS CRU SUR PAROLE. Depuis que
+  /// chaque appareil a SON jeton, la liste des appareils appairés sert à en
+  /// révoquer un : sans nom, elle n'afficherait que des empreintes, et personne
+  /// ne saurait lequel couper. L'hôte BORNE ce nom (longueur, caractères de
+  /// commande, commandes bidi) parce qu'il vient du réseau — ici on se contente
+  /// de proposer le meilleur nom disponible.
+  ///
+  /// SUR IOS 16 ET APRÈS, `UIDevice.current.name` rend un nom GÉNÉRIQUE
+  /// (« iPhone ») tant que l'application n'a pas l'entitlement du nom d'appareil
+  /// attribué par l'utilisateur. Ce n'est pas un défaut à réparer : c'est une
+  /// limite d'iOS, et elle est écrite ici pour que personne ne cherche pourquoi
+  /// tous les iPhone s'appellent « iPhone » dans la liste.
+  public static var nomDeCetAppareil: String {
+    #if canImport(UIKit)
+      return UIDevice.current.name
+    #elseif canImport(AppKit)
+      return Host.current().localizedName ?? "Mac"
+    #else
+      return "appareil"
+    #endif
+  }
+
+  /// APPAIRER PUIS SE CONNECTER — le geste complet, celui du scan et du collage.
+  @discardableResult
+  public func appairerEtConnecter(_ texte: String) async -> Bool {
+    guard await appairer(texte) else { return false }
+    await connecter()
+    return true
+  }
+
+  /// APPAIRER — un jeton se POSE, un code s'ÉCHANGE.
+  ///
+  /// POURQUOI LES DEUX GENRES SONT ICI, ET PAS DANS LA VUE. Une vue qui
+  /// enchaînerait « analyser », « échanger si c'est un code », « poser le jeton »
+  /// et « se connecter » laisserait croire qu'un appairage appliqué mais non
+  /// connecté est un état normal. Ce n'en est pas un : l'utilisateur a scanné
+  /// pour se connecter.
+  ///
+  /// LE REFUS EST PARLANT, et il vient de l'analyse (sept motifs) ou de l'hôte
+  /// (code expiré, déjà utilisé, hôte trop ancien). Jamais un « échec » nu : les
+  /// causes ne se réparent pas pareil.
+  @discardableResult
+  public func appairer(_ texte: String) async -> Bool {
+    switch Appairage.analyser(texte) {
+    case .failure(let motif):
+      signaler(motif.message)
+      return false
+    case .success(let charge):
+      switch charge.genre {
+      case .jeton:
+        // LE JETON EST POSÉ TEL QUEL : c'est celui du terminal, ou celui d'une
+        // version antérieure du panneau.
+        return appliquer(hote: charge.hote, secret: charge.secret)
+      case .code:
+        return await echanger(charge)
+      }
+    }
+  }
+
+  /// ÉCHANGE UN CODE, PUIS POSE LE JETON REÇU.
+  ///
+  /// POURQUOI L'ÉCHANGE PASSE PAR LE TRANSPORT INJECTÉ, et pas par un appel
+  /// direct : c'est ce qui rend le chemin éprouvable sans réseau, et c'est déjà
+  /// la règle de tout le reste du modèle.
+  private func echanger(_ charge: Appairage.Charge) async -> Bool {
+    do {
+      let appareil = try await transport.echangerAppairage(
+        adresse: charge.adresse, code: charge.secret, nom: ModeleApp.nomDeCetAppareil)
+      Trace.siActive(
+        "[appairage] echange accepte vers \(charge.hote) : jeton de \(appareil.jeton.count) caracteres, portee \(appareil.portee ?? "inconnue")")
+      return appliquer(hote: charge.hote, secret: appareil.jeton)
+    } catch {
+      // LE MESSAGE VIENT DU TYPE D'ERREUR, qui distingue un code expiré d'un hôte
+      // trop ancien : deux causes, deux remèdes.
+      signaler(String(describing: error))
+      return false
+    }
+  }
+
+  /// POSE L'ADRESSE ET LE JETON ENSEMBLE — dans cet ordre, et il est mesuré.
+  ///
+  /// `definirAdresse` RECHARGE le jeton gardé pour la nouvelle machine (chaque
+  /// hôte a le sien). Engager le secret AVANT aurait donc été le remplacer par
+  /// celui de l'ancienne cible.
+  @discardableResult
+  private func appliquer(hote: String, secret: String) -> Bool {
+    definirAdresse("http://" + hote)
+    enregistrerJeton(secret)
+    Trace.siActive("[appairage] applique vers \(hote), jeton de \(secret.count) caracteres")
+    return true
+  }
+
+  /// LE TEXTE D'APPAIRAGE DU PRESSE-PAPIERS, s'il y en a un.
+  ///
+  /// Rend `nil` quand le presse-papiers est vide — l'appelant le DIT, comme pour
+  /// le jeton : « rien ne s'est passé » ne doit jamais être une réponse possible
+  /// à un appui.
+  nonisolated static func appairageDuPressePapiers() -> String? {
+    let valeur: String?
+    #if canImport(UIKit)
+      valeur = UIPasteboard.general.string
+    #elseif canImport(AppKit)
+      valeur = NSPasteboard.general.string(forType: .string)
+    #else
+      valeur = nil
+    #endif
+    guard let brut = valeur else { return nil }
+    let nettoye = brut.trimmingCharacters(in: .whitespacesAndNewlines)
+    return nettoye.isEmpty ? nil : nettoye
+  }
+
+  /// Ce qu'on dit quand le presse-papiers ne contient pas d'appairage.
+  static var messageAppairageIllisible: String {
+    L("Rien à coller : le presse-papier est vide. Copiez le texte affiché sous le QR code du panneau « Appairer un appareil ».")
+  }
+
+  /// Colle ET appaire depuis le presse-papiers.
+  @discardableResult
+  public func collerAppairage() async -> Bool {
+    guard let brut = ModeleApp.appairageDuPressePapiers() else {
+      signaler(ModeleApp.messageAppairageIllisible)
+      return false
+    }
+    return await appairer(brut)
+  }
+
   /// Oublie le serveur mémorisé, adresse comprise.
   ///
   /// Sans cela, une adresse mémorisée par erreur ne pourrait être retirée qu'en

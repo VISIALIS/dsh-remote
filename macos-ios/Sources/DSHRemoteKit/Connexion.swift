@@ -21,6 +21,10 @@ public protocol ClientDSH: Sendable {
   func lireSession(_ identifiant: String, demande: DemandeJournal) async throws -> JournalSession
   func envoyerPrompt(_ identifiant: String, demande: DemandePrompt) async throws -> ReponsePrompt
   func annuler(_ identifiant: String) async throws -> ReponseAnnulation
+  /// ÉCHANGER UN CODE D'APPAIRAGE — la seule méthode appelée AVANT d'avoir un
+  /// jeton : le client est alors construit avec le CODE comme porteur, et cette
+  /// route-là est la seule qui l'accepte.
+  func echangerAppairage(nom: String) async throws -> AppareilAppaire
 }
 
 extension RemoteClient: ClientDSH {}
@@ -107,6 +111,23 @@ public struct Connexion: Sendable {
       sessions: liste.sessions,
       reponses: liste.total ?? liste.sessions.count,
       client: patient)
+  }
+
+  /// ÉCHANGER UN CODE D'APPAIRAGE CONTRE UN JETON PROPRE À CET APPAREIL.
+  ///
+  /// POURQUOI CE N'EST PAS `joindre` AVEC UN AUTRE NOM. Les autres appels
+  /// supposent un jeton DÉJÀ valide ; celui-ci est le seul qui s'exécute AVANT
+  /// d'en avoir un — le code joue le rôle de porteur, et une seule route
+  /// l'accepte. Il ne fait donc AUCUNE autre lecture : ni poignée de main, ni
+  /// liste de sessions. Appairer n'est pas se connecter, et mélanger les deux
+  /// ferait dépendre l'appairage de tout ce qui peut échouer après lui.
+  ///
+  /// LE DÉLAI EST CELUI DE LA QUESTION COURTE : l'hôte écrit un enregistrement
+  /// dans son coffre, ce qui prend quelques millisecondes. Un délai long ici ne
+  /// servirait qu'à faire attendre quelqu'un devant un code qui expire.
+  public func echangerAppairage(adresse: String, code: String, nom: String) async throws -> AppareilAppaire {
+    let client = try fabrique(adresse, code, Self.delaiSante)
+    return try await client.echangerAppairage(nom: nom)
   }
 
   /// La liste des machines du tailnet, publiée par l'hôte déjà joint.

@@ -44,6 +44,24 @@
   <array>
     <string>tailscale</string>
   </array>
+  <!--
+    POURQUOI LA CAMERA EST DEMANDEE, ET RIEN DE PLUS.
+
+    L'appairage se fait en scannant le QR code que le panneau du harness affiche
+    sur le Mac (« Appairer un appareil »). SANS CETTE CLE, iOS TERMINE
+    l'application au moment ou le scanner s'ouvre : ce n'est pas un refus, c'est
+    un plantage — et il ne se voit qu'a l'usage, jamais a la compilation.
+
+    La description est en francais parce que c'est la langue de developpement du
+    paquet (CFBundleDevelopmentRegion). UNE LOCALISATION ANGLAISE DEMANDERAIT UN
+    InfoPlist.strings dans le paquet d'application : il n'existe pas encore, et
+    la limite est ecrite au README plutot que passee sous silence.
+
+    La camera ne sert QU'A cela : aucune image n'est enregistree, analysee ni
+    transmise. Seul le TEXTE lu est analyse, par `Appairage.analyser`.
+  -->
+  <key>NSCameraUsageDescription</key>
+  <string>Pour scanner le QR code d'appairage affiché par DSH sur votre Mac. Aucune image n'est enregistrée ni transmise.</string>
   <key>UILaunchScreen</key><dict/>
   <key>UIApplicationSceneManifest</key>
   <dict>

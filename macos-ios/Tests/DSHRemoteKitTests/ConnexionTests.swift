@@ -93,6 +93,10 @@ private final class ClientFactice: ClientDSH, @unchecked Sendable {
     noter("annuler")
     throw ErreurRemote.reponseInattendue(code: 500)
   }
+  func echangerAppairage(nom: String) async throws -> AppareilAppaire {
+    noter("echanger:" + nom)
+    throw ErreurRemote.reponseInattendue(code: 500)
+  }
 }
 
 /// Une fabrique qui retient le délai demandé pour chaque client.

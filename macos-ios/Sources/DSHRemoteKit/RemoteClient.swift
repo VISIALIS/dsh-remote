@@ -174,7 +174,23 @@ public actor RemoteClient {
       {
         return .ecritureRefusee
       }
+      // LE TROISIÈME `403` DU PROTOCOLE : celui de l'échange d'un code. Deux
+      // motifs, et ils se réparent de la même façon (redemander un code) — mais
+      // pas comme un refus d'origine, qui est une erreur de CLIENT.
+      // LE MOTIF EST GARDÉ TEL QUEL, ET LE DÉTAIL À PART : c'est le motif qui
+      // identifie la cause (donc le remède traduit), le détail qui l'explique.
+      // Les confondre rendrait la traduction impossible.
+      if let refus = try? JSONDecoder().decode(RefusEcriture.self, from: donnees),
+        let motif = refus.erreur, motif.hasPrefix("code ")
+      {
+        return .appairageRefuse(motif: motif, detail: refus.detail)
+      }
       return .origineRefusee
+    case 404:
+      // Une route d'échange INCONNUE : le plugin d'en face est plus ancien que
+      // cette application. Sur les autres routes, un `404` veut dire « session
+      // inconnue » ; ici, il n'y a pas de session en jeu.
+      return .appairageNonSupporte
     default:
       // L'hôte joint un motif STRUCTURÉ à ses refus (`erreur`, `code`, `detail`).
       // Le perdre ici transformerait « aucun modèle n'est choisi pour cette
@@ -194,6 +210,22 @@ public actor RemoteClient {
     } catch {
       throw ErreurRemote.decodage(String(describing: error))
     }
+  }
+
+  /// ÉCHANGE UN CODE D'APPAIRAGE contre un jeton propre à cet appareil.
+  ///
+  /// LE CODE EST LE PORTEUR : c'est la seule requête de ce client qui s'exécute
+  /// avant qu'un jeton existe. Le corps porte le NOM de l'appareil, borné par
+  /// l'hôte (il finit dans une liste que l'humain lit pour décider quoi révoquer).
+  public func echangerAppairage(nom: String) async throws -> AppareilAppaire {
+    let corps = try JSONSerialization.data(withJSONObject: ["nom": nom])
+    let donnees = try await executer(
+      try requete("/dsh-remote/v1/appairage/echange", methode: "POST", corps: corps))
+    let appareil = try decoder(AppareilAppaire.self, depuis: donnees)
+    guard appareil.protocole == versionProtocoleSupportee else {
+      throw ErreurRemote.versionIncompatible(recue: appareil.protocole, supportee: versionProtocoleSupportee)
+    }
+    return appareil
   }
 
   /// Vérifie que le serveur parle une version que ce client sait lire.

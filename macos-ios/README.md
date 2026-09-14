@@ -25,6 +25,35 @@ L'application réutilise **exactement** la bibliothèque du tool : les vues ne p
 jamais au réseau, elles observent `ModeleApp`. Remplacer le transport ne demande donc
 aucune retouche d'interface.
 
+### Icône : le sifflet arrondi
+
+L'icône retenue le 14 septembre 2026 est une silhouette de sifflet au corps rond,
+avec un bec montant et une encoche. Le dessin est un aplat bleu DeepSeek
+`#4D6BFE`, sans détail supplémentaire. Son contour est défini dans
+[`Scripts/generer-icone.py`](Scripts/generer-icone.py), variante `arrondi`,
+désormais utilisée par défaut.
+
+Le catalogue iOS/iPadOS contient trois PNG de 1024 × 1024 : bleu sur blanc pour
+l'apparence claire, bleu sur fond transparent pour l'apparence sombre et blanc
+sur noir pour le gabarit teinté. Les deux dernières formes suivent les
+[consignes Apple pour le catalogue d'icônes](https://developer.apple.com/documentation/xcode/configuring-your-app-icon).
+Le paquet macOS reprend le même signe dans une tuile arrondie avec marges
+transparentes, exportée en ICNS.
+
+Commandes exécutées depuis la racine du dépôt :
+
+```bash
+python3 packages/dsh-remote-swift/Scripts/generer-icone.py --apercu --icns packages/dsh-remote-swift/.build/macos/DSHRemote.icns
+bash packages/dsh-remote-swift/Scripts/empaqueter-app-macos.sh
+```
+
+Vérifications : aperçu inspecté jusqu'à 40 px ; dimensions, alpha, bleu exact et
+niveaux de gris contrôlés ; dix représentations ICNS réextraites de 16 à 1024 px ;
+paquet macOS reconstruit et signature vérifiée ; compilation du simulateur réussie,
+avec `AppIcon` présent pour les familles iPhone et iPad. Les vérifications du dépôt
+passent : secrets, syntaxe, 83 tests de plugins et 207 tests Swift. Ces commandes
+ne réinstallent pas les copies déjà présentes sur les appareils.
+
 ### Où vit quoi : cinq pièces, et une seule porte sur le disque
 
 `ModeleApp` portait **2 198 lignes et 66 états** : l'état observable, les transitions,
@@ -1500,6 +1529,106 @@ la synchronisation Wi-Fi), l'appairer et faire confiance à cet ordinateur, puis
 **Réglages ▸ Confidentialité et sécurité ▸ Mode développeur** sur l'iPhone. Tant que
 `xcrun devicectl list devices` donne `No devices found`, aucune installation n'est
 possible — c'est un préalable matériel, pas logiciel.
+
+### L'appairage par QR : un geste remplace la recopie
+
+**Ce que ça remplace.** Jusqu'ici, rattacher un appareil demandait deux saisies sur
+deux écrans : l'adresse, puis 43 caractères recopiés d'un terminal où ils ne
+s'affichent **qu'une fois** — une faute de frappe coûtait une rotation de jeton. Le
+panneau « Appairer un appareil » de l'interface web du Mac (voir le plugin
+[`dsh-remote`](../../plugins/dsh-remote/)) affiche un QR code **et** son texte ; les
+deux portent l'adresse et un **code à usage unique de deux minutes**.
+
+| Appareil | Le geste | Pourquoi celui-là |
+|---|---|---|
+| iPhone, iPad | **Scanner le QR code** (`VueScan.swift`, `DataScannerViewController`) | un Mac ne peut pas scanner son propre écran |
+| Mac | **Coller un appairage** — le texte affiché sous le QR | idem, et le presse-papiers est le canal le plus court |
+
+**OÙ LE GESTE SE TROUVE — ET POURQUOI IL A FALLU LE DÉPLACER.** Le premier jet
+l'avait mis dans la feuille « Adresse », en première section, avec ce raisonnement :
+« un appareil neuf n'ouvre que cette feuille ». Il était **faux**, et l'usage l'a dit
+en une phrase : *« sur l'iPhone, je n'ai pas de système avec un QR code »*. Un appareil
+DÉJÀ configuré — le cas de tous les jours — n'a aucune raison d'ouvrir la feuille
+« Adresse », dont le bouton promet d'ailleurs « Saisir une adresse ». Le geste vit
+donc maintenant **là où l'on ajoute un serveur** :
+
+| Écran | Ce qu'on y voit |
+|---|---|
+| « Ajouter un serveur » (`--ajout`) | **Scanner le QR code** (iOS) / **Coller un appairage** (macOS), en bouton plein, juste sous la seule étape qui concerne l'appareil |
+| Aucun serveur joignable | le même bouton, en premier |
+| Feuille « Adresse » | la section reste — c'est le chemin d'un appareil vierge, il n'est pas perdu |
+| Feuille « Appairer un appareil » | le scan, le collage, **et un champ pour renseigner le texte du QR code** (presse-papiers occupé ailleurs, code reçu par message, caméra refusée) |
+
+Les libellés **nomment le QR code**, parce que c'est le mot qu'on cherche.
+
+**LA PAGE « AJOUTER UN SERVEUR » NE PARLE PLUS QUE DE L'APPAREIL —** et c'est une
+seconde correction, demandée après usage : « les différentes étapes devraient être
+focus uniquement sur le fait que Tailscale est configuré, et ensuite la possibilité
+de prendre un QR code ; toutes les autres étapes sont dépendantes du plugin sur le
+harness ». C'était juste : une seule des quatre étapes se **constate** depuis
+l'appareil, et l'application **vérifie déjà** les trois autres (le diagnostic « Ce
+serveur est prêt », sur la page de la machine). Les enseigner au même niveau
+faisait apprendre au remote un travail qui n'est pas le sien. Le modèle porte
+désormais la distinction (`EtapesServeur.Responsable`) et la page en découle :
+
+1. **cet appareil** : « Tailscale est connecté sur cet appareil », et le geste ;
+2. **le Mac** : les trois autres étapes, **repliées** sous « Si le Mac n'est pas
+   encore prêt » — elles restent écrites, parce qu'on est souvent devant le Mac
+   quand on cherche pourquoi rien ne répond, mais elles ne sont plus un préalable. La saisie manuelle reste en dessous, pour le cas où le Mac n'est pas à portée.
+Le collage iOS passe par `PasteButton`, donc **sans bannière** : c'est le système qui
+accorde l'accès, pas nous qui lisons le presse-papiers à l'insu de l'utilisateur.
+
+**L'APPLICATION ÉCHANGE, ELLE NE RANGE PAS LE CODE.** Un code de 22 caractères rangé
+dans le champ du jeton serait envoyé comme jeton porteur, et rendrait un `401` qui
+ferait chercher une panne d'authentification là où il manque un échange. Le modèle
+distingue donc les deux genres : un **jeton** se pose tel quel (c'est celui du
+terminal), un **code** part à `POST /dsh-remote/v1/appairage/echange` — avec le nom
+de l'appareil, sans lequel la liste des appareils n'aurait que des empreintes — et
+c'est le jeton **reçu** qui va au trousseau, par hôte. Si l'échange échoue, **rien**
+n'est rangé : ni l'adresse, ni le jeton, ni le trousseau.
+
+**Trois refus, trois messages.** Le protocole a maintenant trois `403` : origine
+refusée (une erreur de client), écriture refusée (une portée insuffisante), et
+échange refusé — « code expiré » ou « code déjà utilisé ». Les confondre afficherait
+« un client natif ne doit jamais envoyer d'en-tête Origin » à quelqu'un dont le code
+a simplement expiré. Les deux motifs connus sont **traduits** (l'hôte écrit en ASCII
+sans accent, parce que ses messages finissent dans un journal de terminal) ; un motif
+inconnu est affiché tel quel plutôt qu'inventé. Et un `404` sur l'échange dit « cet
+hôte ne sait pas échanger un code : son plugin est plus ancien » — un remède
+différent.
+
+**La caméra est déclarée, et elle ne sert qu'à ça.** `NSCameraUsageDescription` est
+dans `App/Info.plist` : sans cette clé, iOS **termine** l'application à l'ouverture du
+scanner — un plantage, pas un refus, et il ne se voit qu'à l'usage. Aucune image n'est
+enregistrée, analysée ni transmise : seul le **texte** lu est analysé, par
+`Appairage.analyser`. **Limite assumée** : cette phrase est en français seulement, la
+traduire demanderait un `InfoPlist.strings` qui n'existe pas encore.
+
+**Sur simulateur, il n'y a pas de caméra**, et l'application le dit au lieu d'afficher
+un écran noir : la vue annonce « Caméra indisponible » et renvoie au collage, qui fait
+exactement la même chose.
+
+**Le contrat est partagé avec l'hôte**, et c'est ce qui rend le geste sûr : la charge
+utile (`dshremote://<hôte>/<genre>/v1/<secret>`) est construite en JavaScript et
+analysée ici, et **le même fixture** est rejoué des deux côtés
+(`Fixtures/vecteurs-appairage.json`, `AppairageTests.swift` d'un côté,
+`plugins/dsh-remote/tests/appairage.test.js` de l'autre). Une divergence casse un test
+avant d'atteindre un appareil.
+
+**Où l'on révoque un appareil** : dans le panneau du Mac, section « Appareils
+appairés » — jamais depuis l'application, qui n'a pas de route pour cela (un porteur
+de jeton ne doit pas pouvoir expulser les autres). C'est là aussi que la portée
+accordée est annoncée **avant** le scan (« l'appareil recevra un jeton qui LIT sans
+écrire »).
+
+**Ce qui est éprouvé, et ce qui ne l'est pas encore** (RÈGLE #5). Éprouvé sans
+appareil : l'analyse (9 tests, fixture partagé), l'application au modèle et l'échange
+(10 tests : code échangé avec l'adresse et un nom, jeton reçu rangé par hôte, refus
+qui ne change rien), les trois `403` et le `404` (6 tests), la parité des tables de
+traduction, les constructions **macOS** et **iOS simulateur**. **Non éprouvé** : le
+scan depuis la caméra d'un vrai iPhone, et le collage bout en bout depuis le Mac —
+les deux demandent un appareil et un harness redémarré, et la procédure est au README
+du plugin `dsh-remote`.
 
 ### Écriture : répondre à l'agent, et l'interrompre
 

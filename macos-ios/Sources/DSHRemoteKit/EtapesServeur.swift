@@ -98,6 +98,29 @@ public enum EtapesServeur {
     }
   }
 
+  /// DE QUI RELÈVE UNE ÉTAPE — et c'est ce qui décide OÙ elle s'affiche.
+  ///
+  /// POURQUOI CE TYPE EXISTE, ET CE QU'IL CORRIGE. La page « Ajouter un serveur »
+  /// présentait les quatre étapes sur le même plan, comme un travail à faire par
+  /// la même personne au même endroit. C'était faux, et l'usage l'a dit : sur
+  /// l'application distante (macOS ou iOS), **une seule** de ces étapes se
+  /// constate depuis l'appareil — Tailscale y est-il connecté. Les trois autres
+  /// dépendent du Mac qui héberge DSH, et l'application les VÉRIFIE déjà toute
+  /// seule (le diagnostic « Ce serveur est prêt », sur la page de la machine).
+  ///
+  /// Les enseigner au même niveau faisait donc apprendre au remote un travail qui
+  /// n'est pas le sien — et noyait les deux seules choses qu'il a à faire :
+  /// vérifier Tailscale, puis prendre le QR code.
+  public enum Responsable: Equatable, Sendable {
+    /// CET APPAREIL : la seule chose que l'utilisateur peut constater et corriger
+    /// ici, et donc la seule que l'application doit enseigner d'abord.
+    case appareil
+    /// LE MAC QUI HÉBERGE DSH : hors de portée de l'application, et **constaté**
+    /// par la sonde dès qu'une machine répond. Sa méthode reste écrite — elle sert
+    /// quand on est devant le Mac — mais repliée, et jamais en préalable.
+    case hote
+  }
+
   public struct Etape: Equatable, Sendable {
     public let numero: Int
     public let titre: String
@@ -105,13 +128,28 @@ public enum EtapesServeur {
     /// reste à franchir.
     public let explication: String
     public let etat: Etat
+    /// De qui elle relève. Voir `Responsable`.
+    public let responsable: Responsable
 
-    public init(numero: Int, titre: String, explication: String, etat: Etat) {
+    public init(
+      numero: Int, titre: String, explication: String, etat: Etat, responsable: Responsable = .hote
+    ) {
       self.numero = numero
       self.titre = titre
       self.explication = explication
       self.etat = etat
+      self.responsable = responsable
     }
+  }
+
+  /// Les étapes qui concernent CET APPAREIL — une seule, aujourd'hui.
+  public static func deLAppareil(_ etapes: [Etape]) -> [Etape] {
+    etapes.filter { $0.responsable == .appareil }
+  }
+
+  /// Les étapes qui concernent LE MAC qui héberge DSH — les trois autres.
+  public static func deLHote(_ etapes: [Etape]) -> [Etape] {
+    etapes.filter { $0.responsable == .hote }
   }
 
   /// Les quatre étapes, dans l'ordre, pour une machine donnée.
@@ -252,7 +290,9 @@ public enum EtapesServeur {
         explication = L("DSH Remote doit y répondre pour que la machine serve l'application.")
       }
     }
-    return Etape(numero: numero, titre: titre, explication: explication, etat: etat)
+    return Etape(
+      numero: numero, titre: titre, explication: explication, etat: etat,
+      responsable: numero == 1 ? .appareil : .hote)
   }
 
   /// LES ÉTAPES POUR AJOUTER UN SERVEUR — quand aucune machine n'est choisie.
@@ -270,7 +310,8 @@ public enum EtapesServeur {
         titre: L("Tailscale est connecté sur cet appareil"),
         explication:
           "Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre.",
-        etat: tailnetDeLAppareil == nil ? .inconnue : (tailnetDeLAppareil! ? .franchie : .aFaire)),
+        etat: tailnetDeLAppareil == nil ? .inconnue : (tailnetDeLAppareil! ? .franchie : .aFaire),
+        responsable: .appareil),
       Etape(
         numero: 2,
         titre: L("La machine à ajouter est sur le tailnet"),

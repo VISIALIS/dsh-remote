@@ -143,6 +143,12 @@ do {
     print("hôte         : \(sante.hote ?? "—")")
     print("accès        : \(sante.acces ?? "—")")
     print("version DSH  : \(sante.versionDsh ?? "—")")
+    // LA PORTÉE ET LE COMPTE D'APPAREILS SONT AFFICHÉS ICI, et c'est ce qui rend
+    // vraie la phrase du README : « le terminal sait COMBIEN d'appareils sont
+    // appairés ». Sans ces deux lignes, le champ existait dans la réponse sans que
+    // personne ne puisse le lire — une capacité annoncée et jamais montrée.
+    print("portée       : \(sante.portee ?? "inconnue (hôte plus ancien)")")
+    print("appareils    : \(sante.appareils.map(String.init) ?? "inconnu (hôte plus ancien)") appairé(s)")
     print(
       "capacités    : sessions=\(sante.capacites.sessions) journal=\(sante.capacites.journal) flux=\(sante.capacites.flux) écriture=\(sante.capacites.ecriture) annulation=\(sante.capacites.annulation.map(String.init) ?? "inconnu") découverte=\(sante.capacites.decouverte.map(String.init) ?? "inconnu")"
     )

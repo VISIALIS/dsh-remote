@@ -1215,6 +1215,9 @@ struct ServeursVides: View {
   let surAdresse: () -> Void
   /// Ouvre la page « Ajouter un serveur ».
   let surAjout: () -> Void
+  /// La feuille d'appairage — le premier des trois chemins, parce que c'est le
+  /// plus court quand le Mac est à portée.
+  @State private var appairageOuvert = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -1231,6 +1234,25 @@ struct ServeursVides: View {
       // tiennent pas sur un iPhone, et la colonne latérale y est plus étroite
       // encore qu'ailleurs.
       VStack(alignment: .leading, spacing: 8) {
+        // L'APPAIRAGE EN PREMIER, ET C'EST UN ORDRE DÉLIBÉRÉ : quand le Mac est à
+        // portée, c'est UN geste contre quatre étapes expliquées. Le reste des
+        // voies ne disparaît pas — elles servent quand le Mac est ailleurs.
+        Button {
+          appairageOuvert = true
+        } label: {
+          #if os(iOS)
+            Label { T("Scanner le QR code") } icon: { Image(systemName: "qrcode.viewfinder") }
+          #else
+            Label { T("Coller un appairage") } icon: { Image(systemName: "doc.on.clipboard") }
+          #endif
+        }
+        .buttonStyle(.borderedProminent)
+        // LE MODIFICATEUR EST SUR LE BOUTON, PAS DANS LA FERMETURE : entre les
+        // branches d'un `#if`, un modificateur après `#endif` se rattache à la
+        // dernière branche et la compilation échoue (« cannot be used on type
+        // View »). Mesuré, et corrigé ici.
+        .font(.callout)
+
         #if os(iOS)
           // Même mécanique que la vignette « Ajouter » du carrousel : sur iPhone,
           // la page s'EMPILE.
@@ -1238,7 +1260,6 @@ struct ServeursVides: View {
             Label { T("Ajouter un serveur") } icon: { Image(systemName: "plus.square.dashed") }
               .font(.callout)
           }
-          .buttonStyle(.borderedProminent)
           .simultaneousGesture(TapGesture().onEnded { surAjout() })
         #else
           Button {
@@ -1270,7 +1291,10 @@ struct ServeursVides: View {
       }
     }
     .padding(.vertical, 4)
-  }
+      .sheet(isPresented: $appairageOuvert) {
+      FeuilleAppairage(modele: modele)
+    }
+}
 }
 
 // MARK: - Recherche

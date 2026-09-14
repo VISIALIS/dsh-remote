@@ -55,6 +55,7 @@ struct FeuilleAdresse: View {
   var body: some View {
     NavigationStack {
       Form {
+        sectionAppairage
         sectionAdresse
         sectionJeton
         sectionActions
@@ -78,9 +79,40 @@ struct FeuilleAdresse: View {
       // Une adresse de tailnet fait une quarantaine de caractères : la feuille
       // doit être assez large pour l'afficher entière (même mesure que les
       // réglages, même correction). La hauteur a suivi le jeton et ses deux
-      // actions : trois sections ne tiennent plus dans 280 points.
-      .frame(minWidth: 520, idealWidth: 580, minHeight: 460, idealHeight: 500)
+      // actions, puis l'appairage : quatre sections ne tiennent plus dans
+      // 280 points.
+      .frame(minWidth: 520, idealWidth: 580, minHeight: 520, idealHeight: 580)
     #endif
+  }
+
+  // MARK: - 0. L'appairage — le chemin court
+
+  /// L'APPAIRAGE : UN GESTE QUI REMPLIT LES DEUX CHAMPS.
+  ///
+  /// POURQUOI IL EST EN PREMIER. Le panneau « Appairer un appareil », dans
+  /// l'interface web du Mac, affiche un QR code ET son texte ; les deux portent
+  /// l'adresse et le jeton ENSEMBLE. Le scanner (iPhone) ou le collage (Mac, qui
+  /// ne peut pas scanner son propre écran) remplace donc deux saisies — dont
+  /// 43 caractères recopiés d'un terminal où ils ne s'affichent qu'une fois.
+  ///
+  /// LA SAISIE MANUELLE RESTE EN DESSOUS, et elle n'est pas un vestige : elle
+  /// couvre le cas où le Mac n'est pas à portée, où la caméra est refusée, et
+  /// celui d'un jeton déjà connu qu'on veut simplement poser.
+  private var sectionAppairage: some View {
+    Section {
+      // LES DEUX GESTES SONT DANS UNE VUE PARTAGÉE, et c'est une correction : ils
+      // vivaient ici, en pensant qu'un appareil neuf n'ouvrirait que cette
+      // feuille. Vrai pour un appareil VIERGE, faux pour tous les autres — et
+      // l'usage a tranché en une phrase : « sur l'iPhone, je n'ai pas de système
+      // avec un QR code ». La feuille garde la section (le chemin d'un appareil
+      // neuf reste celui-ci), mais l'implémentation n'existe plus qu'une fois.
+      BoutonsAppairage(modele: modele) { fermer() }
+    } header: {
+      T("Appairer")
+    } footer: {
+      T("Le panneau « Appairer un appareil » de l'interface DSH affiche un QR code et le texte qui va avec : le scanner (ou le collage) remplit l'adresse ET le jeton d'un seul geste, puis se connecte.")
+      .fixedSize(horizontal: false, vertical: true)
+    }
   }
 
   // MARK: - 1. L'adresse

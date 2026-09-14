@@ -288,6 +288,21 @@ public struct JournalSession: Sendable, Decodable {
 }
 
 /// Réponse de `GET /v1/sante`.
+/// UN APPAREIL APPAIRÉ, tel que l'hôte le rend après un échange de code.
+///
+/// POURQUOI CE TYPE EXISTE SÉPARÉMENT DE `Sante`. La poignée de main décrit
+/// l'HÔTE ; ceci décrit ce que l'appareil VIENT DE RECEVOIR : un jeton qui lui est
+/// propre. Les confondre ferait entrer un secret dans un type qui circule partout
+/// — et un type qui circule partout finit dans une trace.
+public struct AppareilAppaire: Sendable, Decodable {
+  public let protocole: Int
+  /// LE JETON DE CET APPAREIL. Il va au trousseau, et nulle part ailleurs.
+  public let jeton: String
+  public let portee: String?
+  public let nom: String?
+  public let creeLe: Double?
+}
+
 public struct Sante: Sendable, Decodable {
   public let protocole: Int
   public let nom: String?
@@ -300,6 +315,13 @@ public struct Sante: Sendable, Decodable {
   /// `nil` doit se lire « ne sait pas », jamais « lecture seule ». C'est ce qui
   /// permet à l'écran d'expliquer l'absence d'écriture sans l'inventer.
   public let portee: String?
+  /// COMBIEN D'APPAREILS SONT APPAIRÉS — un compte, jamais une liste.
+  ///
+  /// Optionnel À DESSEIN, comme `portee` : un hôte antérieur à l'appairage ne
+  /// l'envoie pas, et `nil` doit se lire « ne sait pas », jamais « zéro ». La
+  /// LISTE des appareils, elle, n'est pas exposée aux porteurs de jeton : elle vit
+  /// dans le panneau du Mac, sous session navigateur (voir le README du plugin).
+  public let appareils: Int?
   public let capacites: Capacites
 
   public struct Capacites: Sendable, Decodable {
@@ -371,6 +393,18 @@ public enum ErreurRemote: Error, CustomStringConvertible {
   /// obligerait l'interface à deviner, ou à afficher un code au lieu d'une
   /// phrase.
   case refusServeur(statut: Int, motif: String, code: String?)
+  /// L'ÉCHANGE D'UN CODE D'APPAIRAGE A ÉTÉ REFUSÉ, avec le motif de l'hôte.
+  ///
+  /// POURQUOI CE CAS EXISTE SÉPARÉMENT, alors qu'un `403` est déjà `origineRefusee`
+  /// ou `ecritureRefusee`. Le troisième `403` du protocole est celui de l'échange :
+  /// « code inconnu ou déjà utilisé », « code expiré ». Le confondre afficherait
+  /// « un client natif ne doit jamais envoyer d'en-tête Origin » à quelqu'un dont
+  /// le code a simplement expiré — le même défaut que la portée avait déjà coûté,
+  /// une troisième fois.
+  case appairageRefuse(motif: String, detail: String?)
+  /// L'hôte ne connaît PAS la route d'échange : son plugin est plus ancien que
+  /// cette application. Cela se dit — sans quoi on chercherait une panne de code.
+  case appairageNonSupporte
   case adresseInvalide(String)
   case transport(String)
   case decodage(String)
@@ -396,6 +430,15 @@ public enum ErreurRemote: Error, CustomStringConvertible {
   /// diverger, et le refus de portée serait redevenu un refus d'origine.
   public static let raisonLectureSeule = "jeton en lecture seule"
 
+  /// LES DEUX MOTIFS DE REFUS D'UN CODE D'APPAIRAGE, tels que l'hôte les écrit.
+  ///
+  /// MÊME RÈGLE QUE `raisonLectureSeule` : ce sont des termes du CONTRAT entre les
+  /// deux moitiés. Le plugin les écrit (`dynamic/host.js`), l'application les
+  /// reconnaît pour les TRADUIRE au lieu de les afficher bruts — et un test de
+  /// chaque côté les tient.
+  public static let motifCodeExpire = "code expire"
+  public static let motifCodeInconnu = "code inconnu ou deja utilise"
+
   public var description: String {
     switch self {
     case .jetonRefuse:
@@ -415,6 +458,28 @@ public enum ErreurRemote: Error, CustomStringConvertible {
         "jeton refusé (401) — le jeton d'appareil est absent, révoqué ou faux. Recopiez celui qu'affiche le harness, puis collez-le dans le champ « Jeton d'appareil » : sur la page de cette machine, ou dans la feuille « Adresse » quand vous saisissez une adresse à la main."
     case .origineRefusee:
       return L("origine refusée (403) — un client natif ne doit jamais envoyer d'en-tête Origin")
+    case let .appairageRefuse(motif, detail):
+      // LES DEUX MOTIFS CONNUS SONT TRADUITS, pas affichés tels quels : l'hôte
+      // écrit ses refus en ASCII sans accent (ils finissent dans un journal de
+      // terminal), et les montrer bruts à l'utilisateur donnerait « code expire »
+      // dans une interface française soignée. Un motif INCONNU, lui, est montré
+      // tel quel : l'inventer serait pire que l'afficher.
+      //
+      // DEUX CLÉS PLUTÔT QU'UNE AVEC DES ESPACES DE BORD : une clé qui commence ou
+      // finit par une espace est invisible à la relecture, et le test de parité
+      // des tables ne la distinguerait pas de sa voisine.
+      let geste = L("demandez un nouveau code dans le panneau « Appairer un appareil » du Mac.")
+      switch motif {
+      case Self.motifCodeExpire:
+        return L("Ce code d'appairage a expiré.") + " " + geste
+      case Self.motifCodeInconnu:
+        return L("Ce code d'appairage n'est plus valable : il a déjà servi, ou il n'a jamais été émis.") + " " + geste
+      default:
+        let brut = detail?.isEmpty == false ? detail! : motif
+        return L("appairage refusé :") + " " + brut + " — " + geste
+      }
+    case .appairageNonSupporte:
+      return L("cet hôte ne sait pas échanger un code d'appairage : son plugin dsh-remote est plus ancien que cette application. Mettez le plugin à jour, ou collez le jeton d'appareil à la main.")
     case .ecritureRefusee:
       // LE REMÈDE EST NOMMÉ, ET IL EST AILLEURS : la portée se change sur la
       // MACHINE qui héberge le harness, pas dans l'application. Un message qui

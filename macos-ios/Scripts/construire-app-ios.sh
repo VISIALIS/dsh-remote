@@ -35,6 +35,12 @@
 # La source est nettoyée même si le build échoue (trap), pour qu'aucun commit
 # accidentel n'emporte le nom du tailnet.
 #
+# ATTENTION PENDANT LA CONSTRUCTION : le domaine est alors ÉCRIT dans
+# `App/Info.plist`, et `scripts/check-secrets.sh` le refuse — à juste titre, c'est
+# le motif « nom de tailnet privé ». MESURÉ : une vérification du dépôt lancée
+# pendant ce script échoue sur ce fichier, puis passe dès qu'il a rendu la main.
+# Ce n'est pas une fuite, c'est une course : lancez la vérification APRÈS.
+#
 # Usage : Scripts/construire-app-ios.sh [--simulateur]
 
 set -euo pipefail
