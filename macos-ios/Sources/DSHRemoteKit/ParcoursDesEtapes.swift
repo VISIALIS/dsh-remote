@@ -79,6 +79,15 @@ struct ParcoursDesEtapes<Methode: View>: View {
           .font(.callout.weight(etape.etat == .franchie || verrouillee ? .regular : .medium))
           .foregroundStyle(couleurDuTitre(etape, verrouillee: verrouillee))
           .fixedSize(horizontal: false, vertical: true)
+        // LE REPÈRE PASSE APRÈS LE SPACER, ET C'EST UNE CORRECTION VUE À L'ÉCRAN.
+        //
+        // Il était collé au titre, donc AU MILIEU de la ligne : sur un iPhone, le
+        // titre se coupait autour de lui — « 3. Le port de DSH · sur le Mac ·
+        // après l'étape 2 » puis « y est ouvert » — et la fin de la phrase se
+        // lisait après deux métadonnées. Placé avec les autres, à droite, il
+        // laisse au titre toute la largeur, et se lit comme ce qu'il est :
+        // une précision, pas une partie du titre.
+        Spacer(minLength: 4)
         // DE QUELLE MACHINE PARLE CETTE ÉTAPE — et seulement là où ça se perd.
         //
         // Sur la page d'une machine, le titre dit déjà de laquelle il s'agit, et
@@ -91,8 +100,14 @@ struct ParcoursDesEtapes<Methode: View>: View {
           T("sur le Mac")
             .font(.caption2)
             .foregroundStyle(.tertiary)
+          // Le séparateur n'apparaît QUE s'il sépare : un « · » orphelin en fin
+          // de ligne serait un signe de ponctuation qui ne ponctue rien.
+          if verrouillee || etape.etat == .inconnue {
+            Text("·")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+          }
         }
-        Spacer(minLength: 4)
         if let bloquante {
           Text(L("après l'étape") + " \(bloquante)")
             .font(.caption)
