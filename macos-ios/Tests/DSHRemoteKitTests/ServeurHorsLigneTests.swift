@@ -61,7 +61,7 @@ func messageDEtat() {
 func modeleVise() {
   // On vérifie le contrat public du modèle, sans réseau : c'est `connecter()`
   // qui s'en sert pour refuser une tentative inutile.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.definirAdresse("http://portable-deux.exemple.ts.net")
   // Sans liste, aucune conclusion : le modèle tenterait (comportement d'avant,
   // conservé pour une adresse saisie à la main).

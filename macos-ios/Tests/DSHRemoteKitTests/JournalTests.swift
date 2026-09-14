@@ -37,7 +37,7 @@ private func message(_ texte: String, seq: Int = 1) -> EvenementAffiche {
 @MainActor
 @Test("Le journal appartient à SA session : une réponse en retard ne s'applique pas")
 func journalCloisonneParSession() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   // La session A est ouverte et chargée.
   modele.remplacerJournalPourEssai([message("pour A")], de: "s1")
   #expect(modele.journal.count == 1)
@@ -60,7 +60,7 @@ func erreurJournalCloisonnee() {
   // LE DÉFAUT RÉPARÉ : l'échec était invisible — la connexion pouvait aller bien,
   // c'est la lecture de CE journal qui échouait — et l'ancien journal restait
   // affiché sous le nouveau titre.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.remplacerJournalPourEssai([], de: "s2")
   modele.consignerEchecJournal(ErreurRemote.transport("délai dépassé"), pour: "s2")
 
@@ -71,7 +71,7 @@ func erreurJournalCloisonnee() {
 @MainActor
 @Test("Une réponse valable efface l'erreur de lecture précédente")
 func uneRelectureEffaceLErreur() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.remplacerJournalPourEssai([], de: "s1")
   modele.consignerEchecJournal(ErreurRemote.transport("délai dépassé"), pour: "s1")
   #expect(modele.erreurJournal(pour: "s1") != nil)

@@ -22,7 +22,7 @@ private let enLigne = ServeurMac(nom: "Portable Un", nomDNS: "portable-un.exempl
 @MainActor
 @Test("Une sonde jamais lancée ne dit ni oui ni non")
 func sondeInconnue() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   #expect(modele.sonde == .inconnue)
   // « Je ne sais pas » n'est pas « non » : c'est tout l'intérêt du troisième cas.
   #expect(modele.sertDsh(enLigne) == nil)
@@ -34,12 +34,12 @@ func verdictConservePendantLeRafraichissement() {
   // C'est l'invariant qui empêche le clignotement : pendant une nouvelle sonde,
   // l'ancien verdict reste lisible. Il était remis à zéro à chaque essai, et les
   // légendes repartaient à « vérification… » toutes les quinze secondes.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.remplacerSondePourEssai(.connue(Sonde.Verdict(serventDsh: [enLigne.id])))
 
   #expect(modele.sertDsh(enLigne) == true)
   // Une sonde qui démarre sans verdict connu passe par « en cours »…
-  let autre = ModeleApp()
+  let autre = modeleDeTest()
   #expect(autre.sonde == .inconnue)
   // …et « en cours » ne conclut pas.
   autre.remplacerSondePourEssai(.enCours)
@@ -51,7 +51,7 @@ func verdictConservePendantLeRafraichissement() {
 func verdictVide() {
   // « Personne ne sert DSH » est une conclusion, et elle doit être distinguable
   // de « on ne sait pas » — sinon une liste sans serveur restait en attente.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.remplacerSondePourEssai(.connue(Sonde.Verdict()))
   #expect(modele.sertDsh(enLigne) == false)
 }
@@ -59,7 +59,7 @@ func verdictVide() {
 @MainActor
 @Test("Le texte de l'erreur est DÉRIVÉ de son type : ils ne peuvent plus diverger")
 func erreurEtSonTexte() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
 
   // Une erreur typée porte son texte.
   modele.remplacerConnexionPourEssai(.echec(.reponseInattendue(code: 404)))
@@ -99,7 +99,7 @@ func erreurEtSonTexte() {
 func etatAdresseDerive() {
   // Deux stockages pour un même fait, c'était deux occasions de se contredire :
   // l'écran pouvait annoncer « joignable » avec une erreur affichée à côté.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.remplacerConnexionPourEssai(.enCours)
   #expect(modele.etatAdresse == .enCours)
 

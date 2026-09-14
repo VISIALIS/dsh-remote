@@ -20,7 +20,7 @@ private let eteint = ServeurMac(nom: "Portable Deux", nomDNS: "portable-deux.exe
 @MainActor
 @Test("Consigner un échec ne change PAS la cible")
 func echecNeChangePasLaCible() async {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.remplacerServeursPourEssai([enLigne, eteint])
   modele.choisir(eteint)
   #expect(modele.adresse == eteint.adresse)
@@ -37,7 +37,7 @@ func echecNeChangePasLaCible() async {
 @MainActor
 @Test("La bascule remplace la machine ENTIÈRE, et laisse un avis")
 func basculeComplete() async {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.remplacerServeursPourEssai([enLigne, eteint])
   modele.choisir(eteint)
   await modele.connecter()
@@ -56,7 +56,7 @@ func basculeComplete() async {
 @MainActor
 @Test("Un choix de l'utilisateur efface l'avis de bascule")
 func avisEffaceParUnChoix() async {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.remplacerServeursPourEssai([enLigne, eteint])
   modele.choisir(eteint)
   await modele.connecter()
@@ -73,7 +73,7 @@ func avisEffaceParUnChoix() async {
 @MainActor
 @Test("Oublier le serveur vide la cible d'un coup")
 func oublierVideTout() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.remplacerServeursPourEssai([enLigne])
   modele.choisir(enLigne)
   modele.oublierServeur()
@@ -90,7 +90,7 @@ func oublierVideTout() {
 @MainActor
 @Test("Écrire une adresse ne prétend pas connaître la machine")
 func adresseEcriteSansMachine() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.remplacerServeursPourEssai([enLigne])
 
   // Une adresse qui correspond à une machine découverte la reconnaît…

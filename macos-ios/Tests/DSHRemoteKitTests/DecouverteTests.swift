@@ -169,15 +169,27 @@ func memorisationAdresse() {
   // On teste le contrat réel du modèle, sans réseau : `definirAdresse` doit
   // écrire, et un modèle neuf doit relire ce qui a été écrit.
   let adresseTemoin = "temoin-memorisation.exemple.ts.net"
-  let modele = ModeleApp()
+  // LE MÊME DOMAINE POUR LES DEUX MODÈLES, et c'est tout le test : deux
+  // `modeleDeTest()` créeraient deux domaines distincts, et la relecture ne
+  // prouverait rien. C'est ce qu'a révélé la correction de l'herméticité — le
+  // test lisait auparavant le domaine PARTAGÉ de la suite.
+  let persistance = persistanceDeTest()
+  let modele = ModeleApp(persistance: persistance)
   modele.definirAdresse(adresseTemoin)
 
-  let relu = ModeleApp()
+  let relu = ModeleApp(persistance: persistance)
   #expect(relu.adresse == adresseTemoin, "l'adresse écrite doit être relue au lancement suivant")
 
-  // Nettoyage : on ne laisse pas une adresse de test dans les préférences.
+  // Et l'oubli efface VRAIMENT ce qui était mémorisé.
+  //
+  // L'ASSERTION PORTE SUR LA PERSISTANCE, PAS SUR LE MODÈLE, et c'est une
+  // correction : après un oubli, un modèle neuf retombe sur son adresse par
+  // défaut (`http://127.0.0.1:3080`, la boucle locale) — le formulaire n'est
+  // jamais « vidé » au lancement. Asserter `modele.adresse.isEmpty` échouait donc
+  // toujours, et le test ne prouvait rien de ce qu'il annonçait.
   relu.oublierServeur()
-  #expect(ModeleApp().adresse.isEmpty || ModeleApp().adresse != adresseTemoin)
+  #expect(persistance.lireAdresse().adresse.isEmpty)
+  #expect(ModeleApp(persistance: persistance).adresse == "http://127.0.0.1:3080")
 }
 
 // ── Regroupement par espace de travail ────────────────────────────────────────

@@ -32,7 +32,7 @@ private func session(_ identifiant: String) -> SessionListee {
 @MainActor
 @Test("Le brouillon d'une session ne suit pas dans une autre")
 func brouillonsSepares() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.definirBrouillon("pour la première", pour: "s1")
   modele.definirBrouillon("pour la seconde", pour: "s2")
 
@@ -50,7 +50,7 @@ func brouillonsParHote() {
   // La clé est le couple HÔTE/session, comme celle du jeton : deux machines
   // peuvent nommer leurs sessions de la même façon, et un texte écrit pour l'une
   // ne doit pas se retrouver sous l'autre.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.definirAdresse("http://100.101.102.103:3080")
   modele.definirBrouillon("pour l'hôte A", pour: "s1")
 
@@ -69,7 +69,7 @@ func oublierLesMessagesGardeLeTexte() {
   // C'est la régression exacte : `oublierEtatEcriture()` est appelée au
   // changement de session, et elle effaçait le texte — c'est-à-dire le travail
   // de l'utilisateur.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.definirBrouillon("un texte en cours", pour: "s1")
   modele.oublierEtatEcriture()
   #expect(modele.brouillon(pour: "s1") == "un texte en cours")
@@ -78,7 +78,7 @@ func oublierLesMessagesGardeLeTexte() {
 @MainActor
 @Test("L'acquittement retire ce qui est parti, et RIEN de plus")
 func acquittementRetireCeQuiEstParti() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   // 1. Le champ contient encore exactement ce qui est parti : il est vidé.
   modele.definirBrouillon("bonjour", pour: "s1")
   modele.retirerCeQuiEstAcquitte("bonjour", pour: "s1")
@@ -103,7 +103,7 @@ func acquittementRetireCeQuiEstParti() {
 func acquittementScopeALaSession() {
   // Un envoi peut être acquitté APRÈS un changement de session : sans cette
   // règle, le message s'afficherait sous une session qui n'a rien envoyé.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.consignerEtatEcriturePourEssai(
     session: "s1", acquittement: "accepté", refus: nil)
 
@@ -118,7 +118,7 @@ func acquittementScopeALaSession() {
 @MainActor
 @Test("Un refus ne s'affiche que sous la session qui l'a reçu")
 func refusScopeALaSession() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.consignerEtatEcriturePourEssai(
     session: "s2", acquittement: nil, refus: "l'hôte a refusé")
 
@@ -132,7 +132,7 @@ func videAuxBlancsPres() {
   // Le bouton d'envoi se verrouille sur cette réponse : un champ qui ne contient
   // que des espaces ou un retour à la ligne ne peut rien envoyer, et le laisser
   // actif serait un bouton sans effet.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   #expect(modele.brouillonVide(pour: "s1"))
   modele.definirBrouillon("   \n  ", pour: "s1")
   #expect(modele.brouillonVide(pour: "s1"))
@@ -146,7 +146,7 @@ func envoiSansTexte() async {
   // Sans texte, `envoyer` rend la main immédiatement : rien n'est tenté, donc
   // rien n'est acquitté ni refusé. C'est le seul cas d'`envoyer` qui puisse être
   // éprouvé sans hôte, et il vaut la peine : c'est celui du bouton verrouillé.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   modele.definirBrouillon("   ", pour: "s1")
   await modele.envoyer(session("s1"))
   #expect(modele.acquittement(pour: "s1") == nil)

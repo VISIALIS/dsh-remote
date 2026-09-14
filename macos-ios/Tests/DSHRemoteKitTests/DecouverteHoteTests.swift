@@ -93,7 +93,7 @@ func capaciteDecouverteAbsente() throws {
 @MainActor
 @Test("La légende dit qu'une machine est l'hôte interrogé, sans la confondre avec l'appareil")
 func legendeDeLHote() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   let hote = ServeurMac(nom: "Portable Un", nomDNS: "portable-un.exemple.ts.net", enLigne: true, estLocal: true)
   let autre = ServeurMac(nom: "Bureau Mini", nomDNS: "bureau-mini.exemple.ts.net", enLigne: false)
 

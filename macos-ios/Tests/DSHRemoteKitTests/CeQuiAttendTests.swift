@@ -65,7 +65,7 @@ func plurielDesTerminees() {
 @MainActor
 @Test("La liste d'attention ne garde que ce qui demande quelque chose")
 func listeDAttention() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   let liste = """
     {"protocole":1,"total":4,"sessions":[
       {"projet":"--x--","dossier":"/d","fichier":"/f","octets":1,"modifieLe":1,"vivante":true,
@@ -118,7 +118,7 @@ func nomDuServeurAffiche() {
   // JOINT : ils changent quand on change de machine. Le nom doit donc être dit,
   // et il ne doit pas être deviné — la vignette du carrousel n'affiche que le
   // premier mot du nom, que deux Macs peuvent partager.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   let machine = ServeurMac(
     nom: "Portable Deux", nomDNS: "portable-deux.exemple.ts.net", enLigne: true)
   modele.remplacerServeursPourEssai([machine])
@@ -148,7 +148,7 @@ func nomDuServeurAffiche() {
 func pasDeNomSansListe() {
   // Nommer un serveur au-dessus d'une liste vide laisserait croire qu'il a
   // répondu : c'est exactement ce qu'un état vide ne doit pas faire.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   let machine = ServeurMac(
     nom: "Portable Deux", nomDNS: "portable-deux.exemple.ts.net", enLigne: true)
   modele.remplacerServeursPourEssai([machine])
@@ -164,7 +164,7 @@ func filtreQuiCacheTout() {
   // aucune n'est en mémoire — juste après un redémarrage du harness —, l'arbre
   // est vide alors que le serveur en connaît cent cinquante-six : l'écran disait
   // « Aucune session », la même phrase que pour un serveur vide.
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   let liste = """
     {"protocole":1,"total":2,"sessions":[
       {"projet":"--x--","dossier":"/d","fichier":"/f","octets":1,"modifieLe":1,"vivante":false,
@@ -194,6 +194,6 @@ func filtreQuiCacheTout() {
 @MainActor
 @Test("Un serveur vraiment vide ne se dit pas « filtré »")
 func serveurVraimentVide() {
-  let modele = ModeleApp()
+  let modele = modeleDeTest()
   #expect(!modele.filtreCacheTout, "aucune session reçue : le filtre n'y est pour rien")
 }
