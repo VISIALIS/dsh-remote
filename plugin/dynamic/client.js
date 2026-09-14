@@ -382,7 +382,13 @@ function encodeQr(text) {
       surcouche: 'var(--dsw-alias-bg-layer-2)',
       marque: 'var(--dsw-alias-brand-primary)',
       alerte: 'var(--dsw-alias-state-warn-primary)',
-      danger: 'var(--dsw-alias-state-error-primary, #c0392b)',
+      // PAS DE VALEUR LITTÉRALE EN SECOURS. La convention du shell est
+      // `var(--dsw-alias-x, var(--dsh-boot-x))` — un jeton pour un jeton, parce
+      // qu'un littéral échappe au thème (sombre, contraste augmenté, thème tiers).
+      // Vérifié : `state-error-primary` est au registre du service de thème, et il
+      // n'existe AUCUN `--dsh-boot-state-*` (sept jetons de boot seulement, tous
+      // `arc` / `bg` / `border` / `brand` / `label-*`) — donc l'alias seul suffit.
+      danger: 'var(--dsw-alias-state-error-primary)',
       succes: 'var(--dsw-alias-state-success-primary)',
     }
 
@@ -738,14 +744,12 @@ function encodeQr(text) {
             fontSize: '12px',
           },
         },
-        React.createElement(
-          'svg',
-          { width: 15, height: 15, viewBox: '0 0 16 16', fill: 'currentColor', 'aria-hidden': 'true' },
-          React.createElement('path', {
-            d: 'M1 1h5v5H1V1zm1.5 1.5v2h2v-2h-2zM10 1h5v5h-5V1zm1.5 1.5v2h2v-2h-2zM1 10h5v5H1v-5zm1.5 1.5v2h2v-2h-2zM10 10h2v2h-2v-2zm3 0h2v2h-2v-2zm-3 3h2v2h-2v-2zm3 0h2v2h-2v-2z',
-          }),
-        ),
-        props !== undefined && props.wide === true ? React.createElement('span', null, 'Appairer') : null,
+        icone,
+        // LE LIBELLÉ EST LE NOM DU PRODUIT, PLUS LE VERBE. Le pied de la barre
+        // latérale est étroit : « DSH Remote » dit à quoi sert le panneau dans
+        // une colonne qui porte déjà « New Session » et « Settings », et le
+        // survol (`title`) dit le geste — appairer un appareil.
+        props !== undefined && props.wide === true ? React.createElement('span', null, 'DSH Remote') : null,
       )
 
       if (!ouvert) return bouton
@@ -803,6 +807,14 @@ function encodeQr(text) {
               'div',
               {
                 key: 'expire',
+                // ANNONCÉ, PAS SEULEMENT AFFICHÉ. Un lecteur d'écran ne voit pas
+                // le compte à rebours tomber à zéro : sans cela, la fin de
+                // validité du code passerait inaperçue — et c'est précisément le
+                // moment où il faut en redemander un. `polite` : ce n'est pas une
+                // urgence. Et c'est l'EXPIRATION qui est annoncée, jamais chaque
+                // seconde du décompte.
+                role: 'status',
+                'aria-live': 'polite',
                 style: {
                   boxSizing: 'border-box',
                   width: '100%',
@@ -919,7 +931,7 @@ function encodeQr(text) {
             React.createElement('span', { style: { fontSize: '12px', color: COULEURS.texte, wordBreak: 'break-all' } }, appareil.nom),
             React.createElement(
               'span',
-              { style: { fontSize: '10px', color: COULEURS.discret } },
+              { style: { fontSize: '11px', color: COULEURS.discret } },
               (appareil.portee === 'ecriture' ? 'écriture' : 'lecture') +
                 ' · ' +
                 dateLisible(appareil.creeLe) +
@@ -945,7 +957,7 @@ function encodeQr(text) {
       contenu.push(
         React.createElement(
           'div',
-          { key: 'appareils-note', style: { fontSize: '10px', lineHeight: 1.4, color: COULEURS.discret, width: '100%' } },
+          { key: 'appareils-note', style: { fontSize: '11px', lineHeight: 1.4, color: COULEURS.discret, width: '100%' } },
           appareils.some((appareil) => appareil.historique === true)
             ? "Révoquer coupe CET appareil. Le jeton historique (terminal) ne revient qu'au prochain démarrage du harness."
             : 'Révoquer coupe cet appareil seulement : les autres continuent de fonctionner.',
