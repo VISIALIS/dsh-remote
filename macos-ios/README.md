@@ -1793,10 +1793,18 @@ accordée est annoncée **avant** le scan (« l'appareil recevra un jeton qui LI
 appareil : l'analyse (9 tests, fixture partagé), l'application au modèle et l'échange
 (10 tests : code échangé avec l'adresse et un nom, jeton reçu rangé par hôte, refus
 qui ne change rien), les trois `403` et le `404` (6 tests), la parité des tables de
-traduction, les constructions **macOS** et **iOS simulateur**. **Non éprouvé** : le
-scan depuis la caméra d'un vrai iPhone, et le collage bout en bout depuis le Mac —
-les deux demandent un appareil et un harness redémarré, et la procédure est au README
-du plugin `dsh-remote`.
+traduction, les constructions **macOS** et **iOS simulateur**, et la construction
+**iOS appareil** (Release, `generic/platform=iOS`).
+
+**LE SCAN CAMÉRA EST ÉPROUVÉ, ET IL A FALLU UN VRAI APPAREIL.** Constaté par le
+propriétaire sur son iPhone, le 14 septembre 2026, avec le paquet `Release` installé
+par `devicectl` : le QR code du panneau est lu, l'échange se fait, la machine
+apparaît. Deux défauts ont été trouvés par ce même essai, et corrigés — la page
+d'ajout qui restait à l'écran après l'appairage, et la fiche qui survivait à une
+réinitialisation. **Reste non éprouvé** : le collage bout en bout depuis le Mac
+(l'échange est éprouvé par les tests, le geste ne l'est pas), et le fait que le
+bouton du panneau revienne **sans** recharger l'onglet — la mesure a montré qu'il ne
+revient pas (voir P12 au README du plugin).
 
 ### Écriture : répondre à l'agent, et l'interrompre
 
