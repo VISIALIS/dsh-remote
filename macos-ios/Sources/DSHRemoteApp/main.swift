@@ -120,15 +120,19 @@ struct CommandesDeDSHRemote: Commands {
   let modele: ModeleApp
   /// Publié par la barre de recherche de la fenêtre active.
   @FocusedValue(\.focusRecherche) private var focusRecherche
+  /// Publié par le composeur, quand une session ouverte sait écrire.
+  @FocusedValue(\.envoyerMessage) private var envoyerMessage
 
   var body: some Commands {
     CommandGroup(after: .toolbar) {
-      Button("Rafraîchir") {
+      // LES LIBELLÉS PASSENT PAR `L` : un menu resté en français serait le seul
+      // endroit non traduit d'une application anglaise.
+      Button(L("Rafraîchir")) {
         Task { await modele.rafraichir() }
       }
       .keyboardShortcut("r", modifiers: .command)
 
-      Button("Rechercher une session") {
+      Button(L("Rechercher une session")) {
         focusRecherche?()
       }
       .keyboardShortcut("f", modifiers: .command)
@@ -136,6 +140,17 @@ struct CommandesDeDSHRemote: Commands {
       // faire en silence. Un raccourci qui ne répond pas laisse croire à une
       // panne ; un élément grisé dit que l'action n'est pas disponible ici.
       .disabled(focusRecherche == nil)
+
+      Divider()
+
+      // ⌘↩ ENVOIE LE MESSAGE, et n'est actif que si un composeur est à l'écran :
+      // c'est le composeur qui publie l'action. Sans lui, l'entrée est GRISÉE —
+      // un raccourci qui ne peut rien faire doit le dire, pas échouer en silence.
+      Button(L("Envoyer le message")) {
+        envoyerMessage?()
+      }
+      .keyboardShortcut(.return, modifiers: .command)
+      .disabled(envoyerMessage == nil)
     }
   }
 }

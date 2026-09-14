@@ -887,6 +887,26 @@ struct CarrouselServeurs: View {
           nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
           estLocal: serveur.estLocal)
       )
+      // ── LA CONNEXION DEVIENT UNE ACTION NOMMÉE, ET C'EST UNE CORRECTION ────
+      //
+      // POURQUOI. Sur iPhone, la vignette est un `NavigationLink` doublé d'un
+      // geste parallèle : c'est le GESTE qui connecte. Or VoiceOver, le clavier
+      // externe, Voice Control et les interrupteurs activent le LIEN — ils
+      // naviguaient donc vers la page d'une machine sans s'y connecter, et rien
+      // ne le disait. Une action nommée rend la connexion atteignable par les
+      // mêmes moyens que le reste : c'est le chemin canonique, et il ne demande
+      // aucune refonte de la navigation.
+      //
+      // L'INFOBULLE DIT CE QUE L'ACTIVATION SIMPLE FAIT VRAIMENT — ouvrir la page
+      // —, pour que personne n'attende d'un appui simple ce qu'il ne fait pas.
+      //
+      // SUR macOS, RIEN À AJOUTER : la vignette y est un `Button` dont l'action
+      // connecte déjà, et son menu contextuel porte « Se connecter ».
+      .accessibilityHint(T("Ouvre la page de cette machine"))
+      .accessibilityAction(named: T("Se connecter")) {
+        surSelectionServeur(serveur)
+        Task { await modele.choisirEtConnecter(serveur) }
+      }
     #else
       Button {
         // OUVRIR **ET** CONNECTER — les deux, et c'est une correction.

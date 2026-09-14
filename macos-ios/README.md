@@ -1665,6 +1665,20 @@ champ de recherche tronqué. La contrainte vaut maintenant pour les deux platefo
 **340 points minimum** (320 sur macOS, choisis pour d'autres raisons : voir le commentaire
 du code). Sur iPhone, SwiftUI l'ignore : la colonne est l'écran entier.
 
+**La connexion est atteignable sans le geste — et c'est une correction d'accessibilité.**
+Sur iPhone, la vignette d'une machine est un `NavigationLink` doublé d'un geste
+parallèle : c'est le **geste** qui connecte. VoiceOver, un clavier externe, Voice
+Control ou un interrupteur activent le **lien** — ils ouvraient donc la page d'une
+machine **sans s'y connecter**. La vignette porte maintenant une **action nommée
+« Se connecter »**, atteignable par ces mêmes moyens, et une infobulle qui dit ce
+que l'activation simple fait vraiment (« Ouvre la page de cette machine »).
+
+Ce n'est pas la refonte que l'audit proposait (une sélection unifiée) : c'est le
+chemin canonique de l'accessibilité, il couvre le défaut, et il ne touche pas au
+câblage de la navigation — dont le remplacement demanderait d'être éprouvé au
+doigt, ce que cet environnement ne permet pas. Sur macOS, rien à ajouter : la
+vignette y est un `Button` qui connecte déjà.
+
 **Ce qui n'est PAS éprouvé, et qui est écrit comme tel :**
 
 - **le multitâche** (Split View, Slide Over, Stage Manager) : rien ne l'empêche —
@@ -1853,6 +1867,7 @@ iOS, où la feuille est le lieu prévu.
 | ⌘, | Ouvre les réglages (fourni par la scène `Settings`) |
 | ⌘R | Rafraîchit sessions et machines |
 | ⌘F | Donne le focus à la recherche — par une `FocusedValue`, la commande ne voyant pas les vues ; l'entrée est **grisée** quand aucune fenêtre ne publie l'action |
+| ⌘↩ | Envoie le message en cours de rédaction. **Publié par le composeur lui-même** : l'entrée n'existe que si une session est ouverte *et* si l'hôte annonce l'écriture, et elle est grisée sinon — jamais un raccourci qui échoue en silence |
 
 L'écran de réglages ne dit plus qu'il est vide : il porte l'état de **cet appareil**
 (Tailscale, tailnet, exceptions ATS du paquet construit), le chemin du fichier de
@@ -1926,6 +1941,10 @@ redécouvre pas comme des oublis.
   moteur. Ce qui EST prouvé de cette tranche, c'est le menu contextuel macOS
   (énuméré dans le menu de l'application) et la scène `Settings` (ouverte par le
   menu et capturée).
+- **L'EFFET d'un envoi par ⌘↩.** Le câblage est prouvé — l'entrée s'active quand un
+  composeur est à l'écran, et seulement là —, mais l'envoi n'a pas été déclenché :
+  appuyer sur ⌘↩ dans une session réelle y **injecterait un message**, et un test
+  ne doit pas écrire dans la conversation de quelqu'un.
 - **L'EFFET de ⌘R et de ⌘F.** Les deux entrées sont déclarées — énumérées dans le
   menu « Présentation » de l'application lancée — et leur cible est du code
   compilé. La frappe elle-même n'a pas été observée : `rafraichir()` n'écrit pas de
@@ -2308,6 +2327,7 @@ inactive.
 | L'IP tailnet avec port ne sert RIEN | `http://100.101.102.103:3080` → `000` ; le nom MagicDNS → `200` |
 | **La scène `Settings` existe et s'ouvre** | menu de l'application énuméré : « Settings… » présent ; fenêtre **Réglages** 900×552 ouverte par le menu et capturée — Tailscale installé, tailnet connecté, chemin du diagnostic, protocole version 1 |
 | **Les réglages ne disent plus qu'ils sont vides** | captures de la fenêtre `Settings` (macOS) et de la feuille (`--reglages`) : trois sections, « Cet appareil », « Diagnostic », « À propos » |
+| **⌘↩ s'active EXACTEMENT quand il peut agir** | mesuré par énumération du menu de l'application empaquetée : « Envoyer le message » **grisée** sans journal ouvert, **active** avec un journal ouvert. L'envoi lui-même n'a pas été déclenché : cela injecterait un message dans une session réelle |
 | **⌘R et ⌘F sont déclarés** | énumération du menu « Présentation » : « Rafraîchir » et « Rechercher une session », entre « Show All Tabs » et « Enter Full Screen » |
 | **Le bouton Réglages a quitté la barre d'outils macOS** | capture de la fenêtre principale : la barre ne porte plus que le basculeur de panneau ; l'engrenage ne subsiste que sur iOS |
 | **La légende d'une vignette est lisible** | captures : « DSH · hôte », « pas de DSH » et « hors ligne » rendus en `.caption2` (11 pt), deux lignes autorisées |

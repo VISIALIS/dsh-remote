@@ -1,7 +1,7 @@
 /* Table française — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   141 clés. */
+   144 clés. */
 
 "1. Avoir le dépôt `dsh-plugins` sur cette machine, et y prendre `plugins/dsh-remote`." = "1. Avoir le dépôt `dsh-plugins` sur cette machine, et y prendre `plugins/dsh-remote`.";
 "2. Déclarer le plugin dans `~/.dsh/profiles/web/cordis.patch.yml` :" = "2. Déclarer le plugin dans `~/.dsh/profiles/web/cordis.patch.yml` :";
@@ -101,7 +101,10 @@
 "origine refusée (403) — un client natif ne doit jamais envoyer d'en-tête Origin" = "origine refusée (403) — un client natif ne doit jamais envoyer d'en-tête Origin";
 "Ou, en ligne de commande :" = "Ou, en ligne de commande :";
 "Oublier ce serveur" = "Oublier ce serveur";
+"Ouvre la page de cette machine" = "Ouvre la page de cette machine";
 "pas de DSH" = "pas de DSH";
+"Rafraîchir" = "Rafraîchir";
+"Rechercher une session" = "Rechercher une session";
 "Rechercher une session, un projet…" = "Rechercher une session, un projet…";
 "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet." = "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet.";
 "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas." = "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas.";

@@ -131,6 +131,15 @@ struct ComposeurEcriture: View {
     // composeur qu'on ne regarde pas : on regarde ce qu'on vient d'écrire. Un
     // refus, lui, se remarque encore moins — c'est pourtant le cas où il faut
     // réagir.
+    // ⌘↩ VIENT ICI. La garde est CELLE DU BOUTON — pas de texte, ou un envoi en
+    // vol, et il n'y a rien à faire : une commande de menu qui agirait malgré
+    // tout contredirait l'état affiché, ce que ce dépôt refuse partout ailleurs.
+    #if os(macOS)
+      .focusedSceneValue(\.envoyerMessage) {
+        guard !modele.brouillonVide(pour: session.id), !modele.envoiEnCours else { return }
+        envoyer()
+      }
+    #endif
     .modifier(
       RetourDuComposeur(
         accuse: modele.acquittement(pour: session.id),

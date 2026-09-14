@@ -23,8 +23,13 @@ import pathlib
 import re
 import sys
 
-SOURCE = pathlib.Path(__file__).resolve().parents[1] / "Sources" / "DSHRemoteKit"
+SOURCES = pathlib.Path(__file__).resolve().parents[1] / "Sources"
+SOURCE = SOURCES / "DSHRemoteKit"
 RESSOURCES = SOURCE / "Ressources"
+# LES LIBELLÉS DU MENU macOS VIVENT DANS LA CIBLE DE L'APPLICATION, et ils sont
+# localisés comme les autres : les oublier ici laissait le menu en français dans
+# une application anglaise, sans que rien ne le signale.
+DOSSIERS_DE_CODE = [SOURCE, SOURCES / "DSHRemoteApp"]
 VERIFIER = "--verifier" in sys.argv
 
 APPEL = re.compile(r'\b[TL]\("((?:[^"\\]|\\.)*)"\)')
@@ -201,7 +206,8 @@ def echapper(texte: str) -> str:
 
 def clefs_du_code() -> set[str]:
     clefs: set[str] = set()
-    for fichier in sorted(SOURCE.glob("*.swift")):
+    fichiers = [f for dossier in DOSSIERS_DE_CODE for f in sorted(dossier.glob("*.swift"))]
+    for fichier in fichiers:
         for ligne in fichier.read_text(encoding="utf-8").splitlines():
             if ligne.lstrip().startswith("//"):
                 continue
@@ -357,6 +363,13 @@ TRADUCTIONS.update({
     "DSH": "DSH",
     "DSH · hôte": "DSH · host",
     "DSH · hôte interrogé": "DSH · host queried",
+})
+
+# Les libellés du menu macOS, et l'infobulle de la vignette sur iPhone.
+TRADUCTIONS.update({
+    "Rafraîchir": "Refresh",
+    "Rechercher une session": "Search for a session",
+    "Ouvre la page de cette machine": "Opens this machine's page",
 })
 
 if __name__ == "__main__":

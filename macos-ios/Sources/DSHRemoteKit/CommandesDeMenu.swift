@@ -22,6 +22,26 @@
     public typealias Value = () -> Void
   }
 
+  /// L'ACTION D'ENVOI du composeur, publiée par lui quand il est à l'écran.
+  ///
+  /// POURQUOI ELLE EST PUBLIÉE PAR LE COMPOSEUR, ET NON ÉCRITE DANS LA COMMANDE.
+  /// Le composeur n'existe que si une session est ouverte ET si l'hôte annonce
+  /// l'écriture : la commande ne peut donc pas savoir si « envoyer » veut dire
+  /// quelque chose à cet instant. `FocusedValue` répond exactement à cette
+  /// question — quand aucune vue ne publie l'action, l'entrée de menu est
+  /// GRISÉE, au lieu d'envoyer dans le vide.
+  struct EnvoyerMessage: FocusedValueKey {
+    public typealias Value = () -> Void
+  }
+
+  extension FocusedValues {
+    /// L'action publiée par le composeur de la fenêtre active.
+    public var envoyerMessage: (() -> Void)? {
+      get { self[EnvoyerMessage.self] }
+      set { self[EnvoyerMessage.self] = newValue }
+    }
+  }
+
   extension FocusedValues {
     /// L'action publiée par la barre de recherche de la fenêtre active.
     ///
