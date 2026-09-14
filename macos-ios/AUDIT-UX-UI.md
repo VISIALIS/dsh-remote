@@ -6,6 +6,47 @@ code.** Les correctifs du P0, faits ensuite, sont consignés au § 10.
 
 ---
 
+## 0. Suivi — ce que cet audit a produit (14 septembre 2026)
+
+**À lire avant le reste : les constats ci-dessous ont été TRAITÉS.** Ce document
+reste le récit de l'audit au commit `d78695b` ; cette section dit ce qui en est
+advenu, pour qu'on ne relise pas comme des défauts ouverts ce qui est corrigé et
+éprouvé.
+
+| Tranche | État | Ce qui a été livré |
+|---|---|---|
+| **P0** — avant tout usage sur un iPhone neuf | **fait** | jeton saisissable au premier lancement, message du `401` corrigé, adresse conseillée par plateforme (`ConseilAdresse` + `ExceptionATS`), couche d'accessibilité de base (libellés d'état, Reduce Motion, cibles 44 pt via `CibleTactile`) |
+| **P1** — que l'application agisse sur le bon objet | **fait** | brouillon par session, acquittement qui ne détruit plus la frappe concurrente, jeton lié à la machine affichée, journal honnête (sa session, son échec, sa fin), interruption confirmée, « ce qui attend » remonté en tête |
+| **P2** — gestes et surface native | **fait** | `refreshable`, glissement, menus contextuels (session **et** machine, avec « Oublier » réservé à la machine courante), retour haptique, scène `Settings` donc **⌘,**, **⌘R** et **⌘F**, écran de réglages qui dit l'état de l'appareil, du diagnostic et des versions |
+| **P3** — finitions | **fait** | légende à `.caption2`, un seul fond pour la recherche, titre non dupliqué, Dynamic Type des vignettes, noms de machines discriminants, formes distinctes pour « attend » et « terminé », indicateurs de défilement, restauration d'état (espaces, mode d'envoi, session revalidée), `PasteButton` |
+| **Décisions assumées** | **écrites** | écran de lancement laissé vide (la directive interdit texte et logo) ; `PrivacyInfo.xcprivacy` non livré (aucune soumission en vue) |
+| **P4** — alertes | **fait** | alertes « l'agent attend » / « c'est fini », **éteintes par défaut**, autorisation demandée à l'allumage, jamais pour ce qu'on regarde, regroupées — et la limite de plateforme écrite là où on les allume |
+| **P4** — reste | **décisions produit** | iPad, localisation, rendu Markdown du journal. Aucune n'est un défaut : ce sont des choix à trancher, et l'audit les a laissés comme tels |
+
+**Trois défauts trouvés EN TRAITANT cet audit, et qui n'y figuraient pas :**
+
+1. **La suite de tests lisait les préférences réelles de la machine** — et les
+   effaçait en sortant. 33 tests concernés, 12 échecs sur 15 exécutions. Corrigé :
+   0 échec sur 20 exécutions après. C'est ce qui rend une CI possible.
+2. **Le jeton d'appareil autorisait l'écriture sans condition.** La question
+   « un jeton fuité donne-t-il un accès en écriture à l'agent de quelqu'un
+   d'autre ? » se répond maintenant « non » par construction : portée `lecture`
+   par défaut, écriture sur demande explicite (`DSH_REMOTE_PORTEE=ecriture`), et
+   un jeton d'avant la portée reste en écriture — une mise à jour ne retire pas un
+   droit acquis.
+3. **L'observation des fins de tour n'était tenue par rien.** Elle était appelée
+   par les trois sites qui écrivent une liste, juste après — un contrat en
+   commentaire qu'un quatrième appelant aurait oublié, rendant silencieusement
+   muettes les pastilles et les alertes. Elle appartient désormais à l'écrivain
+   nommé de cette collection.
+
+**État mesuré au 14 septembre** : `scripts/verifier.sh --tout` vert — 83 tests de
+plugin, **193 tests Swift**, aucun secret détecté. Rapport d'audit inchangé dans
+son corps : il décrit le commit `d78695b`, et les citations `fichier:ligne` s'y
+rapportent.
+
+---
+
 ## 1. Ce qui a été fait, et comment le croire
 
 Six réviseurs **indépendants** ont reçu le même brief de 239 lignes — contexte produit,
