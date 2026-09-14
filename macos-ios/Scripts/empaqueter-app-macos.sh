@@ -57,11 +57,19 @@ cp "$icns" "$bundle/Contents/Resources/DSHRemote.icns"
 # ailleurs, `L()` et `T()` retombaient sur la clé, donc sur le français, sans
 # erreur ni trace.
 #
+# ET SANS CE PAQUET, L'APPLICATION NE SE CONTENTE PAS DE PARLER FRANÇAIS : ELLE
+# MEURT. Mesuré le 14 septembre 2026 sur ce même paquet, avant cette copie —
+# `Fatal error: unable to find bundle named DSHRemote_DSHRemoteKit`, au premier
+# mot traduit, alors que le script venait d'annoncer « paquet pret », empreinte
+# bonne et signature valide. Trois rapports de plantage ont été produits avant
+# que la cause soit lue.
+#
 # POURQUOI `Contents/Resources/` ET NON LA RACINE. L'accesseur de SwiftPM cherche
 # à la racine du `.app` — et `codesign` REFUSE alors le paquet : « unsealed
 # contents present in the bundle root », mesuré. Un paquet signé ne tolère que
 # `Contents/` à sa racine. Côté code, `Traduction` cherche donc lui-même, en
-# commençant par `Contents/Resources/` (voir `paquetDeRessources`).
+# commençant par `Contents/Resources/` (voir `paquetDeRessources`), et c'est ce
+# candidat-là qui rend le paquet vivant.
 #
 # La copie a lieu AVANT la signature, plus bas, pour qu'elle couvre les tables.
 ressources="$(dirname "$binaire")/DSHRemote_DSHRemoteKit.bundle"

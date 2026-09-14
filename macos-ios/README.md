@@ -47,11 +47,24 @@ python3 packages/dsh-remote-swift/Scripts/generer-icone.py --apercu --icns packa
 bash packages/dsh-remote-swift/Scripts/empaqueter-app-macos.sh
 ```
 
+**Pillow est un prérequis, et il n'est pas dans le `python3` du PATH sur cette
+machine — mesuré le 14 septembre 2026.** `generer-icone.py` dessine le sillon
+lui-même et le remplit avec Pillow (aucun moteur SVG n'est requis). S'il manque,
+le script s'arrête sur `[icone] Pillow est requis` et, `set -euo pipefail` aidant,
+le paquet macOS n'est **pas assemblé du tout**. Or les deux interpréteurs de la
+machine ne se valent pas : `/opt/homebrew/bin/python3` (3.14.7, celui du PATH) n'a
+pas Pillow, `/usr/bin/python3` (3.9.6) porte Pillow 11.1.0. La commande qui marche
+ici, sans rien installer :
+
+```bash
+PATH="/usr/bin:$PATH" bash packages/dsh-remote-swift/Scripts/empaqueter-app-macos.sh
+```
+
 Vérifications : aperçu inspecté jusqu'à 40 px ; dimensions, alpha, bleu exact et
 niveaux de gris contrôlés ; dix représentations ICNS réextraites de 16 à 1024 px ;
 paquet macOS reconstruit et signature vérifiée ; compilation du simulateur réussie,
 avec `AppIcon` présent pour les familles iPhone et iPad. Les vérifications du dépôt
-passent : secrets, syntaxe, 83 tests de plugins et 207 tests Swift. Ces commandes
+passent : secrets, syntaxe, 120 tests de plugins et 232 tests Swift. Ces commandes
 ne réinstallent pas les copies déjà présentes sur les appareils.
 
 ### Où vit quoi : cinq pièces, et une seule porte sur le disque
@@ -2228,6 +2241,26 @@ aucune ne savait qu'elle était l'ancienne.** L'option ferme l'instance en cours
 paquet (`ditto`, qui préserve la signature), **compare les empreintes SHA-256** du binaire
 construit et du binaire installé, et prévient si l'exception ATS manque. Une copie
 partielle ou refusée ne peut donc plus passer inaperçue.
+
+**LES RESSOURCES SWIFTPM, SANS QUOI L'APPLICATION MEURT APRÈS AVOIR SEMBLÉ SE
+LANCER — mesuré le 14 septembre 2026.** Le paquet n'était assemblé qu'avec
+l'exécutable et l'icône. Or les traductions vivent dans
+`DSHRemote_DSHRemoteKit.bundle`, que SwiftPM construit **à côté** de l'exécutable.
+Le script annonçait donc « paquet pret », l'empreinte était la bonne, la signature
+valide — et l'application mourait au premier mot traduit :
+
+```text
+DSHRemoteKit/resource_bundle_accessor.swift:44: Fatal error: unable to find bundle named DSHRemote_DSHRemoteKit
+```
+
+Trois rapports de plantage ont été produits avant que la cause soit lue, et le
+paquet fonctionnait **avant** les traductions, parce que `Bundle.module` n'était
+alors jamais sollicité. Le script copie désormais le paquet
+`DSHRemote_DSHRemoteKit.bundle` dans `Contents/Resources` et le dit dans sa sortie
+(`[macos] tables de traduction : N fichier(s)`) ; `Traduction` le cherche lui-même
+là, parce que l'accesseur de SwiftPM vise d'abord la RACINE du `.app` — et
+`codesign` refuse alors le paquet (« unsealed contents present in the bundle
+root »). Un paquet qui ne se lance pas ne doit pas pouvoir s'annoncer prêt.
 
 ### NE JAMAIS lancer le binaire du simulateur comme un programme macOS
 
