@@ -1288,7 +1288,6 @@ public final class ModeleApp {
     // l'utilisateur s'en sert — il vient de cliquer une machine de cette liste.
     // On repart de zéro : la liste des machines a changé de source, un verdict
     // sur l'ancienne ne dit rien de la nouvelle.
-    sonde = .inconnue
   }
 
   /// Démarrage : choisir une machine JOIGNABLE, puis se connecter.
