@@ -494,5 +494,37 @@ TRADUCTIONS.update({
         "Its port 80 must be published by `tailscale serve` for anything to answer at its address.",
 })
 
+# Les libellés d'ACTION de la fiche, et les quelques phrases qui étaient restées
+# nues. Constaté à l'écran : « Reconnecter » s'affichait en français sous
+# « This server is ready. » — la table ne peut pas voir un littéral qui ne lui est
+# pas présenté.
+TRADUCTIONS.update({
+    "Se connecter": "Connect",
+    "Reconnecter": "Reconnect",
+    "Revérifier": "Check again",
+    "Rafraîchir la liste": "Refresh the list",
+    "Choisir": "Choose",
+    "Ouvrir Tailscale": "Open Tailscale",
+    "Installer Tailscale": "Install Tailscale",
+    "Ouvrez Tailscale sur cet appareil, et connectez-le au tailnet.":
+        "Open Tailscale on this device, and connect it to the tailnet.",
+    "Installez Tailscale sur cet appareil, puis connectez-le au tailnet.":
+        "Install Tailscale on this device, then connect it to the tailnet.",
+    "Tailscale n'a pas pu être ouvert sur cet appareil.":
+        "Tailscale could not be opened on this device.",
+    "jeton d'appareil": "device token",
+    "déjà enregistré — saisir pour remplacer": "already stored — type to replace",
+    "jeton complet (43 caractères)": "complete token (43 characters)",
+    "Ces deux réglages valent pour cet hôte, et s'appliquent maintenant : c'est le serveur connecté. « Chargées » veut dire prêtes à être reprises instantanément, pas en train de travailler.":
+        "Both settings apply to this host, and take effect now: it is the connected server. « Loaded » means ready to be picked up instantly, not currently working.",
+    "Ces deux réglages valent pour cet hôte et seront appliqués quand vous vous y connecterez.":
+        "Both settings apply to this host and will take effect when you connect to it.",
+})
+
+TRADUCTIONS.update({
+    "joignable": "reachable",
+    "joignables": "reachable",
+})
+
 if __name__ == "__main__":
     raise SystemExit(main())

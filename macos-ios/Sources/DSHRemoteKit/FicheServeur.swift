@@ -261,8 +261,8 @@ struct FicheServeur: View {
 
       Text(
         modele.serveurVise?.id == serveur.id
-          ? "Ces deux réglages valent pour cet hôte, et s'appliquent maintenant : c'est le serveur connecté. « Chargées » veut dire prêtes à être reprises instantanément, pas en train de travailler."
-          : "Ces deux réglages valent pour cet hôte et seront appliqués quand vous vous y connecterez."
+          ? L("Ces deux réglages valent pour cet hôte, et s'appliquent maintenant : c'est le serveur connecté. « Chargées » veut dire prêtes à être reprises instantanément, pas en train de travailler.")
+          : L("Ces deux réglages valent pour cet hôte et seront appliqués quand vous vous y connecterez.")
       )
       .font(.caption)
       .foregroundStyle(.secondary)
@@ -298,7 +298,7 @@ struct FicheServeur: View {
       HStack(spacing: 8) {
         SecureField(
           modele.jetonDisponible(pour: serveur.adresse)
-            ? "déjà enregistré — saisir pour remplacer" : "jeton d'appareil",
+            ? L("déjà enregistré — saisir pour remplacer") : L("jeton d'appareil"),
           // Guardé dès la frappe POUR CET HÔTE : un jeton collé puis abandonné
           // serait perdu, alors qu'il vient d'être recopié.
           text: Binding(
@@ -361,8 +361,8 @@ struct FicheServeur: View {
         let complet = modele.jetonBienForme(pour: serveur.adresse)
         Label(
           complet
-            ? "jeton complet (43 caractères)"
-            : "jeton incomplet : \(modele.longueurJeton(pour: serveur.adresse)) caractères au lieu de 43",
+            ? L("jeton complet (43 caractères)")
+            : L("jeton incomplet :") + " \(modele.longueurJeton(pour: serveur.adresse)) " + L("caractères au lieu de 43"),
           systemImage: complet ? "checkmark.seal" : EtatVisuel.attention.symbole
         )
         .font(.caption)
@@ -477,14 +477,14 @@ struct FicheServeur: View {
     guard serveur.enLigne else {
       if let autre = autreMacJoignable(serveur) {
         return (
-          "Choisir \(autre.premierMot)", "arrow.triangle.swap",
+          L("Choisir") + " \(autre.premierMot)", "arrow.triangle.swap",
           { Task { await modele.choisirEtConnecter(autre) } }
         )
       }
       // Aucun autre Mac joignable : la seule chose utile est de redemander la
       // liste — le Mac a pu être rallumé depuis la dernière découverte.
       return (
-        "Rafraîchir la liste", "arrow.clockwise",
+        L("Rafraîchir la liste"), "arrow.clockwise",
         { Task { await modele.synchroniserServeurs() } }
       )
     }
@@ -492,7 +492,7 @@ struct FicheServeur: View {
     case true:
       let dejaVise = modele.serveurChoisi == serveur
       return (
-        dejaVise ? "Reconnecter" : "Se connecter", "bolt.horizontal",
+        dejaVise ? L("Reconnecter") : L("Se connecter"), "bolt.horizontal",
         { Task { await modele.choisirEtConnecter(serveur) } }
       )
     case false, nil:
@@ -502,9 +502,9 @@ struct FicheServeur: View {
       // main, que la sonde ne voit pas puisqu'elle ne parcourt que le tailnet ;
       // sinon on redemande son verdict à la sonde, sans changer de cible.
       if ModeleApp.vise(modele.adresse, serveur) {
-        return ("Revérifier", "stethoscope", { Task { await modele.testerAdresse() } })
+        return (L("Revérifier"), "stethoscope", { Task { await modele.testerAdresse() } })
       }
-      return ("Revérifier", "stethoscope", { Task { await modele.sonderLesServeurs() } })
+      return (L("Revérifier"), "stethoscope", { Task { await modele.sonderLesServeurs() } })
     }
   }
 
@@ -560,19 +560,19 @@ struct FicheServeur: View {
   private var methodeTailscale: some View {
     Text(
       modele.tailscaleInstalle
-        ? "Ouvrez Tailscale sur cet appareil, et connectez-le au tailnet."
-        : "Installez Tailscale sur cet appareil, puis connectez-le au tailnet."
+        ? L("Ouvrez Tailscale sur cet appareil, et connectez-le au tailnet.")
+        : L("Installez Tailscale sur cet appareil, puis connectez-le au tailnet.")
     )
     .font(.caption)
     .foregroundStyle(.secondary)
     .fixedSize(horizontal: false, vertical: true)
     Button {
       if !modele.ouvrirTailscale() {
-        modele.signaler("Tailscale n'a pas pu être ouvert sur cet appareil.")
+        modele.signaler(L("Tailscale n'a pas pu être ouvert sur cet appareil."))
       }
     } label: {
       Label(
-        modele.tailscaleInstalle ? "Ouvrir Tailscale" : "Installer Tailscale",
+        modele.tailscaleInstalle ? L("Ouvrir Tailscale") : L("Installer Tailscale"),
         systemImage: "arrow.up.forward.app")
     }
     .buttonStyle(.borderless)

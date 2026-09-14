@@ -183,3 +183,42 @@ func espacesIntactsSurUnePage() {
   #expect(modele.adresse == "http://premier.exemple.test", "la cible n'a pas bougé")
   #expect(modele.espacesHote.count == 1)
 }
+
+// ── LA SECTION A-T-ELLE QUELQUE CHOSE À DIRE ? ────────────────────────────────
+//
+// Demande du propriétaire : « pour l'espace de travail, le fait qu'un serveur
+// n'existe pas encore — faire disparaître espace de travail s'il n'y a pas de
+// serveur sélectionné ». La règle vit dans le modèle parce qu'elle a un cas
+// délicat : une adresse SAISIE À LA MAIN n'appartient à aucune liste.
+
+@MainActor
+@Test("La section des espaces disparaît quand il n'y a NI machine NI données")
+func sectionDesEspacesSansMachine() {
+  let neuf = modeleDeTest()
+  #expect(!neuf.aQuelqueChoseADireDUneMachine, "appareil neuf : la section n'a rien à dire")
+
+  // UNE MACHINE DÉCOUVERTE SUFFIT — c'est même le cas qui la rend utile : elle
+  // annonce alors le nom du serveur et le compte de ses sessions.
+  neuf.remplacerServeursPourEssai([
+    ServeurMac(nom: "MacMini", nomDNS: "macmini.exemple.test", enLigne: true)
+  ])
+  #expect(neuf.aQuelqueChoseADireDUneMachine)
+}
+
+@MainActor
+@Test("Une adresse SAISIE À LA MAIN garde ses espaces, même sans machine découverte")
+func sectionDesEspacesAvecAdresseSaisie() {
+  // LE CAS DÉLICAT, ET LA RAISON POUR LAQUELLE LA RÈGLE N'EST PAS
+  // `serveurs.isEmpty`. Une adresse tapée à la main n'est dans AUCUNE liste : le
+  // carrousel reste vide, et pourtant la machine répond, ses espaces existent et
+  // ses sessions s'affichent. Les cacher serait une régression, pas un nettoyage.
+  let saisie = modeleDeTest()
+  saisie.definirAdresse("http://saisie.exemple.test")
+  #expect(!saisie.aQuelqueChoseADireDUneMachine, "aucune donnée encore : rien à dire")
+
+  saisie.appliquerEspaces(
+    [espaceHote(id: "e1", titre: "dsh-plugins", chemin: "/x/dsh-plugins", creeLe: 1, sessions: [])],
+    vu: saisie.generationDuDepart())
+
+  #expect(saisie.aQuelqueChoseADireDUneMachine)
+}

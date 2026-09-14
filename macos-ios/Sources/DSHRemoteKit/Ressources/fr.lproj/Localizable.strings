@@ -1,7 +1,7 @@
 /* Table française — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   206 clés. */
+   222 clés. */
 
 "%d jeton(s) d'appareil effacé(s)" = "%d jeton(s) d'appareil effacé(s)";
 "%d préférence(s) oubliée(s)" = "%d préférence(s) oubliée(s)";
@@ -45,6 +45,8 @@
 "Ce serveur est prêt." = "Ce serveur est prêt.";
 "Ce simulateur n'a pas de caméra, ou ce modèle ne sait pas analyser un QR code en direct. Utilisez « Coller un appairage » : le texte affiché sous le QR code du panneau fait exactement la même chose." = "Ce simulateur n'a pas de caméra, ou ce modèle ne sait pas analyser un QR code en direct. Utilisez « Coller un appairage » : le texte affiché sous le QR code du panneau fait exactement la même chose.";
 "Ce texte n'est pas une charge utile d'appairage." = "Ce texte n'est pas une charge utile d'appairage.";
+"Ces deux réglages valent pour cet hôte et seront appliqués quand vous vous y connecterez." = "Ces deux réglages valent pour cet hôte et seront appliqués quand vous vous y connecterez.";
+"Ces deux réglages valent pour cet hôte, et s'appliquent maintenant : c'est le serveur connecté. « Chargées » veut dire prêtes à être reprises instantanément, pas en train de travailler." = "Ces deux réglages valent pour cet hôte, et s'appliquent maintenant : c'est le serveur connecté. « Chargées » veut dire prêtes à être reprises instantanément, pas en train de travailler.";
 "Cet appareil" = "Cet appareil";
 "Cet appareil est appairé" = "Cet appareil est appairé";
 "Cet appareil n'est pas appairé à cette machine. Ouvrez sa page et prenez le QR code du panneau « Appairer un appareil » — ou, sur le Mac lui-même, recopiez le jeton que le harness n'affiche qu'une fois, au premier chargement du plugin." = "Cet appareil n'est pas appairé à cette machine. Ouvrez sa page et prenez le QR code du panneau « Appairer un appareil » — ou, sur le Mac lui-même, recopiez le jeton que le harness n'affiche qu'une fois, au premier chargement du plugin.";
@@ -56,6 +58,7 @@
 "Cette version d'appairage n'est pas connue de cette application." = "Cette version d'appairage n'est pas connue de cette application.";
 "Chargées en mémoire seulement" = "Chargées en mémoire seulement";
 "Chercher une machine" = "Chercher une machine";
+"Choisir" = "Choisir";
 "Choisissez une session dans la liste pour lire son journal." = "Choisissez une session dans la liste pour lire son journal.";
 "Coller le jeton depuis le presse-papier" = "Coller le jeton depuis le presse-papier";
 "Coller un appairage" = "Coller un appairage";
@@ -76,6 +79,7 @@
 "DSH Remote y répond : la machine peut servir l'application." = "DSH Remote y répond : la machine peut servir l'application.";
 "DSH · hôte" = "DSH · hôte";
 "DSH · hôte interrogé" = "DSH · hôte interrogé";
+"déjà enregistré — saisir pour remplacer" = "déjà enregistré — saisir pour remplacer";
 "Détail technique" = "Détail technique";
 "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit." = "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit.";
 "Effacer la recherche" = "Effacer la recherche";
@@ -98,14 +102,20 @@
 "Il reste une étape :" = "Il reste une étape :";
 "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il est gardé au trousseau — jamais dans les préférences — et n'est jamais renvoyé par une route." = "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il est gardé au trousseau — jamais dans les préférences — et n'est jamais renvoyé par une route.";
 "information" = "information";
+"Installer Tailscale" = "Installer Tailscale";
+"Installez Tailscale sur cet appareil, puis connectez-le au tailnet." = "Installez Tailscale sur cet appareil, puis connectez-le au tailnet.";
 "installé" = "installé";
 "Interrompre" = "Interrompre";
 "Interrompre le tour en cours" = "Interrompre le tour en cours";
 "Interrompre le tour en cours — la file d'attente est conservée" = "Interrompre le tour en cours — la file d'attente est conservée";
+"jeton complet (43 caractères)" = "jeton complet (43 caractères)";
 "Jeton d'appareil" = "Jeton d'appareil";
+"jeton d'appareil" = "jeton d'appareil";
 "Jeton d'appareil de cet hôte — à la main" = "Jeton d'appareil de cet hôte — à la main";
 "jeton incomplet :" = "jeton incomplet :";
 "jeton refusé" = "jeton refusé";
+"joignable" = "joignable";
+"joignables" = "joignables";
 "L'agent est bloqué sur une décision, dans plusieurs sessions." = "L'agent est bloqué sur une décision, dans plusieurs sessions.";
 "L'agent est bloqué sur une décision." = "L'agent est bloqué sur une décision.";
 "l'agent n'a pas pu prendre ce message maintenant" = "l'agent n'a pas pu prendre ce message maintenant";
@@ -147,11 +157,16 @@
 "Ou renseignez le texte du QR code" = "Ou renseignez le texte du QR code";
 "Ou, en ligne de commande :" = "Ou, en ligne de commande :";
 "Oublier ce serveur" = "Oublier ce serveur";
+"Ouvrez Tailscale sur cet appareil, et connectez-le au tailnet." = "Ouvrez Tailscale sur cet appareil, et connectez-le au tailnet.";
+"Ouvrir Tailscale" = "Ouvrir Tailscale";
 "pas de DSH" = "pas de DSH";
 "prêt" = "prêt";
 "Rafraîchir" = "Rafraîchir";
+"Rafraîchir la liste" = "Rafraîchir la liste";
 "Rechercher une session" = "Rechercher une session";
 "Rechercher une session, un projet…" = "Rechercher une session, un projet…";
+"Reconnecter" = "Reconnecter";
+"Revérifier" = "Revérifier";
 "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet." = "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet.";
 "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas." = "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas.";
 "Rien à coller : le presse-papier est vide. Copiez le texte affiché sous le QR code du panneau « Appairer un appareil »." = "Rien à coller : le presse-papier est vide. Copiez le texte affiché sous le QR code du panneau « Appairer un appareil ».";
@@ -182,6 +197,7 @@
 "Sur le Mac qui héberge DSH — pas sur cet appareil : ouvrez une session DSH sur ce Mac, et collez-lui ceci :" = "Sur le Mac qui héberge DSH — pas sur cet appareil : ouvrez une session DSH sur ce Mac, et collez-lui ceci :";
 "Sélectionne cette machine ; un second appui ouvre sa page" = "Sélectionne cette machine ; un second appui ouvre sa page";
 "Tailscale est connecté sur cet appareil" = "Tailscale est connecté sur cet appareil";
+"Tailscale n'a pas pu être ouvert sur cet appareil." = "Tailscale n'a pas pu être ouvert sur cet appareil.";
 "Terminé" = "Terminé";
 "terminée, pas encore lue" = "terminée, pas encore lue";
 "test de l'adresse…" = "test de l'adresse…";

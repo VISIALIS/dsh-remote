@@ -396,9 +396,13 @@ struct VueListeSessions: View {
   /// on ne sait pas encore — et le titre le dit, au lieu de compter faux.
   private var resumeServeurs: String? {
     guard !modele.serveurs.isEmpty else { return nil }
-    guard case .connue = modele.sonde else { return "vérification…" }
+    guard case .connue = modele.sonde else { return L("vérification…") }
     let joignables = modele.serveurs.filter { $0.enLigne && modele.sertDsh($0) == true }.count
-    return "\(joignables) joignable\(joignables > 1 ? "s" : "")"
+    // LE MOT EST COMPOSÉ, PAS INTERPOLÉ. « \(n) joignable(s) » n'est pas une clé de
+    // table — une phrase à trous ne peut pas être relue par `Scripts/traduire.py`
+    // —, et s'affichait donc en français dans une barre anglaise. Le pluriel vit
+    // dans la langue : le français l'écrit, l'anglais non.
+    return "\(joignables) " + (joignables > 1 ? L("joignables") : L("joignable"))
   }
 
   private var deplieParArgument: Bool {
@@ -485,7 +489,17 @@ struct VueListeSessions: View {
       // illisible : on ne cherche pas « une session », on cherche « la session
       // de ce projet ». On reproduit donc l'arbre de l'interface web plutôt que
       // d'inventer une présentation différente pour le même contenu.
-      Section {
+      //
+      // ELLE DISPARAÎT QUAND ELLE N'A RIEN À DIRE — demande du propriétaire :
+      // « faire disparaître espace de travail s'il n'y a pas de serveur
+      // sélectionné ». Sur un appareil neuf, cette section affichait un titre,
+      // « 0 session », et une phrase renvoyant à une machine qui n'existe pas
+      // encore ; le carrousel au-dessus dit déjà, lui, quoi faire. La règle est
+      // dans le modèle (`aQuelqueChoseADireDUneMachine`) parce qu'elle a un cas
+      // délicat : une adresse SAISIE À LA MAIN n'est dans aucune liste, et ses
+      // sessions doivent rester visibles.
+      if modele.aQuelqueChoseADireDUneMachine {
+        Section {
         ForEach(modele.espaces) { espace in
           // Un espace ENREGISTRÉ mais sans session n'est pas un dossier à
           // déplier : il n'a rien à montrer, et un chevron qui ne révèle rien
@@ -620,6 +634,7 @@ struct VueListeSessions: View {
           L("Espaces de travail"),
           detail: "\(modele.sessionsFiltrees.count) session\(modele.sessionsFiltrees.count > 1 ? "s" : "")",
           surtitre: modele.nomDuServeurAffiche)
+        }
       }
     }
     // `insetGrouped` est INDISPONIBLE sur macOS — la compilation le refuse, et

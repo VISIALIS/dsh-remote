@@ -2926,6 +2926,25 @@ public final class ModeleApp {
     return ExceptionATS.hote(adresse)
   }
 
+  /// LA BARRE A-T-ELLE QUELQUE CHOSE À DIRE D'UNE MACHINE ?
+  ///
+  /// POURQUOI CETTE QUESTION SE POSE. Sur un appareil neuf — rien d'appairé,
+  /// rien de découvert —, la section « Espaces de travail » n'avait rien à dire :
+  /// un titre, « 0 session », et une phrase renvoyant à une machine qui n'existe
+  /// pas encore (« lancez-en une sur le Mac, ou choisissez une autre machine
+  /// ci-dessus »). Le propriétaire a demandé de la faire disparaître dans ce cas.
+  ///
+  /// CE N'EST PAS `serveurs.isEmpty`, ET C'EST LE POINT DÉLICAT. Une adresse
+  /// SAISIE À LA MAIN n'appartient à aucune liste : la machine n'est donc pas
+  /// dans `serveurs`, et pourtant ses sessions existent et s'affichent. Les
+  /// cacher serait une régression, pas un nettoyage. La question est donc :
+  /// « y a-t-il une machine à montrer, OU quelque chose qui vienne d'une
+  /// machine ? » — et `nomDuServeurAffiche` répond exactement à la seconde
+  /// moitié, puisqu'il vaut `nil` quand il n'y a ni session ni espace.
+  public var aQuelqueChoseADireDUneMachine: Bool {
+    !serveursAffiches.isEmpty || nomDuServeurAffiche != nil
+  }
+
   /// Sessions regroupées par espace de travail, comme dans l'interface web.
   public var espaces: [EspaceDeTravail] {
     Regroupement.espaces(sessionsFiltrees, hotes: espacesHote)

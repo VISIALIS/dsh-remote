@@ -1,7 +1,7 @@
 /* Table anglaise — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   206 clés. */
+   222 clés. */
 
 "%d jeton(s) d'appareil effacé(s)" = "%d device token(s) erased";
 "%d préférence(s) oubliée(s)" = "%d preference(s) forgotten";
@@ -45,6 +45,8 @@
 "Ce serveur est prêt." = "This server is ready.";
 "Ce simulateur n'a pas de caméra, ou ce modèle ne sait pas analyser un QR code en direct. Utilisez « Coller un appairage » : le texte affiché sous le QR code du panneau fait exactement la même chose." = "This simulator has no camera, or this model cannot read a QR code live. Use « Coller un appairage »: the text shown under the QR code in the panel does exactly the same thing.";
 "Ce texte n'est pas une charge utile d'appairage." = "This text is not a pairing payload.";
+"Ces deux réglages valent pour cet hôte et seront appliqués quand vous vous y connecterez." = "Both settings apply to this host and will take effect when you connect to it.";
+"Ces deux réglages valent pour cet hôte, et s'appliquent maintenant : c'est le serveur connecté. « Chargées » veut dire prêtes à être reprises instantanément, pas en train de travailler." = "Both settings apply to this host, and take effect now: it is the connected server. « Loaded » means ready to be picked up instantly, not currently working.";
 "Cet appareil" = "This device";
 "Cet appareil est appairé" = "This device is paired";
 "Cet appareil n'est pas appairé à cette machine. Ouvrez sa page et prenez le QR code du panneau « Appairer un appareil » — ou, sur le Mac lui-même, recopiez le jeton que le harness n'affiche qu'une fois, au premier chargement du plugin." = "This device is not paired with that machine. Open its page and take the QR code from the « Appairer un appareil » panel — or, on the Mac itself, copy the token the harness shows only once, when the plugin first loads.";
@@ -56,6 +58,7 @@
 "Cette version d'appairage n'est pas connue de cette application." = "This app does not know that pairing version.";
 "Chargées en mémoire seulement" = "Loaded in memory only";
 "Chercher une machine" = "Find a machine";
+"Choisir" = "Choose";
 "Choisissez une session dans la liste pour lire son journal." = "Choose a session in the list to read its journal.";
 "Coller le jeton depuis le presse-papier" = "Paste the token from the clipboard";
 "Coller un appairage" = "Paste a pairing";
@@ -76,6 +79,7 @@
 "DSH Remote y répond : la machine peut servir l'application." = "DSH Remote answers there: the machine can serve the application.";
 "DSH · hôte" = "DSH · host";
 "DSH · hôte interrogé" = "DSH · host queried";
+"déjà enregistré — saisir pour remplacer" = "already stored — type to replace";
 "Détail technique" = "Technical detail";
 "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit." = "Erases the device tokens kept on this device — ALL of them, including those of machines you no longer visit —, the remembered address and name, the per-server preferences, the last session opened, the alert setting and the diagnostic file. The harness token, on the Mac, is untouched. A bootstrap file placed by hand is NOT erased: it would bring the address and the token back on the next launch, and the report says so.";
 "Effacer la recherche" = "Clear the search";
@@ -98,14 +102,20 @@
 "Il reste une étape :" = "One step left:";
 "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il est gardé au trousseau — jamais dans les préférences — et n'est jamais renvoyé par une route." = "It is shown only once, in the harness output, when the plugin first loads on that machine. It is kept in the keychain — never in the preferences — and is never returned by a route.";
 "information" = "information";
+"Installer Tailscale" = "Install Tailscale";
+"Installez Tailscale sur cet appareil, puis connectez-le au tailnet." = "Install Tailscale on this device, then connect it to the tailnet.";
 "installé" = "installed";
 "Interrompre" = "Interrupt";
 "Interrompre le tour en cours" = "Interrupt the current turn";
 "Interrompre le tour en cours — la file d'attente est conservée" = "Interrupt the current turn — the queue is kept";
+"jeton complet (43 caractères)" = "complete token (43 characters)";
 "Jeton d'appareil" = "Device token";
+"jeton d'appareil" = "device token";
 "Jeton d'appareil de cet hôte — à la main" = "Device token for this host — by hand";
 "jeton incomplet :" = "incomplete token:";
 "jeton refusé" = "token refused";
+"joignable" = "reachable";
+"joignables" = "reachable";
 "L'agent est bloqué sur une décision, dans plusieurs sessions." = "The agent is blocked on a decision, in several sessions.";
 "L'agent est bloqué sur une décision." = "The agent is blocked on a decision.";
 "l'agent n'a pas pu prendre ce message maintenant" = "the agent could not take this message right now";
@@ -147,11 +157,16 @@
 "Ou renseignez le texte du QR code" = "Or enter the QR code text";
 "Ou, en ligne de commande :" = "Or, on the command line:";
 "Oublier ce serveur" = "Forget this server";
+"Ouvrez Tailscale sur cet appareil, et connectez-le au tailnet." = "Open Tailscale on this device, and connect it to the tailnet.";
+"Ouvrir Tailscale" = "Open Tailscale";
 "pas de DSH" = "no DSH";
 "prêt" = "ready";
 "Rafraîchir" = "Refresh";
+"Rafraîchir la liste" = "Refresh the list";
 "Rechercher une session" = "Search for a session";
 "Rechercher une session, un projet…" = "Search a session or a project…";
+"Reconnecter" = "Reconnect";
+"Revérifier" = "Check again";
 "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet." = "Nothing can be reached on this machine while it is offline on the tailnet.";
 "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas." = "Nothing answers on its port 80: `tailscale serve` does not publish it.";
 "Rien à coller : le presse-papier est vide. Copiez le texte affiché sous le QR code du panneau « Appairer un appareil »." = "Nothing to paste: the clipboard is empty. Copy the text shown under the QR code in the « Appairer un appareil » panel.";
@@ -182,6 +197,7 @@
 "Sur le Mac qui héberge DSH — pas sur cet appareil : ouvrez une session DSH sur ce Mac, et collez-lui ceci :" = "On the Mac hosting DSH — not on this device: open a DSH session on that Mac and paste this into it:";
 "Sélectionne cette machine ; un second appui ouvre sa page" = "Selects this machine; a second tap opens its page";
 "Tailscale est connecté sur cet appareil" = "Tailscale is connected on this device";
+"Tailscale n'a pas pu être ouvert sur cet appareil." = "Tailscale could not be opened on this device.";
 "Terminé" = "Done";
 "terminée, pas encore lue" = "finished, not read yet";
 "test de l'adresse…" = "testing the address…";
