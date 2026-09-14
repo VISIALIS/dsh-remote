@@ -111,7 +111,7 @@
 "l'agent n'a pas pu prendre ce message maintenant" = "l'agent n'a pas pu prendre ce message maintenant";
 "l'hôte a refusé la demande" = "l'hôte a refusé la demande";
 "La machine à ajouter est sur le tailnet" = "La machine à ajouter est sur le tailnet";
-"Le bouton d'appairage est en bas de la barre latérale de l'interface web, sous le nom « DSH Remote ». S'il n'apparaît pas, rechargez l'onglet — et s'il manque encore, relancez `dsh web`." = "Le bouton d'appairage est en bas de la barre latérale de l'interface web, sous le nom « DSH Remote ». S'il n'apparaît pas, rechargez l'onglet — et s'il manque encore, relancez `dsh web`.";
+"Le bouton d'appairage est en bas de la barre latérale, sous le nom « DSH Remote ». Rechargez l'onglet : les routes du plugin s'activent à chaud, mais un bouton ajouté n'apparaît pas dans une page déjà ouverte (mesuré)." = "Le bouton d'appairage est en bas de la barre latérale, sous le nom « DSH Remote ». Rechargez l'onglet : les routes du plugin s'activent à chaud, mais un bouton ajouté n'apparaît pas dans une page déjà ouverte (mesuré).";
 "Le coffre du harness de cette machine contient un AUTRE jeton." = "Le coffre du harness de cette machine contient un AUTRE jeton.";
 "le fuseau horaire envoyé n'est pas reconnu" = "le fuseau horaire envoyé n'est pas reconnu";
 "Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre." = "Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre.";
@@ -202,8 +202,8 @@
 "Vérifiez sur cette machine ce qui est publié :" = "Vérifiez sur cette machine ce qui est publié :";
 "« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé." = "« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé.";
 "à appairer" = "à appairer";
-"À la suite" = "À la suite";
 "à la suite" = "à la suite";
+"À la suite" = "À la suite";
 "À propos" = "À propos";
 "à vérifier" = "à vérifier";
 "Écrire à cette session…" = "Écrire à cette session…";

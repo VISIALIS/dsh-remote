@@ -61,10 +61,29 @@ Le profil déclare `patchReload: live`. Mesuré, et contre-intuitif :
 |---|---|
 | Ligne ajoutée, retirée ou désactivée dans `cordis.patch.yml` | **rechargé à chaud** — les routes apparaissent ou disparaissent en quelques secondes |
 | **Code** de `dynamic/host.js` | **NON rechargé** |
+| **Moitié client** (`dynamic/client.js`) ajoutée alors que la page est DÉJÀ ouverte | **NON rechargée** — le bouton n'apparaît qu'après un rechargement de l'onglet |
 
 Le rechargement à chaud porte sur la **configuration**, pas sur le module : Node met en
 cache un module ESM par URL résolue, et Cordis réimporte la même URL. Une modification
 de code exige donc un **redémarrage du processus**.
+
+**LA TROISIÈME LIGNE A ÉTÉ MESURÉE LE 14 SEPTEMBRE 2026**, sur une instance vivante, et
+elle a une conséquence pratique : la procédure d'installation affichée par l'application
+demande de **recharger l'onglet**, pas de redémarrer le harness. Ce qui a été constaté,
+dans l'ordre :
+
+| Instant | `/dsh-remote/v1/sante` | Bouton du panneau | PID du harness |
+|---|---|---|---|
+| avant | `401` | affiché | 47643 |
+| ligne retirée + 6 s | **`404`** | **disparaît tout seul** | 47643 |
+| ligne remise + 6 s | **`401`** | **ne revient PAS** | 47643 |
+| onglet rechargé | `401` | revient | 47643 |
+
+Les routes suivent donc le patch dans les **deux** sens, à chaud, et le processus n'est
+jamais redémarré. Le **bouton**, lui, ne suit que le retrait : la page ouverte tient son
+graphe de modules du chargement, et un bundle AJOUTÉ après coup n'y entre pas. C'est
+pourquoi l'installation se termine par un rechargement d'onglet — une étape, pas une
+précaution de style.
 
 Ce n'est pas une précision gratuite : pendant le développement de ce plugin, trois
 vérifications « à chaud » ont été crues bonnes alors que l'ancien code tournait encore.
@@ -344,6 +363,14 @@ node --test plugins/dsh-remote/tests/*.test.js
 | P9 | `curl -s http://127.0.0.1:3080/dsh-remote/v1/sante -H "Authorization: Bearer <jeton d'un appareil>"` → `portee`, `capacites.ecriture` et `appareils` | la portée est **par appareil**, et le compte est publié sans la liste |
 | P10 | rejouer le même code (`curl -X POST …/appairage/echange -H "Authorization: Bearer <code>"`) une seconde fois → `403 code inconnu ou deja utilise` | un code ne sert **qu'une fois** |
 | P11 | après une retouche de `dynamic/client.js`, le bouton se met à jour **dans l'onglet déjà ouvert**, sans redémarrage du harness (visible en changeant le libellé ou le survol) | `dsh-client-hmr` surveille les bundles clients (`stat` toutes les 500 ms, puis `rebuilt`) — **non observé à ce jour** |
+| P12 | **ajouter ou retirer** la ligne du plugin agit à chaud sur les ROUTES, et sur le BOUTON dans un seul sens | **mesuré le 14 septembre 2026**, tableau du § « Ce que `patchReload: live` recharge » : `401` → `404` → `401` sans redémarrage (PID inchangé), le bouton disparaît seul mais ne revient qu'après un rechargement d'onglet |
+
+**P11 ET P12 NE DISENT PAS LA MÊME CHOSE, ET C'EST POURQUOI ELLES SONT DEUX.** P11 porte
+sur une **retouche** — le même bundle, dont le contenu change : c'est `dsh-client-hmr`
+qui doit republier sa révision, et personne ne l'a encore constaté. P12 porte sur
+l'**ajout et le retrait** d'un plugin : là, c'est le graphe de modules de la page qui est
+en jeu, et la mesure montre qu'il suit le retrait mais pas l'ajout. Une observation de
+l'une ne vaut donc pas preuve pour l'autre.
 
 Ce qui est **déjà** prouvé sans redémarrage, par les tests : l'encodeur embarqué
 est identique caractère pour caractère à celui de `share-qr` ; sa matrice est

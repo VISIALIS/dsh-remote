@@ -120,6 +120,8 @@ struct DemarcheInstallationPlugin: View {
           « Chargement » de plugin/README.md — c'est elle qui porte la
           ligne exacte à ajouter à ~/.dsh/profiles/web/cordis.patch.yml.
           Ne redémarre pas le harness : le profil recharge ce patch à chaud.
+          Précise-moi qu'il faut RECHARGER L'ONGLET de l'interface web pour que le
+          bouton d'appairage apparaisse.
           Vérifie ensuite que
           curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:3080/dsh-remote/v1/sante
           rend 401 ou 200 (401 = aucun jeton présenté, c'est normal), et dis-moi où
@@ -137,7 +139,7 @@ struct DemarcheInstallationPlugin: View {
       LigneCommande(
         commande: "curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:3080/dsh-remote/v1/sante")
 
-      T("Le bouton d'appairage est en bas de la barre latérale de l'interface web, sous le nom « DSH Remote ». S'il n'apparaît pas, rechargez l'onglet — et s'il manque encore, relancez `dsh web`.")
+      T("Le bouton d'appairage est en bas de la barre latérale, sous le nom « DSH Remote ». Rechargez l'onglet : les routes du plugin s'activent à chaud, mais un bouton ajouté n'apparaît pas dans une page déjà ouverte (mesuré).")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)

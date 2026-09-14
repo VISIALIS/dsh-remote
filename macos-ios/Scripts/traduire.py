@@ -414,8 +414,8 @@ TRADUCTIONS.update({
     "Jeton d'appareil de cet hôte — à la main": "Device token for this host — by hand",
     "Sur le Mac : le bouton « DSH Remote », en bas de la barre latérale — il ouvre un QR code et son texte, valables deux minutes.":
         "On the Mac: the « DSH Remote » button at the bottom of the sidebar — it opens a QR code and its text, valid for two minutes.",
-    "Le bouton d'appairage est en bas de la barre latérale de l'interface web, sous le nom « DSH Remote ». S'il n'apparaît pas, rechargez l'onglet — et s'il manque encore, relancez `dsh web`.":
-        "The pairing button is at the bottom of the sidebar in the web interface, labelled « DSH Remote ». If it does not appear, reload the tab — and if it is still missing, restart `dsh web`.",
+    "Le bouton d'appairage est en bas de la barre latérale, sous le nom « DSH Remote ». Rechargez l'onglet : les routes du plugin s'activent à chaud, mais un bouton ajouté n'apparaît pas dans une page déjà ouverte (mesuré).":
+        "The pairing button is at the bottom of the sidebar, labelled « DSH Remote ». Reload the tab: the plugin's routes come up hot, but a button added afterwards does not appear in an already-open page (measured).",
 
     # La fiche d'un serveur : le verdict, et le travail à faire.
     "prêt": "ready",

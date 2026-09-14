@@ -111,7 +111,7 @@
 "l'agent n'a pas pu prendre ce message maintenant" = "the agent could not take this message right now";
 "l'hôte a refusé la demande" = "the host refused the request";
 "La machine à ajouter est sur le tailnet" = "The machine to add is on the tailnet";
-"Le bouton d'appairage est en bas de la barre latérale de l'interface web, sous le nom « DSH Remote ». S'il n'apparaît pas, rechargez l'onglet — et s'il manque encore, relancez `dsh web`." = "The pairing button is at the bottom of the sidebar in the web interface, labelled « DSH Remote ». If it does not appear, reload the tab — and if it is still missing, restart `dsh web`.";
+"Le bouton d'appairage est en bas de la barre latérale, sous le nom « DSH Remote ». Rechargez l'onglet : les routes du plugin s'activent à chaud, mais un bouton ajouté n'apparaît pas dans une page déjà ouverte (mesuré)." = "The pairing button is at the bottom of the sidebar, labelled « DSH Remote ». Reload the tab: the plugin's routes come up hot, but a button added afterwards does not appear in an already-open page (measured).";
 "Le coffre du harness de cette machine contient un AUTRE jeton." = "The harness vault on that machine holds a DIFFERENT token.";
 "le fuseau horaire envoyé n'est pas reconnu" = "the time zone sent is not recognised";
 "Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre." = "The token is not what failed here: nothing could be reached. Note that it is SPECIFIC TO EACH HOST — this machine's token will not work for another.";
@@ -202,8 +202,8 @@
 "Vérifiez sur cette machine ce qui est publié :" = "Check what is published on this machine:";
 "« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé." = "“Connect” targets this address right away. “Test the address” does not change server: it only reports what it found.";
 "à appairer" = "not paired";
-"À la suite" = "Queued";
 "à la suite" = "queued";
+"À la suite" = "Queued";
 "À propos" = "About";
 "à vérifier" = "to check";
 "Écrire à cette session…" = "Write to this session…";

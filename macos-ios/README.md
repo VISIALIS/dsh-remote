@@ -696,12 +696,18 @@ Trois choses ont motivé ce changement, et chacune est un défaut de la version 
 
 1. **ELLE DEMANDAIT DE REDÉMARRER LE HARNESS, ET C'ÉTAIT FAUX** — sur son point décisif. Le
    profil est en `patchReload: live` : ajouter la ligne au patch est rechargé **à chaud**, et
-   les routes apparaissent en quelques secondes (mesuré, écrit au README du plugin). Ce qui
-   reste à constater — P11 du même README — est l'apparition du **bouton** du panneau sans
-   redémarrage : d'où la phrase qui demande de recharger l'onglet, puis de relancer `dsh web`
-   SI le bouton n'est toujours pas là. On ne fait donc redémarrer personne « au cas où » ;
-   pour une PREMIÈRE installation, il n'existe d'ailleurs aucun « ancien processus qui
-   continue de répondre » — l'argument était faux au moment où on le lisait.
+   les routes apparaissent en quelques secondes. Ce n'était pas seulement écrit : c'est
+   **mesuré depuis**, sur une instance vivante — `401` → `404` → `401` autour du retrait et de
+   la remise de la ligne, **PID du harness inchangé** du début à la fin. Pour une PREMIÈRE
+   installation, il n'existe d'ailleurs aucun « ancien processus qui continue de répondre » :
+   l'argument était faux au moment où on le lisait.
+   **LE BOUTON, LUI, DEMANDE UN RECHARGEMENT D'ONGLET — ET C'EST MESURÉ AUSSI.** La même
+   expérience a montré qu'il disparaît tout seul quand la ligne est retirée, mais **ne revient
+   pas** quand elle est remise : la page ouverte tient son graphe de modules du chargement, et
+   un bundle ajouté après coup n'y entre pas. « Rechargez l'onglet » est donc une ÉTAPE de la
+   procédure, pas une précaution de style — et le harness, lui, n'est jamais redémarré. Le
+   détail est au README du plugin (tableau du § « Ce que `patchReload: live` recharge », et
+   P12).
 2. **ELLE ÉTAIT ÉCRITE SUR L'APPAREIL, POUR UNE MACHINE OÙ L'ON N'EST PAS.** C'est le Mac qui
    doit cloner, déclarer et vérifier. La consigne le dit maintenant en toutes lettres (« sur
    le Mac qui héberge DSH — pas sur cet appareil »), et c'est l'agent de ce Mac qui exécute :
@@ -2715,7 +2721,7 @@ inactive.
 | **La page d'un serveur remplace le diagnostic dans le panneau latéral** | capture iPhone (`--page-seule`) : état, adresse, actions et jeton sur la page ; le panneau ne garde que pastille, légende et nom |
 | **Une sonde annulée n'écrase plus le verdict** | journal : `fin : 1 serveur(s) DSH sur 2` puis `fin : 0` avant correction ; après, la sonde annulée ne publie rien et la page affiche « DSH · hôte interrogé » |
 | **La page dit que le plugin manque, et donne la démarche** | capture iPhone de la page de MacMini (alors que l'app vise une autre machine) : constat nommé, la consigne à coller copiable, la vérification `curl` |
-| **La démarche n'exige plus de redémarrage** | le README du plugin, tableau « Ce que `patchReload: live` recharge » (mesuré) : la LIGNE du patch est rechargée à chaud, seul un changement de CODE exige un processus neuf |
+| **La démarche n'exige plus de redémarrage, et le rechargement d'onglet est une étape** | **expérience sur une instance vivante** (14 septembre 2026) : ligne retirée → `sante` `404`, le bouton disparaît seul ; ligne remise → `sante` `401`, le bouton **ne revient pas** ; onglet rechargé → il revient. **PID du harness inchangé** du début à la fin. Détail au README du plugin (P12) |
 | **Le diagnostic de santé d'un serveur** | captures iPhone : conclusion (« Il reste une étape : « … » ») puis les cinq constats, sans verrou ; sur un Mac hors ligne, l'étape 2 avec ses commandes et les suivantes « à vérifier » |
 | **Les étapes suivantes sont grisées, et lisibles** | capture iPhone : frontière (étape 2) avec sa méthode dépliée, étapes 3 et 4 grisées avec un cadenas, « après l'étape N », leur explication, et « Voir la méthode » — le détail n'est plus caché, seulement replié |
 | **La page d'un serveur est structurée en quatre bandes, et partagée avec l'ajout** | captures macOS (`--page-seule`) : prêt, pas de DSH (MacMini), hors ligne — l'état est dit UNE fois, l'action proposée peut aboutir, les réglages sont repliés ; **et deux captures après la refonte** (une machine prête, `--ajout --page-seule`) : mêmes bandes, mêmes constats, la seule différence étant le mode |
