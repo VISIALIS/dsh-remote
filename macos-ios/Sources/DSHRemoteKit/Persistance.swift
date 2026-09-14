@@ -88,6 +88,7 @@ public struct Persistance {
   public static let cleNomServeur = "dsh-remote.dernier-nom-serveur"
   public static let clePreferences = "dsh-remote.preferences-serveurs"
   public static let cleNavigation = "dsh-remote.navigation"
+  public static let cleAlertes = "dsh-remote.alertes"
   public static let nomDuFichierDAmorcage = "dsh-remote-config.json"
   public static let nomDuDiagnostic = "diagnostic.json"
 
@@ -144,6 +145,18 @@ public struct Persistance {
   public func memoriserPreferences(_ preferences: [String: PreferencesServeur]) {
     guard let donnees = try? JSONEncoder().encode(preferences) else { return }
     defaults.set(donnees, forKey: Self.clePreferences)
+  }
+
+  // MARK: - Les alertes
+
+  /// Les alertes sont ÉTEINTES par défaut, et l'absence de clé veut dire « non » :
+  /// une application neuve n'a rien demandé, et n'a donc rien à se rappeler.
+  public func lireAlertes() -> Bool {
+    defaults.bool(forKey: Self.cleAlertes)
+  }
+
+  public func memoriserAlertes(_ actives: Bool) {
+    defaults.set(actives, forKey: Self.cleAlertes)
   }
 
   // MARK: - L'état de navigation

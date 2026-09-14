@@ -27,6 +27,9 @@ public final class ModeleApp {
   /// Ce qui survit à l'application : adresse mémorisée, préférences par serveur,
   /// fichier d'amorçage, diagnostic. Injectée, donc éprouvable sans disque.
   private let persistance: Persistance
+  /// LE CANAL DES ALERTES, injectable : c'est ce qui permet d'éprouver « aucune
+  /// alerte quand elles sont éteintes » au lieu de le supposer.
+  private let alerteur: Alerteur
 
   /// COMMENT on demande à une machine si elle sert DSH. La mécanique vit
   /// là-bas ; le modèle garde l'état du verdict et les règles qui l'entourent.
@@ -342,6 +345,42 @@ public final class ModeleApp {
     navigation = persistance.lireNavigation()
   }
 
+  // MARK: - Les alertes
+
+  /// LES ALERTES SONT ÉTEINTES PAR DÉFAUT, et c'est délibéré : une application qui
+  /// réclame le droit d'envoyer des notifications sans qu'on lui ait rien demandé
+  /// apprend à être refusée. C'est l'utilisateur qui les allume, et
+  /// l'autorisation système n'est demandée QU'À CE MOMENT-LÀ.
+  public private(set) var alertesActives = false
+
+  /// La dernière observation connue — `nil` tant qu'aucune liste n'est arrivée.
+  private var observationPrecedente:
+    (generation: Int, attendent: Set<String>, terminees: Set<String>)?
+
+  /// Allume ou éteint les alertes, en demandant l'autorisation au SYSTÈME quand on
+  /// les allume. Rend l'état réellement obtenu : un refus système laisse
+  /// l'interrupteur éteint, et l'écran doit le dire plutôt que de mentir.
+  @discardableResult
+  public func definirAlertes(_ actives: Bool) async -> Bool {
+    guard actives else {
+      alertesActives = false
+      persistance.memoriserAlertes(false)
+      return false
+    }
+    let accordees = await alerteur.demanderAutorisation()
+    alertesActives = accordees
+    persistance.memoriserAlertes(accordees)
+    if !accordees {
+      signaler(
+        "Les alertes n'ont pas été autorisées. Autorisez-les dans les réglages du système, puis rallumez cet interrupteur.")
+    }
+    return accordees
+  }
+
+  private func chargerAlertes() {
+    alertesActives = persistance.lireAlertes()
+  }
+
   /// Le filtre « chargées seulement », POUR LE SERVEUR COURANT.
   public var filtresActifs: Bool { preferences(pour: adresse).chargeesSeulement }
 
@@ -439,6 +478,13 @@ public final class ModeleApp {
       "[liste] \(liste.sessions.count) session(s), \(liste.sessions.filter { $0.vivante == true }.count) vivante(s), filtre=\(filtresActifs)"
     )
     sessions = liste.sessions
+    // L'OBSERVATION APPARTIENT À L'ÉCRIVAIN. Elle était appelée par les trois
+    // sites qui écrivent une liste, juste après — un contrat écrit en commentaire
+    // (« appelé APRÈS chaque mise à jour de `sessions` ») que rien ne tenait : un
+    // quatrième appelant l'aurait oubliée, et les alertes comme les pastilles de
+    // fin de tour seraient devenues silencieuses sans que rien ne le dise. Ici,
+    // c'est structurel.
+    observerLesFinsDeTour()
   }
 
   /// Journal d'une session — même règle, ET la session en plus.
@@ -768,7 +814,6 @@ public final class ModeleApp {
     let depart = generationDuDepart()
     guard let liste = try? await client.listerSessions(limite: 200) else { return }
     appliquerSessions(liste, vu: depart)
-    observerLesFinsDeTour()
   }
 
   // MARK: - Rappels de fin
@@ -792,7 +837,40 @@ public final class ModeleApp {
     let observations = sessions.map {
       EtatObserve(identifiant: $0.id, enCours: $0.statut == "en_cours")
     }
+    let termineesAvant = terminees
     terminees = rappelsDeFin.observer(observations, regardee: sessionOuverte?.id)
+    prevenirSiNecessaire(termineesAvant: termineesAvant)
+  }
+
+  /// LES ALERTES PARTENT D'ICI, et d'ici seulement : c'est le seul endroit qui
+  /// voit DEUX observations successives, donc le seul qui puisse dire ce qui a
+  /// CHANGÉ.
+  ///
+  /// POURQUOI LA PREMIÈRE OBSERVATION N'ALERTE PAS. Au lancement, la liste arrive
+  /// complète : sans cette règle, trois sessions déjà bloquées produiraient trois
+  /// alertes pour un état que l'utilisateur voit à l'écran. `observationPrecedente`
+  /// vaut `nil` tant qu'aucune liste n'a été reçue, et c'est ce `nil` qui
+  /// distingue « tout est nouveau » de « rien n'a changé ».
+  private func prevenirSiNecessaire(termineesAvant: Set<String>) {
+    let attendent = Set(sessions.filter { $0.attendReponse == true }.map(\.id))
+    let precedente = observationPrecedente
+    observationPrecedente = (generation: generation, attendent: attendent, terminees: terminees)
+    // LA GÉNÉRATION FAIT PARTIE DE LA COMPARAISON. Après un changement de
+    // machine, la première liste du nouvel hôte ne compare rien : elle retient.
+    // Sans cela, trois sessions déjà bloquées ailleurs produiraient trois alertes
+    // pour un état que personne n'a vu commencer.
+    guard alertesActives, let precedente, precedente.generation == generation else { return }
+
+    let alertes = Alerte.aEnvoyer(
+      attendent: attendent,
+      attendaientAvant: precedente.attendent,
+      terminees: terminees,
+      termineesAvant: termineesAvant,
+      regardee: sessionOuverte?.id)
+    guard !alertes.isEmpty else { return }
+    Task { [alerteur] in
+      for alerte in alertes { await alerteur.prevenir(alerte) }
+    }
   }
 
   /// Efface le rappel d'une session, parce que l'utilisateur l'a ouverte.
@@ -837,17 +915,20 @@ public final class ModeleApp {
   public init(
     gardien: GardienDeJetons = GardienParDefaut.faire(),
     persistance: Persistance = Persistance(),
+    alerteur: Alerteur = AlerteurSysteme(),
     transport: Connexion = Connexion(),
     sondeur: Sonde = Sonde()
   ) {
     self.gardien = gardien
     self.persistance = persistance
+    self.alerteur = alerteur
     self.transport = transport
     self.sondeur = sondeur
     chargerConfiguration()
     chargerPreference()
     chargerPreferencesServeurs()
     chargerNavigation()
+    chargerAlertes()
   }
 
   /// Mémorise l'adresse et le nom du serveur choisis, entre deux lancements.
@@ -1980,10 +2061,6 @@ public final class ModeleApp {
       // LE serveur a répondu ET accepté le jeton : une seule valeur le dit —
       // capacités, nombre de sessions rendues, et « joint » en découlent.
       self.connexion = .jointe(jonction.sante, reponses: jonction.reponses)
-      // Première observation : elle ne fait que retenir qui travaille. Une
-      // session déjà au repos au chargement ne doit PAS produire de pastille
-      // verte — sinon l'application s'ouvrirait sur une liste de faux rappels.
-      self.observerLesFinsDeTour()
     }
     Trace.siActive("[demarrage] connecter \(adresseVisee) : \(Int(Date().timeIntervalSince(debutConnexion) * 1000)) ms, erreur=\(erreur == nil ? "non" : "OUI")")
     if erreur == nil {
@@ -2018,7 +2095,6 @@ public final class ModeleApp {
       let depart = self.generationDuDepart()
       let liste = try await client.listerSessions(limite: 200)
       self.appliquerSessions(liste, vu: depart)
-      self.observerLesFinsDeTour()
     }
     if erreur == nil { demarrerSuivi() }
   }

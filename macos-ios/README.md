@@ -1552,6 +1552,45 @@ L'annulation **conserve la file d'attente** : ce qui n'a pas encore été trait�
 reste en attente. Une session froide est refusée (`404`) — il n'y a rien à
 interrompre.
 
+### Les alertes : « l'agent attend », « c'est fini »
+
+C'est la seule information que l'application ne savait pas dire **quand on ne la
+regarde pas**. La section « Demande votre attention » la remonte en tête de liste —
+mais il faut ouvrir l'application pour la voir, et les six réviseurs de l'audit en
+ont fait la valeur d'usage n° 1.
+
+**Éteintes par défaut, et l'autorisation n'est demandée qu'au moment où on les
+allume.** Une application qui réclame le droit d'envoyer des notifications au
+lancement apprend à être refusée. L'interrupteur vit dans les réglages, à côté de ce
+qu'il concerne, et il **suit l'état réellement obtenu** : un refus du système le
+laisse éteint plutôt que d'afficher un « oui » qui ne produirait rien.
+
+**Ce qui déclenche une alerte, et ce qui la tait** — la décision est une fonction
+pure (`Alerte.aEnvoyer`), donc elle se relit :
+
+| Règle | Pourquoi |
+|---|---|
+| Une attente **nouvelle** | La liste est rafraîchie toutes les trois secondes : alerter sur l'ÉTAT enverrait vingt notifications par minute |
+| Une fin de tour **nouvelle** | Même raison ; le rappel de fin existait déjà à l'écran |
+| **Rien pour ce qu'on regarde** | Même règle que le rappel de fin : une notification pour un écran qu'on a sous les yeux est du bruit |
+| **Une** alerte par événement, avec le compte | Cinq sessions qui se terminent ensemble font une alerte « 3 tours… », pas cinq — une pile de notifications identiques s'apprend à être ignorée |
+| Rien à la **première** liste, ni après un changement de machine | Au lancement, tout est « nouveau » : alerter ferait sonner l'application pour un état que l'utilisateur voit à l'écran. La comparaison retient donc la GÉNÉRATION de la cible |
+| L'attente **avant** la fin | L'attente demande une action ; une fin est une bonne nouvelle à lire |
+
+**La limite, écrite là où on allume les alertes et pas seulement ici.** Une alerte
+locale part d'un processus **vivant** : iOS suspend une application quelques secondes
+après son passage en arrière-plan, et rien ne peut alors être observé. Ce qui est
+couvert est donc « l'agent a fini pendant que je regardais ailleurs », pas
+« prévenez-moi cette nuit ». La réveiller demanderait un serveur de notification —
+ce projet n'en a pas, et n'en veut pas (RÈGLE #0 : aucune donnée ne sort de la
+machine).
+
+**Une garde mesurée, pas une précaution.** `UNUserNotificationCenter.current()` exige
+un identifiant de paquet, et un binaire nu ne rend pas `nil` : il **lève** et le
+processus **avorte** (mesuré : `NSInternalInconsistencyException:
+bundleProxyForCurrentProcess is nil`, code 134, signal 6). Sans la garde, `swift run
+DSHRemoteMac` — le chemin de développement documenté — mourrait au lancement.
+
 ### Quand l'hôte n'écrit pas : le composeur absent SE DIT
 
 Le composeur n'apparaît que si l'hôte annonce `capacites.ecriture` — la règle du
@@ -1782,6 +1821,12 @@ redécouvre pas comme des oublis.
   rouvrir l'application et la voir revenir sur la même session n'a pas été constaté
   en capture : cela demande d'ouvrir un journal, de quitter, de relancer — trois
   gestes que cet environnement ne sait pas injecter dans la liste.
+- **La notification ELLE-MÊME n'a pas été observée.** Ce qui est prouvé, c'est la
+  DÉCISION (9 tests, dont un canal espion qui vérifie qu'aucune alerte ne part
+  quand elles sont éteintes) et la garde qui empêche le plantage hors paquet. La
+  bannière du système, elle, demande un paquet signé, une autorisation accordée à
+  la main, et une session qui se met réellement à attendre — trois choses que cet
+  environnement ne fournit pas.
 - **Le titre des menus FOURNIS PAR LE SYSTÈME reste en anglais** quand
   l'application est lancée comme binaire nu (`swift run`) : elle n'a alors ni
   paquet ni `Info.plist`, donc aucune région de développement, et « Settings… »
@@ -2153,4 +2198,6 @@ inactive.
 | **Deux machines qui partageaient « MacBook » se distinguent** | capture des données réelles : « MacBook Air » et « MacBook Pro », là où deux vignettes disaient « MacBook » — 5 tests sur `NomsCourts` |
 | **L'état de navigation fait un aller-retour** | 2 tests : espaces triés relus par un SECOND modèle sur le même domaine ; une session mémorisée n'est rouverte que si l'hôte la nomme |
 | **Le collage iOS ne lit plus le presse-papiers à l'insu de l'utilisateur** | `PasteButton` des deux côtés (feuille Adresse, page d'une machine) ; compilation iOS complète par `Scripts/construire-app-ios.sh --simulateur` → `BUILD SUCCEEDED` |
+| **Les alertes ne partent que sur un CHANGEMENT, et jamais pour ce qu'on regarde** | 9 tests : attente nouvelle, regroupement, session regardée, ordre attente-avant-fin, première observation muette, éteintes par défaut, refus système qui laisse l'interrupteur éteint, préférence relue au lancement |
+| **`UNUserNotificationCenter` sans paquet fait AVORTER le processus** | mesuré sur un binaire nu : `NSInternalInconsistencyException: bundleProxyForCurrentProcess is nil`, code 134 — d'où la garde `AlerteurSysteme.possibles` |
 | **La suite de tests ne touche plus aux préférences de la machine** | 33 tests construisaient `ModeleApp()` sur le domaine partagé ; ils sont tous isolés. Mesure : **12 échecs sur 15 exécutions** avant, **0 sur 20** après |

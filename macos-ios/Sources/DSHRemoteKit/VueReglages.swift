@@ -55,6 +55,7 @@ public struct FeuilleReglages: View {
     NavigationStack {
       Form {
         appareil
+        alertes
         diagnostic
         aPropos
       }
@@ -126,6 +127,40 @@ public struct FeuilleReglages: View {
         modele.tailnetDeLAppareil == true
           ? "Cet appareil porte une adresse de tailnet : il peut joindre les machines qui publient DSH."
           : "Sans tailnet, aucune machine distante n'est joignable — c'est la première étape du parcours de chaque serveur."
+      )
+      .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
+  // MARK: - Alertes
+
+  /// LES ALERTES, ET LEUR LIMITE DITE LÀ OÙ ON LES ALLUME.
+  ///
+  /// POURQUOI LA LIMITE EST ÉCRITE ICI, ET PAS SEULEMENT DANS LE README. Une
+  /// alerte locale part d'un processus VIVANT : iOS suspend une application
+  /// quelques secondes après son passage en arrière-plan, et rien ne peut alors
+  /// être observé. Promettre « soyez prévenu » sans le dire ferait passer une
+  /// limite de plateforme pour une panne — et c'est exactement ce que ce projet
+  /// refuse d'écrire.
+  ///
+  /// L'INTERRUPTEUR DIT LA VÉRITÉ : il suit l'état RÉELLEMENT obtenu, donc un
+  /// refus du système le laisse éteint au lieu d'afficher un « oui » qui ne
+  /// produirait rien.
+  @ViewBuilder
+  private var alertes: some View {
+    Section {
+      Toggle(
+        "Me prévenir quand l'agent attend ou termine",
+        isOn: Binding(
+          get: { modele.alertesActives },
+          set: { actives in
+            Task { await modele.definirAlertes(actives) }
+          }))
+    } header: {
+      Text("Alertes")
+    } footer: {
+      Text(
+        "Une alerte part quand une session se met à ATTENDRE une réponse, ou quand un tour se termine — jamais pour ce que vous êtes en train de regarder. Elle n'est envoyée que tant que l'application tourne : iOS la suspend en arrière-plan, et la réveiller demanderait un serveur de notification, que ce projet n'a pas."
       )
       .fixedSize(horizontal: false, vertical: true)
     }
