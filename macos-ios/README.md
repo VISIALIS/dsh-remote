@@ -1939,10 +1939,6 @@ redécouvre pas comme des oublis.
 - **Le multitâche iPad et le clavier/pointeur** n'ont pas été essayés : la HIG les
   attend d'une application iPad, et rien dans le code ne s'y oppose — mais « rien ne
   s'y oppose » n'est pas une mesure.
-- **L'application iOS n'a pas été revue dans les deux langues.** Le mécanisme est le
-  même (mêmes tables, même paquet de ressources, `CFBundleLocalizations` déclaré dans
-  `App/Info.plist`), mais aucune capture du simulateur en anglais n'a été prise : ce
-  qui est prouvé l'est sur l'application macOS.
 - **La notification ELLE-MÊME n'a pas été observée.** Ce qui est prouvé, c'est la
   DÉCISION (9 tests, dont un canal espion qui vérifie qu'aucune alerte ne part
   quand elles sont éteintes) et la garde qui empêche le plantage hors paquet. La
@@ -2320,6 +2316,8 @@ inactive.
 | **Deux machines qui partageaient « MacBook » se distinguent** | capture des données réelles : « MacBook Air » et « MacBook Pro », là où deux vignettes disaient « MacBook » — 5 tests sur `NomsCourts` |
 | **L'état de navigation fait un aller-retour** | 2 tests : espaces triés relus par un SECOND modèle sur le même domaine ; une session mémorisée n'est rouverte que si l'hôte la nomme |
 | **Le collage iOS ne lit plus le presse-papiers à l'insu de l'utilisateur** | `PasteButton` des deux côtés (feuille Adresse, page d'une machine) ; compilation iOS complète par `Scripts/construire-app-ios.sh --simulateur` → `BUILD SUCCEEDED` |
+| **L'iPad en anglais, sur simulateur** | langue du simulateur passée à l'anglais, application relancée, capture : « DeepSeek Harness server », « Needs your attention », « Workspaces », « No session open », « DSH · host », « no DSH », « offline » — et les deux colonnes de l'iPad |
+| **Le paquet iOS porte les deux tables** | dans le `.app` construit : `DSHRemote_DSHRemoteKit.bundle/{fr,en}.lproj/Localizable.strings`, **141 entrées** chacun, et `CFBundleLocalizations = [fr, en]` |
 | **L'interface anglaise couvre AUSSI les messages du modèle** | capture de l'application empaquetée en anglais : « DeepSeek Harness server », « Needs your attention », « Workspaces », « No session open », « Choose a session in the list to read its journal. », et sous les vignettes « DSH · host », « no DSH », « offline » |
 | **Le français reste le défaut** | capture de l'application empaquetée sans argument : « Serveur DeepSeek Harness », « Espaces de travail », « DSH · hôte », « Aucune session ouverte » |
 | **Les deux tables de traduction sont complètes** | 4 tests : les deux tables se lisent depuis le paquet, elles portent EXACTEMENT les mêmes clés (89), aucune valeur n'est vide, une clé absente rend `nil` |
