@@ -214,7 +214,6 @@ public final class ModeleApp {
       Trace.siActive("[jeton] AUCUN jeton pour \(cle)")
       return ""
     }
-
     let duCoffre = CoffreDuHarness.jetonDeLaMachine() ?? ""
     Trace.siActive(
       "[jeton] coffre du harness : longueur=\(duCoffre.count) empreinte=\(duCoffre.isEmpty ? "aucun" : String(Empreinte.de(duCoffre).prefix(8)))"
@@ -693,6 +692,30 @@ public final class ModeleApp {
     return nil
   }
 
+  /// OÙ EN EST L'APPAIRAGE DE CET APPAREIL AVEC CETTE MACHINE.
+  ///
+  /// POURQUOI C'EST ICI, ET PAS DANS LA VUE. Trois faits doivent être lus dans le
+  /// bon ordre — le refus du service d'abord, puis le jeton rangé —, et deux
+  /// écrans les lisaient chacun à sa façon : c'est ainsi qu'on a fini par
+  /// annoncer « pas de DSH » à une machine qui servait DSH. La règle vit donc à
+  /// côté de `causeSansDsh`, dont elle partage le point délicat : un refus ne
+  /// concerne QUE la machine visée, puisque c'est la connexion en cours qui l'a
+  /// constaté.
+  ///
+  /// LE REFUS PASSE AVANT LA PRÉSENCE. Un jeton bien formé mais refusé n'est pas
+  /// un appairage : c'est un secret étranger rangé sous le nom de cette machine,
+  /// et le dire « appairé » enverrait chercher la panne ailleurs.
+  public func etatAppairage(pour serveur: ServeurMac) -> EtapesServeur.EtatAppairage {
+    if serveurVise?.id == serveur.id, jetonRefuseParLeService { return .refuse }
+    return jetonBienForme(pour: serveur.adresse) ? .appaire : .absent
+  }
+
+  /// L'appairage de la machine VISÉE — pour les surfaces qui n'affichent pas une
+  /// fiche mais l'état courant (vignettes, panneau).
+  public var appairageDeLaCible: EtapesServeur.EtatAppairage {
+    serveurVise.map { etatAppairage(pour: $0) } ?? (jetonBienForme(pour: adresse) ? .appaire : .absent)
+  }
+
   /// Interroge chaque Mac pour savoir s'il sert DSH.
   ///
   /// Les sondes partent ENSEMBLE : une machine éteinte ne doit pas retarder les
@@ -701,18 +724,25 @@ public final class ModeleApp {
   /// muet ne mérite pas qu'on l'attende.
   public func sonderLesServeurs() async {
     let jeton = jetonDeLaCible()
-    // POURQUOI DEUX GARDES SÉPARÉS. Un jeton manquant rend la sonde IMPOSSIBLE :
-    // on marque alors l'état comme su, pour que les icônes cessent d'attendre.
-    // Mais une liste VIDE n'est pas un verdict — c'est une course : la sonde est
-    // lancée par `demarrerDecouverte` avant que Tailscale ait rendu sa liste.
-    // La déclarer « effectuée » dans ce cas, c'était empêcher à jamais tout
-    // verdict : mesuré, toutes les icônes restaient ORANGE.
-    guard jeton.count == 43 else {
-      // Sans jeton, aucune sonde n'est possible : ce n'est pas « on ne sait
-      // pas », c'est « on sait qu'on ne peut pas » — un verdict vide.
-      sonde = .connue(Sonde.Verdict())
-      return
-    }
+    // ON SONDE MÊME SANS JETON — ET C'EST UNE CORRECTION, PAS UN OUBLI.
+    //
+    // Il y avait ici une garde : `guard jeton.count == 43`, avec pour raison
+    // « sans jeton, aucune sonde n'est possible ». La raison était FAUSSE, et le
+    // prix était le pire des mensonges de cette application : un appareil non
+    // appairé ne sondait rien, publiait un verdict VIDE, et la vignette en
+    // concluait « pas de DSH » — donc envoyait installer un plugin déjà installé
+    // sur une machine parfaitement prête.
+    //
+    // `Sonde.interroger` compte déjà un `401` comme « DSH est là » : un jeton
+    // refusé PROUVE que le service a répondu. Le jeton vide ne l'empêche donc
+    // pas de mesurer le port et le plugin, qui ne dépendent pas de nous. Ce qui
+    // manque, l'appairage, est une AUTRE question — et elle a désormais son
+    // étape (`EtapesServeur`, cinquième), au lieu d'être confondue avec celle-ci.
+    //
+    // CE QUI RESTE VRAI, ET QUI RESTE GARDÉ : une liste VIDE n'est pas un
+    // verdict — c'est une course, la sonde étant lancée avant que Tailscale ait
+    // rendu sa liste. La déclarer « effectuée » empêchait à jamais tout verdict :
+    // mesuré, toutes les icônes restaient ORANGE.
     guard !serveurs.isEmpty else { return }
     // ON NE SONDE QUE CE QUI PEUT RÉPONDRE. Interroger une machine que Tailscale
     // dit hors ligne, c'est payer un délai pour un verdict déjà connu — et
@@ -1286,8 +1316,21 @@ public final class ModeleApp {
     // dit `appliquerServeursDuTailnet` : c'est un fait du TAILNET, pas une donnée
     // d'un serveur. La vider ici la ferait disparaître au moment précis où
     // l'utilisateur s'en sert — il vient de cliquer une machine de cette liste.
-    // On repart de zéro : la liste des machines a changé de source, un verdict
-    // sur l'ancienne ne dit rien de la nouvelle.
+    // LE VERDICT DE SONDE SURVIT AU CHANGEMENT DE MACHINE — ET C'EST UNE
+    // CORRECTION, MESURÉE À L'ÉCRAN.
+    //
+    // Il était remis à « inconnue » ici, avec pour raison « la liste des machines
+    // a changé de source ». La raison est fausse : choisir une machine ne change
+    // pas la LISTE — les autres Macs sont toujours là, et savoir s'ils servent DSH
+    // ne dépend pas de celle qu'on vise. Or la sonde n'est relancée que lorsque
+    // l'IDENTITÉ de la liste change (`Vues.swift`, `.task(id: empreinteServeurs)`) :
+    // le verdict effacé n'était donc JAMAIS recalculé, et il fallait une machine
+    // de plus ou de moins sur le tailnet pour que les vignettes ressortent de
+    // « vérification… ».
+    //
+    // Ce que le propriétaire a vu, et dit : « si je sélectionne le premier
+    // serveur, il m'affiche bien le nombre de joignables ; dès que je prends les
+    // autres serveurs, il y a marqué vérification… ».
   }
 
   /// Démarrage : choisir une machine JOIGNABLE, puis se connecter.

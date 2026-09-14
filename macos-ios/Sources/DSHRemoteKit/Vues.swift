@@ -950,7 +950,8 @@ struct CarrouselServeurs: View {
         libelle: libelles[serveur.id] ?? serveur.premierMot,
         cote: cote,
         choisi: modele.serveurChoisi == serveur,
-        sertDsh: modele.sertDsh(serveur))
+        sertDsh: modele.sertDsh(serveur),
+        appairage: modele.etatAppairage(pour: serveur))
       // Le `Group` n'est pas décoratif : les modificateurs d'accessibilité qui
       // suivent (libellé, infobulle, action nommée) s'appliquent à un TYPE DE VUE,
       // et un `if` n'en est pas un — mesuré : « no exact matches in call to
@@ -975,7 +976,7 @@ struct CarrouselServeurs: View {
       .accessibilityLabel(
         EtatMachine.libelleAccessible(
           nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
-          estLocal: serveur.estLocal)
+          estLocal: serveur.estLocal, appairage: modele.etatAppairage(pour: serveur))
       )
       // ── LA CONNEXION DEVIENT UNE ACTION NOMMÉE, ET C'EST UNE CORRECTION ────
       //
@@ -1013,13 +1014,14 @@ struct CarrouselServeurs: View {
           libelle: libelles[serveur.id] ?? serveur.premierMot,
           cote: cote,
           choisi: modele.serveurChoisi == serveur,
-          sertDsh: modele.sertDsh(serveur))
+          sertDsh: modele.sertDsh(serveur),
+          appairage: modele.etatAppairage(pour: serveur))
       }
       .buttonStyle(.plain)
       .accessibilityLabel(
         EtatMachine.libelleAccessible(
           nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
-          estLocal: serveur.estLocal)
+          estLocal: serveur.estLocal, appairage: modele.etatAppairage(pour: serveur))
       )
     #endif
   }
@@ -1100,6 +1102,14 @@ struct IconeServeur: View {
   /// sonde n'a pas rendu son verdict, l'icône ne doit RIEN affirmer : c'est un
   /// « je ne sais pas », pas un « non ».
   let sertDsh: Bool?
+
+  /// OÙ EN EST L'APPAIRAGE DE CET APPAREIL AVEC CETTE MACHINE.
+  ///
+  /// POURQUOI LA VIGNETTE EN A BESOIN. Une machine qui sert DSH mais dont cet
+  /// appareil n'a pas le jeton était annoncée « pas de DSH » : le mot accusait la
+  /// machine d'un manque qui est ici. La légende dit maintenant lequel des deux
+  /// manque — et c'est la seule chose qui décide du geste à faire.
+  let appairage: EtapesServeur.EtatAppairage
 
   /// Le côté du CADRE : la vignette, plus la marge qui la sépare des autres.
   private var cadre: CGFloat { cote + 6 }
@@ -1204,7 +1214,8 @@ struct IconeServeur: View {
   /// en 68 points.
   private var legende: String {
     EtatMachine.decrire(
-      enLigne: serveur.enLigne, sertDsh: sertDsh, estLocal: serveur.estLocal, court: true
+      enLigne: serveur.enLigne, sertDsh: sertDsh, estLocal: serveur.estLocal,
+      appairage: appairage, court: true
     ).texte
   }
 }

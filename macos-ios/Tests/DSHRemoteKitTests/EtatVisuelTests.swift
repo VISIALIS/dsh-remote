@@ -35,17 +35,32 @@ func correspondanceDesTons() {
   // un ton sur le mauvais cas, l'écran change de couleur sans que rien d'autre ne
   // le dise — et les deux mots (`attention` / `attente`) se ressemblent assez
   // pour qu'une relecture ne suffise pas.
-  let prete = EtatMachine.decrire(enLigne: true, sertDsh: true, estLocal: false, court: false)
+  let prete = EtatMachine.decrire(
+    enLigne: true, sertDsh: true, estLocal: false, appairage: .appaire, court: false)
   #expect(prete.ton == .pret)
 
-  let sansDsh = EtatMachine.decrire(enLigne: true, sertDsh: false, estLocal: false, court: false)
+  let sansDsh = EtatMachine.decrire(
+    enLigne: true, sertDsh: false, estLocal: false, appairage: .absent, court: false)
   #expect(sansDsh.ton == .attention)
 
-  let horsLigne = EtatMachine.decrire(enLigne: false, sertDsh: nil, estLocal: false, court: false)
+  let horsLigne = EtatMachine.decrire(
+    enLigne: false, sertDsh: nil, estLocal: false, appairage: .absent, court: false)
   #expect(horsLigne.ton == .attention, "« hors ligne » reste un avertissement, pas une erreur")
 
-  let enCours = EtatMachine.decrire(enLigne: true, sertDsh: nil, estLocal: false, court: false)
+  let enCours = EtatMachine.decrire(
+    enLigne: true, sertDsh: nil, estLocal: false, appairage: .absent, court: false)
   #expect(enCours.ton == .attente, "« on ne sait pas encore » est gris, jamais orange")
+
+  // L'APPAIRAGE A SON PROPRE TON, ET IL N'EST PAS CELUI DE LA PANNE. Une machine
+  // saine dont l'appareil n'a pas le jeton reste VERTE : c'est l'appareil qui
+  // n'est pas rattaché, et l'annoncer en orange ferait chercher une panne sur le
+  // Mac. Un jeton REFUSÉ, lui, est orange : il y a bien quelque chose à corriger.
+  let aAppairer = EtatMachine.decrire(
+    enLigne: true, sertDsh: true, estLocal: false, appairage: .absent, court: false)
+  #expect(aAppairer.ton == .pret)
+  let refuse = EtatMachine.decrire(
+    enLigne: true, sertDsh: true, estLocal: false, appairage: .refuse, court: false)
+  #expect(refuse.ton == .attention)
 }
 
 @Test("Une étape de parcours dit son état dans le vocabulaire commun")

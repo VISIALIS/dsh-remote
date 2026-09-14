@@ -63,6 +63,7 @@ struct VueServeur: View {
       enLigne: serveur.enLigne,
       sertDsh: modele.sertDsh(serveur),
       estLocal: serveur.estLocal,
+      appairage: modele.etatAppairage(pour: serveur),
       court: false)
   }
 
@@ -187,7 +188,8 @@ struct VueServeur: View {
       tailnetDeLAppareil: modele.tailnetDeLAppareil,
       enLigne: serveur.enLigne,
       sertDsh: modele.sertDsh(serveur),
-      cause: cause)
+      cause: cause,
+      appairage: modele.etatAppairage(pour: serveur))
   }
 
   /// LA CARTE DU DIAGNOSTIC — conclusion, puis constats.

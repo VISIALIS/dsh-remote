@@ -132,18 +132,35 @@ func libelleDuneMachine() {
   // annoncée « en ligne », c'est-à-dire l'inverse de ce qu'il faut savoir avant
   // d'appuyer — l'appui ne peut rien donner.
   #expect(
-    EtatMachine.libelleAccessible(nom: "MacMini", enLigne: true, sertDsh: false, estLocal: false)
+    EtatMachine.libelleAccessible(
+      nom: "MacMini", enLigne: true, sertDsh: false, estLocal: false, appairage: .absent)
       == "MacMini, " + L("pas de DSH"))
   #expect(
-    EtatMachine.libelleAccessible(nom: "MacMini", enLigne: true, sertDsh: true, estLocal: false)
+    EtatMachine.libelleAccessible(
+      nom: "MacMini", enLigne: true, sertDsh: true, estLocal: false, appairage: .appaire)
       == "MacMini, DSH")
   #expect(
-    EtatMachine.libelleAccessible(nom: "Mac mini", enLigne: true, sertDsh: true, estLocal: true)
+    EtatMachine.libelleAccessible(
+      nom: "Mac mini", enLigne: true, sertDsh: true, estLocal: true, appairage: .appaire)
       == "Mac mini, " + L("DSH · hôte interrogé"))
   #expect(
-    EtatMachine.libelleAccessible(nom: "MacMini", enLigne: false, sertDsh: nil, estLocal: false)
+    EtatMachine.libelleAccessible(
+      nom: "MacMini", enLigne: false, sertDsh: nil, estLocal: false, appairage: .absent)
       == "MacMini, " + L("hors ligne"))
   #expect(
-    EtatMachine.libelleAccessible(nom: "MacMini", enLigne: true, sertDsh: nil, estLocal: false)
+    EtatMachine.libelleAccessible(
+      nom: "MacMini", enLigne: true, sertDsh: nil, estLocal: false, appairage: .absent)
       == "MacMini, " + L("vérification…"))
+
+  // ET L'APPAIRAGE ENTRE DANS LA PHRASE, parce qu'il décide du geste : une
+  // machine saine qui n'est pas appairée ne s'annonce plus « pas de DSH » — le
+  // mot accusait le Mac d'un manque qui est dans l'appareil.
+  #expect(
+    EtatMachine.libelleAccessible(
+      nom: "MacMini", enLigne: true, sertDsh: true, estLocal: false, appairage: .absent)
+      == "MacMini, " + L("à appairer"))
+  #expect(
+    EtatMachine.libelleAccessible(
+      nom: "MacMini", enLigne: true, sertDsh: true, estLocal: false, appairage: .refuse)
+      == "MacMini, " + L("jeton refusé"))
 }

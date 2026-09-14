@@ -64,7 +64,7 @@ struct ParcoursDesEtapes<Methode: View>: View {
     // LE VERROU SE DÉDUIT DE LA LISTE, jamais d'un champ de l'étape : la règle
     // vit dans `EtapesServeur`, où elle est éprouvée. Il ne s'applique QU'AUX
     // OBJECTIFS : un diagnostic n'a pas de frontière.
-    let verrouillee = mode == .objectifs && EtapesServeur.estVerrouillee(etape, dans: etapes)
+    let verrouillee = mode == .objectifs && EtapesServeur.estVerrouillee(etape, dans: etapes, mode: mode)
     let presentation = EtapesServeur.presentation(etape, dans: etapes, mode: mode)
 
     return VStack(alignment: .leading, spacing: 8) {

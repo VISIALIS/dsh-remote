@@ -8,7 +8,7 @@ import Foundation
 /// DSH » sans savoir s'il lui manquait un port, un plugin, ou simplement un Mac
 /// allumé.
 ///
-/// Les QUATRE étapes sont celles de la mise en service, dans l'ordre où elles se
+/// Les CINQ étapes sont celles de la mise en service, dans l'ordre où elles se
 /// franchissent — chacune suppose la précédente :
 ///
 ///   1. TAILSCALE EST CONNECTÉ SUR CET APPAREIL : il porte une adresse de
@@ -18,22 +18,45 @@ import Foundation
 ///      propose ;
 ///   3. le PORT est OUVERT : quelque chose répond sur son port 80, publié par
 ///      `tailscale serve` ;
-///   4. le PLUGIN est INSTALLÉ : DSH Remote y répond.
+///   4. le PLUGIN est INSTALLÉ : DSH Remote y répond ;
+///   5. CET APPAREIL EST APPAIRÉ : un jeton, propre à lui, est rangé pour cette
+///      machine — sans quoi la connexion est refusée, quelle que soit la santé du
+///      Mac.
 ///
-/// LA PREMIÈRE A ÉTÉ AJOUTÉE APRÈS COUP, à la demande du propriétaire : « j'ai
-/// oublié un goal avant, le fait que Tailscale est connecté ». Elle manquait
-/// effectivement — sur un iPhone où Tailscale n'est pas installé, les trois autres
-/// étapes ne peuvent pas être franchies, et le parcours commençait pourtant par
-/// elles.
+/// LA CINQUIÈME A ÉTÉ AJOUTÉE APRÈS COUP, et elle répare une confusion coûteuse :
+/// sans jeton rangé, la sonde ne partait pas, le verdict restait vide, et la page
+/// annonçait « pas de DSH » — donc envoyait installer un plugin déjà installé sur
+/// une machine parfaitement prête. L'appairage est une ÉTAPE, la dernière, et
+/// elle se constate localement : le jeton est là, ou il n'y est pas.
+///
+/// LA PREMIÈRE AVAIT ÉTÉ AJOUTÉE DE LA MÊME FAÇON, à la demande du propriétaire :
+/// « j'ai oublié un goal avant, le fait que Tailscale est connecté ».
 ///
 /// CHAQUE ÉTAT VIENT D'UNE MESURE, JAMAIS D'UNE DÉDUCTION. L'adresse de tailnet
-/// se lit sur les interfaces de l'appareil ; « en ligne » vient de Tailscale ;
-/// les deux dernières de la sonde : une machine qui répond autre chose qu'un
-/// `404` (`-1004`, délai, DNS) a son port fermé ; une machine qui répond `404` a
-/// son port ouvert mais pas le plugin. Quand on ne sait pas encore, on dit
-/// « à vérifier » — un parcours qui affirme à tort est pire qu'un parcours
-/// incomplet, parce qu'il envoie chercher au mauvais endroit.
+/// se lit sur les interfaces de l'appareil, et l'appairage dans le trousseau ;
+/// « en ligne » vient de Tailscale ; les deux du milieu de la sonde : une machine
+/// qui répond autre chose qu'un `404` (`-1004`, délai, DNS) a son port fermé ;
+/// une machine qui répond `404` a son port ouvert mais pas le plugin. Quand on ne
+/// sait pas encore, on dit « à vérifier » — un parcours qui affirme à tort est
+/// pire qu'un parcours incomplet, parce qu'il envoie chercher au mauvais endroit.
 public enum EtapesServeur {
+
+  /// OÙ EN EST L'APPAIRAGE DE CET APPAREIL AVEC CETTE MACHINE.
+  ///
+  /// POURQUOI CE N'EST PAS UN BOOLÉEN. « Pas de jeton » et « jeton refusé » ont
+  /// la même conséquence — la connexion échoue —, mais pas le même remède : le
+  /// premier se répare en appairant, le second en appairant À NOUVEAU, parce que
+  /// le secret rangé n'est pas celui de cette machine-là. Un booléen obligerait
+  /// la vue à relire ailleurs pour distinguer les deux, et c'est exactement le
+  /// genre de déduction qui finit par diverger d'un écran à l'autre.
+  public enum EtatAppairage: Equatable, Sendable {
+    /// Un jeton bien formé est rangé pour cette machine.
+    case appaire
+    /// Aucun jeton n'est rangé pour cette machine.
+    case absent
+    /// Un jeton est rangé, et le service l'a refusé : ce n'est pas celui de cet hôte.
+    case refuse
+  }
 
   /// Où en est une étape.
   public enum Etat: Equatable, Sendable {
@@ -70,7 +93,7 @@ public enum EtapesServeur {
   /// LA RÈGLE, EN UNE FONCTION PURE : ouverte, repliée, ou rien.
   ///
   /// POURQUOI ELLE EXISTE, ET CE QU'ELLE CORRIGE. Sur la page « Ajouter un
-  /// serveur », les étapes 2 à 4 sont déclarées « à faire » par construction —
+  /// serveur », les étapes du Mac sont déclarées « à faire » par construction —
   /// on ne juge pas une machine qu'on n'a pas encore. La frontière ne pouvait
   /// donc JAMAIS avancer, et les étapes 3 et 4, verrouillées à perpétuité,
   /// n'affichaient NI leur explication NI leur méthode : « publier le port » et
@@ -83,18 +106,25 @@ public enum EtapesServeur {
   /// courte, et atteignable, donc plus personne ne bute sur une porte fermée.
   /// On ne demande à personne de faire l'étape 4 avant la 2 ; on refuse
   /// seulement de cacher comment on la fait.
+  ///
+  /// SUR UNE LISTE DE TRAVAIL, LA MÉTHODE OUVERTE EST CELLE DE CET APPAREIL. Les
+  /// deux côtés ne se mesurent pas : le Mac n'a même pas encore d'adresse. Ouvrir
+  /// la méthode du Mac ferait donc apprendre ici un travail qui se fait ailleurs —
+  /// et c'est précisément ce que le propriétaire a demandé de retirer. Le travail
+  /// du Mac reste écrit, replié : on le lit quand on est devant lui.
   public static func presentation(
     _ etape: Etape, dans etapes: [Etape], mode: Mode
   ) -> Presentation {
     guard etape.etat != .franchie else { return .rien }
-    let frontiere = premiereAEtapesFranchir(etapes)
     switch mode {
     case .diagnostic:
       // Un diagnostic DIT tout, mais n'OUTILLE qu'une chose à la fois : trois
       // jeux de commandes à l'écran noient celle qui est exécutable maintenant.
+      let frontiere = premiereAEtapesFranchir(etapes)
       return etape.numero == frontiere ? .ouverte : .repliee
     case .objectifs:
-      return estVerrouillee(etape, dans: etapes) ? .repliee : .ouverte
+      guard !estVerrouillee(etape, dans: etapes, mode: mode) else { return .repliee }
+      return etape.responsable == .appareil ? .ouverte : .repliee
     }
   }
 
@@ -103,17 +133,21 @@ public enum EtapesServeur {
   /// POURQUOI CE TYPE EXISTE, ET CE QU'IL CORRIGE. La page « Ajouter un serveur »
   /// présentait les quatre étapes sur le même plan, comme un travail à faire par
   /// la même personne au même endroit. C'était faux, et l'usage l'a dit : sur
-  /// l'application distante (macOS ou iOS), **une seule** de ces étapes se
-  /// constate depuis l'appareil — Tailscale y est-il connecté. Les trois autres
-  /// dépendent du Mac qui héberge DSH, et l'application les VÉRIFIE déjà toute
-  /// seule (le diagnostic « Ce serveur est prêt », sur la page de la machine).
+  /// l'application distante (macOS ou iOS), **deux** de ces étapes se constatent
+  /// depuis l'appareil — Tailscale y est-il connecté, et cet appareil est-il
+  /// appairé. Les trois autres dépendent du Mac qui héberge DSH, et l'application
+  /// les VÉRIFIE déjà toute seule (le diagnostic, sur la page de la machine).
   ///
   /// Les enseigner au même niveau faisait donc apprendre au remote un travail qui
   /// n'est pas le sien — et noyait les deux seules choses qu'il a à faire :
   /// vérifier Tailscale, puis prendre le QR code.
+  ///
+  /// C'EST AUSSI CE QUI DÉCIDE DU VERROU. Sur une liste de travail, seules les
+  /// étapes DU MÊME CÔTÉ se précèdent (voir `estVerrouillee`) : le geste d'ici
+  /// n'attend pas un travail qui se fait ailleurs.
   public enum Responsable: Equatable, Sendable {
-    /// CET APPAREIL : la seule chose que l'utilisateur peut constater et corriger
-    /// ici, et donc la seule que l'application doit enseigner d'abord.
+    /// CET APPAREIL : ce que l'utilisateur peut constater et corriger ici, et donc
+    /// ce que l'application doit enseigner d'abord.
     case appareil
     /// LE MAC QUI HÉBERGE DSH : hors de portée de l'application, et **constaté**
     /// par la sonde dès qu'une machine répond. Sa méthode reste écrite — elle sert
@@ -142,17 +176,18 @@ public enum EtapesServeur {
     }
   }
 
-  /// Les étapes qui concernent CET APPAREIL — une seule, aujourd'hui.
+  /// Les étapes qui concernent CET APPAREIL — deux, aujourd'hui : Tailscale, et
+  /// l'appairage.
   public static func deLAppareil(_ etapes: [Etape]) -> [Etape] {
     etapes.filter { $0.responsable == .appareil }
   }
 
-  /// Les étapes qui concernent LE MAC qui héberge DSH — les trois autres.
+  /// Les étapes qui concernent LE MAC qui héberge DSH — les trois du milieu.
   public static func deLHote(_ etapes: [Etape]) -> [Etape] {
     etapes.filter { $0.responsable == .hote }
   }
 
-  /// Les quatre étapes, dans l'ordre, pour une machine donnée.
+  /// Les cinq étapes, dans l'ordre, pour une machine donnée.
   ///
   /// - Parameters:
   ///   - tailnetDeLAppareil: CET appareil porte-t-il une adresse de tailnet ?
@@ -161,9 +196,18 @@ public enum EtapesServeur {
   ///     mesure de l'application).
   ///   - sertDsh: le verdict de la sonde — `nil` = pas encore su.
   ///   - cause: POURQUOI elle ne sert pas DSH, quand on le sait.
+  ///   - appairage: où en est l'appairage de CET APPAREIL avec cette machine.
+  ///     Il ne dépend ni du réseau ni de la sonde : le jeton est rangé ici, ou
+  ///     il ne l'est pas — c'est la seule des cinq étapes qui se lise sans rien
+  ///     demander à personne, avec la première.
   public static func etapes(
-    tailnetDeLAppareil: Bool?, enLigne: Bool, sertDsh: Bool?, cause: CauseSansDsh?
+    tailnetDeLAppareil: Bool?, enLigne: Bool, sertDsh: Bool?, cause: CauseSansDsh?,
+    appairage: EtatAppairage
   ) -> [Etape] {
+    // L'APPAIRAGE NE SE DÉDUIT PAS DU RÉSEAU. Il a donc sa valeur dès maintenant,
+    // et il la garde dans les deux branches ci-dessous : un appareil hors tailnet
+    // n'est pas appairé pour autant, et le dire n'engage à rien.
+    let appaire: Etat = appairage == .appaire ? .franchie : .aFaire
     // « PAS ENCORE MESURÉ » N'EST PAS « NON ». Tant qu'on n'a pas constaté
     // l'adresse de tailnet de cet appareil, l'étape 1 est INCONNUE — et les
     // suivantes aussi, puisqu'on ne peut rien conclure d'un appareil dont on ne
@@ -179,6 +223,7 @@ public enum EtapesServeur {
         etape(2, .inconnue),
         etape(3, .inconnue),
         etape(4, .inconnue),
+        etape(5, appaire),
       ]
     }
 
@@ -230,6 +275,7 @@ public enum EtapesServeur {
       etape(2, visibilite),
       etape(3, port),
       etape(4, plugin),
+      etape(5, appaire),
     ]
   }
 
@@ -279,7 +325,7 @@ public enum EtapesServeur {
         explication =
           "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse."
       }
-    default:
+    case 4:
       titre = L("Le plugin `dsh-remote` est installé")
       switch etat {
       case .franchie:
@@ -289,20 +335,40 @@ public enum EtapesServeur {
       case .inconnue:
         explication = L("DSH Remote doit y répondre pour que la machine serve l'application.")
       }
+    default:
+      titre = L("Cet appareil est appairé")
+      switch etat {
+      case .franchie:
+        explication = L("Il a son propre jeton pour cette machine : rien à recopier, jamais.")
+      case .aFaire:
+        // « PAS DE JETON ACCEPTÉ » COUVRE LES DEUX CAS — absent, ou refusé —, et
+        // c'est voulu : la phrase doit rester vraie dans les deux, sans quoi elle
+        // mentirait sur l'un des deux états. Le remède, lui, les distingue : c'est
+        // la méthode qui les sépare, pas le constat.
+        explication = L("Il n'a pas de jeton accepté par cette machine : la connexion serait refusée.")
+      case .inconnue:
+        explication = L("On ne sait pas encore si cet appareil est appairé à cette machine.")
+      }
     }
     return Etape(
       numero: numero, titre: titre, explication: explication, etat: etat,
-      responsable: numero == 1 ? .appareil : .hote)
+      responsable: (numero == 1 || numero == 5) ? .appareil : .hote)
   }
 
   /// LES ÉTAPES POUR AJOUTER UN SERVEUR — quand aucune machine n'est choisie.
   ///
   /// POURQUOI CE N'EST PAS `etapes(...)`. Là, on ne juge pas une machine : on
-  /// liste le travail à faire pour qu'un Mac DEVIENNE un serveur. Seule la
-  /// première étape se constate depuis ici (Tailscale sur cet appareil) ; les
-  /// autres s'adressent au Mac qu'on veut ajouter, et sont donc « à faire » —
-  /// c'est une LISTE, pas un verdict. Un verdict demanderait de connaître la
+  /// liste le travail à faire pour qu'un Mac DEVIENNE un serveur. Les étapes qui
+  /// se constatent depuis ici (Tailscale sur cet appareil) disent donc leur état
+  /// réel ; les autres s'adressent au Mac qu'on veut ajouter, et sont « à faire »
+  /// — c'est une LISTE, pas un verdict. Un verdict demanderait de connaître la
   /// machine, et il n'y en a pas encore.
+  ///
+  /// L'APPAIRAGE AUSSI EST « À FAIRE », ET CE N'EST PAS UN OUBLI. On ne vient pas
+  /// sur cette page pour constater un appairage existant, mais pour en obtenir un
+  /// POUR LA MACHINE QU'ON AJOUTE — celle-ci n'existe pas encore. Un état lu sur
+  /// la cible courante répondrait donc à une autre question, et afficherait
+  /// « franchie » devant la seule chose qu'il reste à faire ici.
   public static func etapesDAjout(tailnetDeLAppareil: Bool?) -> [Etape] {
     [
       Etape(
@@ -329,28 +395,45 @@ public enum EtapesServeur {
         titre: L("Le plugin `dsh-remote` y est installé"),
         explication: L("DSH Remote doit y répondre : publier DSH ne suffit pas."),
         etat: .aFaire),
+      Etape(
+        numero: 5,
+        titre: L("Cet appareil est appairé"),
+        explication:
+          "Le panneau « Appairer un appareil » du Mac affiche un QR code et son texte : ils portent l'adresse ET un code à usage unique, et remplacent les deux saisies.",
+        etat: .aFaire,
+        responsable: .appareil),
     ]
   }
 
   /// LA CONCLUSION DU DIAGNOSTIC, en une ligne.
   ///
   /// POURQUOI UN RÉSUMÉ. Un diagnostic se lit d'abord par sa conclusion : « ce
-  /// serveur est-il utilisable ? » est la question, et les quatre étapes sont la
-  /// démonstration. Sans cette ligne, il fallait lire quatre lignes pour savoir
+  /// serveur est-il utilisable ? » est la question, et les cinq étapes sont la
+  /// démonstration. Sans cette ligne, il fallait lire cinq lignes pour savoir
   /// si tout allait bien — et c'est le cas le plus fréquent.
   ///
-  /// Elle distingue trois situations, parce qu'elles n'appellent pas la même
-  /// réaction : tout est prêt ; il reste du travail ; on ne sait pas encore.
+  /// ELLE SE LIT SUR LA FRONTIÈRE, PAS SUR UN COMPTE. C'était le défaut : la
+  /// conclusion comptait les étapes « à faire » et, quand il n'y en avait aucune,
+  /// annonçait « Vérification en cours… ». Un appareil dont le Mac est
+  /// parfaitement prêt mais qui n'a PAS de jeton tombait exactement là — deux
+  /// étapes inconnues, rien à faire de mesuré —, et la page restait suspendue
+  /// indéfiniment, sans jamais nommer ce qui manquait. Depuis que l'appairage est
+  /// une étape, ce cas a une réponse : la cinquième est « à faire », elle est la
+  /// frontière, et elle se nomme.
+  ///
+  /// LA FRONTIÈRE INCONNUE L'EMPORTE. Si la première étape non franchie est
+  /// « à vérifier », on ne peut rien affirmer des suivantes : on le dit, au lieu
+  /// de compter des étapes dont on ne sait rien.
   public static func resume(_ etapes: [Etape]) -> String {
     let restantes = etapes.filter { $0.etat != .franchie }
-    if restantes.isEmpty { return "Ce serveur est prêt." }
+    guard let frontiere = restantes.first else { return "Ce serveur est prêt." }
+    guard frontiere.etat == .aFaire else { return "Vérification en cours…" }
     let sures = restantes.filter { $0.etat == .aFaire }
-    if sures.isEmpty { return "Vérification en cours…" }
-    if sures.count == 1, let seule = sures.first {
+    if sures.count == 1 {
       // LE TITRE EST CITÉ TEL QUEL. Le mettre en minuscules abîmait les noms
       // propres — « Cette machine est visible » devenait « cette machine est visible »,
       // constaté sur capture.
-      return "Il reste une étape : « \(seule.titre) »."
+      return "Il reste une étape : « \(frontiere.titre) »."
     }
     return "Il reste \(sures.count) étapes sur \(etapes.count)."
   }
@@ -362,10 +445,27 @@ public enum EtapesServeur {
   /// conséquence de l'ordre : on ne publie pas un port sur un Mac qui n'est pas sur
   /// le réseau, et on n'installe pas un plugin derrière un port fermé.
   ///
+  /// DEUX RÈGLES, PARCE QUE LES DEUX LISTES NE DISENT PAS LA MÊME CHOSE.
+  ///
+  ///   - en DIAGNOSTIC, on juge une machine : la frontière est MESURÉE, et rien
+  ///     ne se fait avant ce qui la précède — les cinq étapes sont une chaîne ;
+  ///   - en OBJECTIFS, on liste un travail, et les deux côtés sont INDÉPENDANTS :
+  ///     le Mac n'a même pas encore d'adresse. Seules les étapes DU MÊME
+  ///     RESPONSABLE se précèdent. Sans cette nuance, le geste que l'appareil a à
+  ///     faire ici — prendre le QR code — restait grisé derrière un travail qui
+  ///     se fait ailleurs, sur une machine que l'application ne connaît pas.
+  ///
   /// Rend `false` quand tout est franchi : il n'y a alors plus de frontière, donc
   /// plus rien à verrouiller.
-  public static func estVerrouillee(_ etape: Etape, dans etapes: [Etape]) -> Bool {
-    guard let frontiere = premiereAEtapesFranchir(etapes) else { return false }
+  public static func estVerrouillee(
+    _ etape: Etape, dans etapes: [Etape], mode: Mode = .diagnostic
+  ) -> Bool {
+    let comparables: [Etape]
+    switch mode {
+    case .diagnostic: comparables = etapes
+    case .objectifs: comparables = etapes.filter { $0.responsable == etape.responsable }
+    }
+    guard let frontiere = premiereAEtapesFranchir(comparables) else { return false }
     return etape.numero > frontiere
   }
 

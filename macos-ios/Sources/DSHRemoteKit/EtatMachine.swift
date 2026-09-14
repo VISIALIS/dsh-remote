@@ -31,22 +31,43 @@ enum EtatMachine {
   ///   - enLigne: ce que Tailscale dit de la machine.
   ///   - sertDsh: le verdict de la sonde — `nil` = pas encore su.
   ///   - estLocal: la machine qui a répondu est celle qui interroge.
+  ///   - appairage: où en est CET APPAREIL avec cette machine. Il ne change pas
+  ///     ce que la machine EST — elle sert DSH, ou pas —, mais il change ce qu'on
+  ///     peut en faire, et c'est pour cela qu'il est dit à côté et non à la place.
   ///   - court: la forme de la vignette (68 points) plutôt que la phrase entière.
-  static func decrire(enLigne: Bool, sertDsh: Bool?, estLocal: Bool, court: Bool) -> Description {
+  static func decrire(
+    enLigne: Bool, sertDsh: Bool?, estLocal: Bool, appairage: EtapesServeur.EtatAppairage,
+    court: Bool
+  ) -> Description {
     guard enLigne else {
       return Description(texte: L("hors ligne"), symbole: "moon.zzz.fill", ton: .attention)
     }
     switch sertDsh {
     case true:
-      return Description(
-        // LES QUATRE FORMES PASSENT PAR `L`, y compris les deux qui n'étaient que
-        // des ternaires : « hôte » est un mot de l'interface, et la vignette
-        // l'affichait en français dans une application anglaise.
-        texte: court
-          ? (estLocal ? L("DSH · hôte") : L("DSH"))
-          : (estLocal ? L("DSH · hôte interrogé") : L("DSH")),
-        symbole: "checkmark.seal.fill",
-        ton: .pret)
+      // LA MACHINE SERT DSH — ET L'APPAIRAGE SE DIT À CÔTÉ, PAS À SA PLACE.
+      //
+      // Défaut corrigé, et c'est celui qui coûtait le plus cher : sans jeton
+      // rangé, la sonde ne partait pas, et la vignette annonçait « pas de DSH ».
+      // L'utilisateur partait donc installer un plugin DÉJÀ INSTALLÉ, sur une
+      // machine parfaitement prête. Ce que la machine a, c'est DSH ; ce qui
+      // manque est ailleurs, et le mot le dit.
+      switch appairage {
+      case .appaire:
+        return Description(
+          // LES QUATRE FORMES PASSENT PAR `L`, y compris les deux qui n'étaient que
+          // des ternaires : « hôte » est un mot de l'interface, et la vignette
+          // l'affichait en français dans une application anglaise.
+          texte: court
+            ? (estLocal ? L("DSH · hôte") : L("DSH"))
+            : (estLocal ? L("DSH · hôte interrogé") : L("DSH")),
+          symbole: "checkmark.seal.fill",
+          ton: .pret)
+      case .absent:
+        return Description(texte: L("à appairer"), symbole: "qrcode", ton: .pret)
+      case .refuse:
+        return Description(
+          texte: L("jeton refusé"), symbole: "key.slash", ton: .attention)
+      }
     case false:
       return Description(
         texte: L("pas de DSH"), symbole: "exclamationmark.triangle.fill", ton: .attention)
@@ -67,9 +88,11 @@ enum EtatMachine {
   /// La phrase est construite À PARTIR DE `decrire` : elle ne peut donc pas
   /// diverger des mots affichés, et elle s'éprouve sans rendre une vue.
   static func libelleAccessible(
-    nom: String, enLigne: Bool, sertDsh: Bool?, estLocal: Bool
+    nom: String, enLigne: Bool, sertDsh: Bool?, estLocal: Bool,
+    appairage: EtapesServeur.EtatAppairage
   ) -> String {
-    let etat = decrire(enLigne: enLigne, sertDsh: sertDsh, estLocal: estLocal, court: false)
+    let etat = decrire(
+      enLigne: enLigne, sertDsh: sertDsh, estLocal: estLocal, appairage: appairage, court: false)
     return "\(nom), \(etat.texte)"
   }
 
