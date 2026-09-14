@@ -309,16 +309,24 @@ public struct VuePrincipale: View {
     .onChange(of: modele.sessionsFiltrees) { _, _ in
       ouvrirSessionDemandee()
     }
-    // ── POURQUOI UNE ERREUR FORCE LA PAGE DU SERVEUR ───────────────────────
+    // ── UNE ERREUR N'OUVRE PLUS LA PAGE, ET C'EST LA SECONDE FOIS ──────────
     //
-    // Le diagnostic a quitté le panneau latéral : sans cette règle, un échec de
-    // connexion au lancement ne s'afficherait NULLE PART, et l'écran se
-    // contenterait d'un « aucune session ouverte » — c'est-à-dire d'un silence.
-    // L'erreur concerne une machine : on montre sa page.
-    .onChange(of: modele.erreur) { _, nouvelle in
-      guard nouvelle != nil, sessionSelectionnee == nil, modele.serveurOuvert == nil else { return }
-      if let vise = modele.serveurVise { modele.ouvrirPage(vise) }
-    }
+    // Il y avait ici un `onChange(of: modele.erreur)` qui forçait la page de la
+    // machine visée dès qu'une erreur arrivait. Sa raison était juste — le
+    // diagnostic avait quitté le panneau latéral, et un échec de connexion au
+    // lancement ne se serait affiché nulle part —, mais la règle était ÉCRITE
+    // DEUX FOIS : `DetailAffiche` avait la même branche (`cibleEnErreur`). J'ai
+    // retiré celle du modèle, et le symptôme est resté : c'est celle-ci qui
+    // ouvrait la page. Mesuré sur la machine du propriétaire, après un premier
+    // correctif qui semblait complet.
+    //
+    // LES DEUX RESPONSABILITÉS SONT MAINTENANT AILLEURS, ET UNE SEULE FOIS :
+    //   - au LANCEMENT, `ModeleApp` ouvre la page de la machine choisie par
+    //     défaut : un échec de connexion s'y affiche, avec ses remèdes ;
+    //   - APRÈS UN APPUI, l'erreur est dite DANS l'état de sélection (voir le cas
+    //     `.selection`), sans décider de la navigation.
+    // Une règle d'affichage écrite dans une vue ne se voit pas depuis le modèle :
+    // c'est ce qui a rendu ce défaut invisible au deuxième examen.
   }
 }
 
