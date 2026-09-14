@@ -11,7 +11,8 @@
  * l'assertion centrale n'est pas le code HTTP, c'est que le contrôleur n'a
  * JAMAIS été appelé : un refus qui laisse passer l'écriture n'est pas un refus.
  *
- * LANCEMENT : `node --test plugins/dsh-remote/tests/`.
+ * LANCEMENT : `node --test plugins/dsh-remote/tests/*.test.js` — le DOSSIER n'est
+ * pas un argument valide sous Node 22.19, celui du PATH et du harness.
  */
 
 import assert from 'node:assert/strict'
