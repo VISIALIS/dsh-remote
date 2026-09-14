@@ -36,6 +36,15 @@ public enum Traduction {
     table(langue).map { Set($0.keys) }
   }
 
+  /// ANCRE DE PAQUET — une classe, et rien d'autre : `Bundle(for:)` en exige une.
+  ///
+  /// POURQUOI ELLE EXISTE. C'est le seul moyen de demander à l'exécution « dans
+  /// quel paquet ce code a-t-il été chargé ? », et donc de trouver le paquet de
+  /// ressources SANS deviner la forme du dossier de construction. Sous
+  /// `swift test`, elle désigne le paquet de tests, dont le dossier parent est
+  /// celui des produits — exactement là où SwiftPM dépose le `.bundle`.
+  private final class AncreDePaquet {}
+
   /// LE PAQUET DE RESSOURCES, CHERCHÉ AUX ENDROITS PLAUSIBLES — et pourquoi pas
   /// `Bundle.module`.
   ///
@@ -95,6 +104,29 @@ public enum Traduction {
       .deletingLastPathComponent()  // …/Sources
       .deletingLastPathComponent()  // …/<racine du paquet>
     var deDeveloppement: [URL] = []
+
+    // 3 bis. LE PAQUET QUI PORTE CE CODE, ET SON VOISIN. `Bundle(for:)` exige une
+    //    CLASSE : elle est là pour ça, et rien d'autre.
+    //
+    //    POURQUOI CE CANDIDAT EST LE MEILLEUR DES QUATRE. Sous `swift test`, il
+    //    désigne le paquet de TESTS (`…/DSHRemoteKitTests.xctest`), dont le
+    //    dossier parent est EXACTEMENT celui où SwiftPM dépose le paquet de
+    //    ressources — quelle que soit la forme du dossier de construction. Les
+    //    chemins devinés plus bas, eux, dépendent de la chaîne d'outils : mesuré
+    //    sur cette machine (Swift 6.4, Xcode 27), `swift build --show-bin-path`
+    //    rend `.build/out/Products/Debug`, et non `.build/arm64-apple-macosx/debug`
+    //    comme les versions antérieures. La mauvaise forme ne casse pas
+    //    l'application — elle rend `cles()` muet, donc fait échouer les tests de
+    //    parité des traductions, ce qui est précisément arrivé.
+    let ancre = Bundle(for: AncreDePaquet.self).bundleURL.deletingLastPathComponent()
+    deDeveloppement.append(ancre.appendingPathComponent(nom))
+
+    // 4. LES FORMES DEVINÉES, par architecture et par configuration : elles
+    //    couvrent `swift run` et les chaînes d'outils plus anciennes.
+    for configuration in ["Debug", "Release"] {
+      deDeveloppement.append(
+        racine.appendingPathComponent(".build/out/Products/\(configuration)/\(nom)"))
+    }
     for architecture in ["arm64-apple-macosx", "x86_64-apple-macosx"] {
       for configuration in ["debug", "release"] {
         deDeveloppement.append(
