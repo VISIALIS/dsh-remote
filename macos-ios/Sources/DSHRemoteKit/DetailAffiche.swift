@@ -51,9 +51,6 @@ public enum DetailAffiche: Equatable {
   ///   - session: la session choisie dans la liste, s'il y en a une.
   ///   - ajout: la page d'ajout est-elle ouverte ?
   ///   - pageOuverte: la machine dont la page a été ouverte explicitement.
-  ///   - cibleEnErreur: la machine visée, quand une erreur l'attend — une erreur
-  ///     concerne une machine, et sans cette branche elle ne s'afficherait nulle
-  ///     part.
   ///   - vise: la machine visée par la connexion (la « cible »). Elle est
   ///     SÉLECTIONNÉE, pas forcément ouverte : c'est tout l'objet du cas
   ///     `.selection`.
@@ -66,17 +63,23 @@ public enum DetailAffiche: Equatable {
     session: String?,
     ajout: Bool,
     pageOuverte: ServeurMac?,
-    cibleEnErreur: ServeurMac?,
     vise: ServeurMac?,
     serveursAffiches: [ServeurMac]
   ) -> DetailAffiche {
     if let session { return .journal(session) }
     if ajout { return .ajout }
-    // LA PAGE OUVERTE, OU L'ERREUR QUI ATTEND CETTE MACHINE — deux faits, et non
-    // une sélection. `vise` n'est PLUS ici : au lancement, c'est `ModeleApp` qui
-    // ouvre la page de la machine choisie par défaut ; ailleurs, c'est
-    // l'utilisateur, au second appui.
-    if let serveur = pageOuverte ?? cibleEnErreur { return .serveur(serveur) }
+    // LA PAGE OUVERTE, ET RIEN D'AUTRE. `vise` n'y est plus (au lancement, c'est
+    // `ModeleApp` qui ouvre la page de la machine choisie par défaut), et l'ERREUR
+    // non plus — c'est une correction mesurée : un `401` sur une machine qu'on
+    // venait de sélectionner rouvrait sa page, donc la sélection simple ne tenait
+    // que pour les machines qui répondaient. Le propriétaire l'a dit ainsi : « sur
+    // macOS, ça ne fonctionne que pour le premier serveur ».
+    //
+    // L'ERREUR N'EST PAS PERDUE POUR AUTANT : elle est affichée DANS l'état de
+    // sélection (voir la vue), et en détail sur la page quand on l'ouvre au second
+    // appui. Un message et son remède restent donc lisibles — sans que l'erreur
+    // décide de la navigation.
+    if let serveur = pageOuverte { return .serveur(serveur) }
     // LA MACHINE SÉLECTIONNÉE, PAGE NON OUVERTE. On dit laquelle, et qu'un second
     // appui l'ouvre. Le repli sur la première vignette couvre le lancement d'une
     // liste sans cible — aucune machine en ligne, par exemple.

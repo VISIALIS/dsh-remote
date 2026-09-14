@@ -27,7 +27,7 @@ func laSessionDAbord() {
   // Le journal est ce qu'on vient lire : une page de machine ne doit jamais
   // s'afficher par-dessus une session ouverte.
   let detail = DetailAffiche.pour(
-    session: "session-1", ajout: true, pageOuverte: un, cibleEnErreur: deux, vise: trois,
+    session: "session-1", ajout: true, pageOuverte: un, vise: trois,
     serveursAffiches: [un, deux, trois])
   #expect(detail == .journal("session-1"))
 }
@@ -35,35 +35,33 @@ func laSessionDAbord() {
 @Test("La page d'ajout ouverte passe avant les machines")
 func lAjoutEnsuite() {
   let detail = DetailAffiche.pour(
-    session: nil, ajout: true, pageOuverte: un, cibleEnErreur: nil, vise: deux, serveursAffiches: [un, deux])
+    session: nil, ajout: true, pageOuverte: un, vise: deux, serveursAffiches: [un, deux])
   #expect(detail == .ajout)
 }
 
-@Test("La page ouverte, puis l'erreur — la SÉLECTION ne suffit plus")
+@Test("Seule la page OUVERTE donne une page — ni la cible, ni une erreur")
 func lOrdreDesMachines() {
   // LA PAGE EXPLICITEMENT OUVERTE GAGNE : on peut consulter une fiche sans être
   // connecté à elle, et la remplacer par la cible ferait disparaître ce qu'on lit.
   let page = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: un, cibleEnErreur: deux, vise: trois,
+    session: nil, ajout: false, pageOuverte: un, vise: trois,
     serveursAffiches: [un, deux, trois])
   #expect(page == .serveur(un))
 
-  // Sans page ouverte, une ERREUR désigne sa machine : sans cette branche, un
-  // échec de connexion au lancement ne s'afficherait nulle part.
-  let erreur = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: deux, vise: trois,
-    serveursAffiches: [un, deux, trois])
-  #expect(erreur == .serveur(deux))
-
-  // LA CIBLE SEULE, ELLE, N'OUVRE PAS LA PAGE — c'est la règle des deux temps :
-  // le premier appui sélectionne et recharge, le second ouvre. `vise` ne figure
-  // donc plus parmi les sources de `.serveur`, et ce test le tient : c'est
-  // exactement ce qui manquait, la page s'ouvrait du seul fait de la sélection.
+  // LA CIBLE SEULE N'OUVRE PAS LA PAGE — règle des deux temps : le premier appui
+  // sélectionne et recharge, le second ouvre.
+  //
+  // ET L'ERREUR NON PLUS, ce qui a demandé une seconde correction : une machine
+  // qui refuse la connexion (un `401` sur un Mac non appairé) rouvrait sa fiche,
+  // donc la sélection simple ne tenait que pour les machines qui répondaient. Le
+  // propriétaire l'a formulé exactement : « sur macOS, ça ne fonctionne que pour
+  // le premier serveur ». La règle ne connaît plus l'erreur du tout : elle est
+  // affichée dans l'état de sélection, et en détail sur la page.
   let cible = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: deux,
+    session: nil, ajout: false, pageOuverte: nil, vise: deux,
     serveursAffiches: [un, deux, trois])
   #expect(cible == .selection(deux))
-  #expect(cible != .serveur(deux))
+  #expect(cible != .serveur(deux), "ni la cible ni son erreur n'ouvrent la page")
 }
 
 @Test("Sans cible, c'est le PREMIER serveur de la liste qui est SÉLECTIONNÉ")
@@ -72,7 +70,7 @@ func lePremierParDefaut() {
   // aucune cible, et c'est la première qui est mise en avant — sa page s'ouvre
   // au second appui, comme pour toute autre sélection.
   let detail = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: nil,
+    session: nil, ajout: false, pageOuverte: nil, vise: nil,
     serveursAffiches: [un, deux, trois])
   #expect(detail == .selection(un), "le premier de la liste, pas le premier en ligne")
 }
@@ -87,7 +85,7 @@ func laPremiereVignette() {
   // Deux listes différentes feraient parler l'écran de droite d'une autre machine
   // que celle qui est entourée à gauche.
   let detail = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: nil,
+    session: nil, ajout: false, pageOuverte: nil, vise: nil,
     serveursAffiches: [trois, un, deux])
   #expect(detail == .selection(trois), "la première de l'ordre affiché")
 }
@@ -97,7 +95,7 @@ func lAjoutParDefaut() {
   // « S'il n'y a pas de serveur, c'est l'icône ajouté » : la seule chose utile à
   // montrer est comment en ajouter un.
   let detail = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: nil, serveursAffiches: [])
+    session: nil, ajout: false, pageOuverte: nil, vise: nil, serveursAffiches: [])
   #expect(detail == .ajout)
 }
 
@@ -107,7 +105,7 @@ func leHorsLigneCompte() {
   // sa page dit l'état. La retirer de la règle rendrait l'écran vide au moment
   // précis où l'utilisateur a besoin de comprendre.
   let detail = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: nil,
+    session: nil, ajout: false, pageOuverte: nil, vise: nil,
     serveursAffiches: [trois])
   #expect(detail == .selection(trois))
 }
@@ -120,10 +118,10 @@ func lesDeuxTemps() {
   // tient du côté de l'ÉCRAN : la même machine, une fois par son seul état de
   // sélection, une fois par sa page ouverte.
   let selectionne = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: un,
+    session: nil, ajout: false, pageOuverte: nil, vise: un,
     serveursAffiches: [un, deux])
   let ouvert = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: un, cibleEnErreur: nil, vise: un,
+    session: nil, ajout: false, pageOuverte: un, vise: un,
     serveursAffiches: [un, deux])
   #expect(selectionne == .selection(un))
   #expect(ouvert == .serveur(un))
@@ -135,7 +133,7 @@ func laSessionRestePremiere() {
   // Rien de ce qui précède ne doit ramener le journal sous une fiche : c'est la
   // règle qui existait déjà, et la nouvelle ne la déplace pas.
   let detail = DetailAffiche.pour(
-    session: "s-1", ajout: false, pageOuverte: un, cibleEnErreur: deux, vise: trois,
+    session: "s-1", ajout: false, pageOuverte: un, vise: trois,
     serveursAffiches: [un, deux, trois])
   #expect(detail == .journal("s-1"))
 }

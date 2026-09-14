@@ -125,15 +125,8 @@ public struct VuePrincipale: View {
       session: sessionSelectionnee?.id,
       ajout: ajoutOuvert,
       pageOuverte: serveurDeLaPage,
-      cibleEnErreur: serveurDUneErreur,
       vise: modele.serveurChoisi,
       serveursAffiches: modele.serveursAffiches)
-  }
-
-  /// La machine visée par l'adresse courante, quand une erreur l'attend.
-  private var serveurDUneErreur: ServeurMac? {
-    guard modele.erreur != nil else { return nil }
-    return modele.serveurVise
   }
 
   public var body: some View {
@@ -233,7 +226,18 @@ public struct VuePrincipale: View {
         ContentUnavailableView {
           Label { Text(serveur.nom) } icon: { Image(systemName: "checkmark.circle") }
         } description: {
-          T("Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page.")
+          // L'ERREUR SE DIT ICI, ET C'EST UNE CORRECTION. Elle ouvrait la page à
+          // la place : sélectionner une machine qui refuse la connexion (un `401`
+          // sur un Mac non appairé) faisait donc apparaître sa fiche, et la règle
+          // des deux temps ne tenait que pour les machines qui répondaient —
+          // mesuré : « sur macOS, ça ne fonctionne que pour le premier serveur ».
+          // Le message et son remède restent lisibles, sans décider de la
+          // navigation. Le détail complet est sur la page, au second appui.
+          if let erreur = modele.erreur {
+            Text(erreur)
+          } else {
+            T("Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page.")
+          }
         }
         .accessibilityLabel(T("Serveur sélectionné"))
       case .rien:
