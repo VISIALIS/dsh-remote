@@ -594,8 +594,26 @@ struct VueListeSessions: View {
       // 320 points est la largeur à laquelle la carte, le carrousel à trois
       // icônes (3 × 68 + marges) et une ligne de session tiennent sans
       // troncature.
-      .navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 480)
+      // 340 POINTS, ET NON 320 : MESURÉ SUR IPAD. À 320 — le minimum macOS, choisi
+    // pour que la carte, le carrousel et une ligne de session tiennent —, le titre
+    // « Serveur DeepSeek Harness » passait à la DEUX LIGNES et le champ de
+    // recherche tronquait son texte. 340 suffit à les tenir, et laisse encore
+    // 480 points au journal sur un iPad (A16) en portrait.
+    .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 480)
     #endif
+    // LA LARGEUR VAUT AUSSI POUR L'IPAD, et c'est une correction VUE À L'ÉCRAN.
+    // Le modificateur ne vivait que dans la branche macOS : sur iPad, la colonne
+    // prenait donc la largeur par défaut du système — mesurée à environ 260
+    // points sur un iPad (A16) —, où le titre de section passait à la ligne, le
+    // carrousel était coupé au troisième chicon et le champ de recherche
+    // tronquait son texte. Sur iPhone (largeur compacte), SwiftUI ignore cette
+    // contrainte : la colonne est l'écran entier.
+    // 340 POINTS, ET NON 320 : MESURÉ SUR IPAD. À 320 — le minimum macOS, choisi
+    // pour que la carte, le carrousel et une ligne de session tiennent —, le titre
+    // « Serveur DeepSeek Harness » passait à la DEUX LIGNES et le champ de
+    // recherche tronquait son texte. 340 suffit à les tenir, et laisse encore
+    // 480 points au journal sur un iPad (A16) en portrait.
+    .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 480)
     // Titre EN LIGNE, et non grand. Mesuré sur le prototype : le grand titre
     // coûtait 60 points pour répéter le nom de l'application, déjà connu de qui
     // l'ouvre — et ces 60 points manquaient aux sessions, dont deux seulement

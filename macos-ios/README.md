@@ -1591,6 +1591,42 @@ processus **avorte** (mesuré : `NSInternalInconsistencyException:
 bundleProxyForCurrentProcess is nil`, code 134, signal 6). Sans la garde, `swift run
 DSHRemoteMac` — le chemin de développement documenté — mourrait au lancement.
 
+### L'iPad : une cible réelle, et ce qu'elle a révélé
+
+**La décision.** L'application ne se déclarait que pour iPhone (`TARGETED_DEVICE_FAMILY = 1`) :
+sur un iPad, elle tournait donc en **mode compatibilité**, une fenêtre d'iPhone agrandie.
+Elle déclare maintenant les deux familles, avec les **quatre orientations** propres à
+l'iPad — `UISupportedInterfaceOrientations~ipad` est une clé distincte, et un iPad qui ne
+déclarerait pas le portrait inversé se retrouverait la fenêtre à l'envers selon la façon
+dont on le tient.
+
+**Ce qui a été éprouvé, sur un iPad (A16) en simulateur** — 18 simulateurs iPad sont
+installés sur cette machine :
+
+| Constat | Preuve |
+|---|---|
+| Le paquet produit déclare bien les deux familles | `UIDeviceFamily = [1, 2]` et les quatre orientations dans l'`Info.plist` **construit** |
+| L'application s'installe et se lance sur iPad | capture : **deux colonnes**, le carrousel de machines, « Demande votre attention », les espaces de travail avec leurs comptes, la recherche en bas, et « Aucune session ouverte » dans le détail |
+| Elle joint le harness depuis le simulateur | « 1 joignable », carrousel alimenté — via `127.0.0.1:3080`, que le simulateur partage avec le Mac (cf. « Essai sur le simulateur iOS ») |
+| Les orientations ne cassent rien | capture après rotation en paysage : la même mise en page, la colonne latérale en plus large |
+
+**Un défaut trouvé en regardant, et corrigé.** La contrainte de largeur de la colonne
+latérale (`navigationSplitViewColumnWidth`) ne vivait que dans la branche **macOS** : sur
+iPad, la colonne prenait la largeur par défaut du système, et le contenu y était à
+l'étroit — titre de section replié sur deux lignes, carrousel coupé au troisième chicon,
+champ de recherche tronqué. La contrainte vaut maintenant pour les deux plateformes, à
+**340 points minimum** (320 sur macOS, choisis pour d'autres raisons : voir le commentaire
+du code). Sur iPhone, SwiftUI l'ignore : la colonne est l'écran entier.
+
+**Ce qui n'est PAS éprouvé, et qui est écrit comme tel :**
+
+- **le multitâche** (Split View, Slide Over, Stage Manager) : rien ne l'empêche —
+  `UIApplicationSupportsMultipleScenes` reste `false`, donc l'application est une fenêtre
+  unique, ce qui est le cas normal d'un client —, mais aucun essai n'a été fait ;
+- **un iPad réel** : la signature demande un compte développeur, absent de cette machine
+  (cf. « Installer sur l'iPhone : ce qui bloque, mesuré ») ;
+- **le clavier et le pointeur** sur iPad, que la HIG attend d'une application iPad.
+
 ### Les blocs de code du journal
 
 **Ce qui manquait.** Le journal affichait le texte de l'agent en brut, coupé à quatre
@@ -1853,6 +1889,9 @@ redécouvre pas comme des oublis.
   rouvrir l'application et la voir revenir sur la même session n'a pas été constaté
   en capture : cela demande d'ouvrir un journal, de quitter, de relancer — trois
   gestes que cet environnement ne sait pas injecter dans la liste.
+- **Le multitâche iPad et le clavier/pointeur** n'ont pas été essayés : la HIG les
+  attend d'une application iPad, et rien dans le code ne s'y oppose — mais « rien ne
+  s'y oppose » n'est pas une mesure.
 - **La notification ELLE-MÊME n'a pas été observée.** Ce qui est prouvé, c'est la
   DÉCISION (9 tests, dont un canal espion qui vérifie qu'aucune alerte ne part
   quand elles sont éteintes) et la garde qui empêche le plantage hors paquet. La
@@ -2230,6 +2269,8 @@ inactive.
 | **Deux machines qui partageaient « MacBook » se distinguent** | capture des données réelles : « MacBook Air » et « MacBook Pro », là où deux vignettes disaient « MacBook » — 5 tests sur `NomsCourts` |
 | **L'état de navigation fait un aller-retour** | 2 tests : espaces triés relus par un SECOND modèle sur le même domaine ; une session mémorisée n'est rouverte que si l'hôte la nomme |
 | **Le collage iOS ne lit plus le presse-papiers à l'insu de l'utilisateur** | `PasteButton` des deux côtés (feuille Adresse, page d'une machine) ; compilation iOS complète par `Scripts/construire-app-ios.sh --simulateur` → `BUILD SUCCEEDED` |
+| **L'iPad est une cible, pas un mode compatibilité** | `UIDeviceFamily = [1, 2]` dans l'`Info.plist` construit ; installation et lancement sur un iPad (A16) simulé, captures en portrait et en paysage — deux colonnes, carrousel, espaces, recherche |
+| **La colonne latérale était à l'étroit sur iPad** | défaut vu à l'écran : la contrainte de largeur ne s'appliquait qu'à macOS. Corrigée (340 pt minimum), et la capture montre le carrousel à trois chicons entiers au lieu de deux |
 | **Les blocs de code sont reconnus, et la prose ne l'est pas** | 10 tests sur l'analyseur (`BlocsDeCodeTests`) : bloc avec ou sans langage, clôture non fermée, accents graves en milieu de ligne, fausse clôture, deux blocs, bloc vide, retour chariot Windows, clôture plus longue |
 | **Le rendu est vu, pas déduit** | capture sur une session réelle : une sortie `bash` encadrée en monospace avec son bouton copier et « Développer », la prose de l'agent en texte ordinaire, et « the file … has been updated successfully » non encadré |
 | **L'ancre `--session=` ouvre le bon journal** | capture : fenêtre titrée du nom de la session demandée, alors que la session restaurée était une autre |

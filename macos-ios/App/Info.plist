@@ -45,6 +45,22 @@
     <string>UIInterfaceOrientationLandscapeRight</string>
   </array>
   <!--
+    L'IPAD A SA PROPRE LISTE, et les quatre orientations y figurent.
+
+    POURQUOI LES DEUX CLÉS. `UISupportedInterfaceOrientations` ne s'applique
+    QU'À l'iPhone ; l'iPad lit la variante suffixée `~ipad`, et retombe sur la
+    liste commune quand elle manque. Un iPad qui ne déclarerait pas le portrait
+    inversé se retrouverait avec une fenêtre à l'envers selon la façon dont on le
+    tient — ce qui est exactement le genre de défaut qu'on ne voit qu'à l'usage.
+  -->
+  <key>UISupportedInterfaceOrientations~ipad</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+  <!--
     AUCUNE exception App Transport Security n'est livree ici.
 
     POURQUOI. L'application joint le Mac par le port 80 du nom MagicDNS publie
