@@ -738,7 +738,13 @@ public final class ModeleApp {
   }
 
   /// Efface le rappel d'une session, parce que l'utilisateur l'a ouverte.
-  private func marquerCommeVue(_ identifiant: String) {
+  ///
+  /// PUBLIQUE DEPUIS LES GESTES DE LISTE, et pour une raison précise : le
+  /// rappel de fin se consommait uniquement en OUVRANT la session, ce qui était
+  /// le seul moyen de dire « j'ai vu ». Le glissement et le menu contextuel
+  /// offrent maintenant l'action sans quitter la liste — et sans elle, ils
+  /// n'auraient rien à proposer que du copier.
+  public func marquerCommeVue(_ identifiant: String) {
     rappelsDeFin.oublier(identifiant)
     terminees.remove(identifiant)
   }

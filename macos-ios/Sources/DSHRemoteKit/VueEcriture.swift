@@ -114,6 +114,15 @@ struct ComposeurEcriture: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
     .background(.bar)
+    // LE RETOUR HAPTIQUE COMPLÈTE CE QUI SE VOIT MAL. Envoyer un message à un
+    // agent distant prend des secondes, et l'acquittement s'affiche en haut d'un
+    // composeur qu'on ne regarde pas : on regarde ce qu'on vient d'écrire. Un
+    // refus, lui, se remarque encore moins — c'est pourtant le cas où il faut
+    // réagir.
+    .modifier(
+      RetourDuComposeur(
+        accuse: modele.acquittement(pour: session.id),
+        refus: modele.refusEcriture(pour: session.id)))
     .onChange(of: session.id) {
       // Changer de session oublie les MESSAGES du composeur : un acquittement
       // affiché sous une AUTRE session ferait croire qu'elle la concerne.
@@ -157,6 +166,41 @@ struct ComposeurEcriture: View {
   private func envoyer() {
     champActif = false
     Task { await modele.envoyer(session, mode: mode) }
+  }
+}
+
+/// LE RETOUR HAPTIQUE DU COMPOSEUR, dans un modificateur à part.
+///
+/// POURQUOI IL N'EST PAS ÉCRIT DANS LE CORPS. Posés directement sur le `VStack`
+/// du composeur — qui porte déjà le champ, le menu de mode, deux boutons et une
+/// boîte de confirmation —, les deux `sensoryFeedback` à clôture ont fait
+/// dépasser au compilateur son budget de vérification de type : « the compiler is
+/// unable to type-check this expression in reasonable time ». Mesuré, pas
+/// supposé. Le modificateur garde le corps lisible et rassemble le calcul des
+/// déclencheurs en un seul endroit.
+///
+/// LE DÉCLENCHEUR EST LA VALEUR, PAS LE RENDU : le retour ne se produit que quand
+/// l'acquittement (ou le refus) de CETTE session change vraiment — et jamais au
+/// changement de session, qui remet les deux à zéro.
+struct RetourDuComposeur: ViewModifier {
+  let accuse: String?
+  let refus: String?
+
+  /// LE DÉCLENCHEUR EST UN PRÉDICAT TYPÉ, et ce n'est pas un détail de style.
+  ///
+  /// La variante à clôture rendant un `SensoryFeedback?` a été essayée d'abord :
+  /// le compilateur n'arrivait pas à trancher entre ses surcharges et refusait le
+  /// corps entier (« unable to type-check this expression in reasonable time »).
+  /// La variante `condition:` reçoit une valeur concrète et un prédicat dont les
+  /// types sont écrits : elle se vérifie sans hésitation.
+  private func apparait(_ ancien: String?, _ nouveau: String?) -> Bool {
+    nouveau != nil && nouveau != ancien
+  }
+
+  func body(content: Content) -> some View {
+    content
+      .sensoryFeedback(.success, trigger: accuse, condition: apparait)
+      .sensoryFeedback(.error, trigger: refus, condition: apparait)
   }
 }
 

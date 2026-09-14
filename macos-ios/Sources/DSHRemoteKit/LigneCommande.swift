@@ -54,15 +54,17 @@ struct LigneCommande: View {
     .padding(.horizontal, 8)
     .padding(.vertical, 6)
     .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+    // COPIER SE CONFIRME AUSSI PAR LE TOUCHER. Le composant affiche une coche
+    // pendant 1,8 seconde, en haut d'une page qu'on ne regarde pas : on regarde
+    // le terminal où la commande va servir. Le retour ne se produit qu'au
+    // PASSAGE à « copié », pas quand la coche s'efface.
+    .sensoryFeedback(.success, trigger: copie) { ancien, nouveau in
+      !ancien && nouveau
+    }
   }
 
   private func copier() {
-    #if canImport(UIKit)
-      UIPasteboard.general.string = commande
-    #elseif canImport(AppKit)
-      NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(commande, forType: .string)
-    #endif
+    PressePapiers.ecrire(commande)
     copie = true
     Task {
       try? await Task.sleep(nanoseconds: 1_800_000_000)

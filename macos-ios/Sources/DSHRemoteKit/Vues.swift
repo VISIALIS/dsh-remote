@@ -333,6 +333,7 @@ struct VueListeSessions: View {
                 session: session, rappelDeFin: modele.aTermine(session.id))
             ).tag(session)
             .sansSeparateurMac()
+            .gestesDeSession(session, modele: modele, rappelArme: modele.aTermine(session.id))
           }
         } header: {
           EnteteSection(
@@ -395,12 +396,16 @@ struct VueListeSessions: View {
                   }
                   .padding(.leading, 14)
                   .sansSeparateurMac()
+                  .gestesDeSession(
+                    session, modele: modele, rappelArme: modele.aTermine(session.id))
                 } else {
                   LigneSession(
                     affiche: AfficheLigneSession(
                       session: session, rappelDeFin: modele.aTermine(session.id))
                   ).tag(session)
                   .sansSeparateurMac()
+                  .gestesDeSession(
+                    session, modele: modele, rappelArme: modele.aTermine(session.id))
                 }
               }
             } label: {
@@ -484,6 +489,14 @@ struct VueListeSessions: View {
     // habituelle, qui est déjà celle d'une colonne de navigation.
     #if os(iOS)
       .listStyle(.insetGrouped)
+      // LE GESTE QU'ON ESSAIE EN PREMIER, et qui n'existait pas.
+      //
+      // POURQUOI IL COMPTE MALGRÉ LA SYNCHRONISATION AUTOMATIQUE. Le suivi
+      // interroge l'hôte toutes les trois secondes — mais seulement si « Suivre
+      // l'activité » est actif, et il ne dit rien de la FRAÎCHEUR de ce qu'on
+      // regarde. Après avoir rallumé une machine ou réparé le réseau, tirer la
+      // liste est le geste qui répond « et maintenant ? » sans attendre un cycle.
+      .refreshable { await modele.rafraichir() }
     #else
       .listStyle(.inset)
       // LARGEUR MINIMALE DE LA COLONNE, ET C'EST UN DÉFAUT MESURÉ.
@@ -630,56 +643,11 @@ struct CarrouselServeurs: View {
           // n'est pas le geste, c'est l'ENDROIT du diagnostic : il s'affichait
           // dans la colonne de gauche, au milieu des sessions ; il vit
           // maintenant sur la page de la machine concernée.
-          //
-          // DEUX MÉCANISMES, PARCE QUE LES PLATEFORMES DIFFÈRENT. Sur macOS, les
-          // deux colonnes sont visibles : la page remplace le contenu de droite.
-          // Sur iPhone, la colonne de détail n'existe pas : il faut EMPILER la
-          // page (`NavigationLink`), sinon l'appui ne montre rien — et un appui
-          // qui ne montre rien est un appui cassé.
-          #if os(iOS)
-            NavigationLink(value: serveur) {
-              IconeServeur(
-                serveur: serveur,
-                choisi: modele.serveurChoisi == serveur,
-                sertDsh: modele.sertDsh(serveur))
-            }
-            .buttonStyle(.plain)
-            // Le lien EMPILE la page ; ce geste simultané dit au modèle laquelle
-            // est ouverte (pour que la vignette l'indique) ET lance la connexion.
-            .simultaneousGesture(
-              TapGesture().onEnded {
-                surSelectionServeur(serveur)
-                Task { await modele.choisirEtConnecter(serveur) }
-              })
-            .accessibilityLabel(
-              EtatMachine.libelleAccessible(
-                nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
-                estLocal: serveur.estLocal)
-            )
-          #else
-            Button {
-              // OUVRIR **ET** CONNECTER — les deux, et c'est une correction.
-              //
-              // J'avais séparé les deux gestes : l'appui ouvrait la page, et il
-              // fallait ensuite viser « Se connecter ». Le propriétaire a
-              // demandé le contraire : « je voulais lancer une méthode ».
-              // Toucher une machine, c'est vouloir s'y connecter ; la page, elle,
-              // est ce qui l'EXPLIQUE quand ça ne marche pas.
-              surSelectionServeur(serveur)
-              Task { await modele.choisirEtConnecter(serveur) }
-            } label: {
-              IconeServeur(
-                serveur: serveur,
-                choisi: modele.serveurChoisi == serveur,
-                sertDsh: modele.sertDsh(serveur))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(
-              EtatMachine.libelleAccessible(
-                nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
-                estLocal: serveur.estLocal)
-            )
-          #endif
+          vignette(serveur)
+            // L'APPUI LONG EST LE RECOURS DE CE QUI N'EST PAS UN APPUI : clavier
+            // externe, VoiceOver, souris. Il porte les mêmes actions que la page,
+            // à l'endroit où l'on désigne la machine.
+            .contextMenu { menuDeMachine(serveur) }
         }
         // « Rafraîchir » n'est proposé QUE là où le rafraîchissement peut
         // réellement rendre des machines : sur le Mac par la découverte locale,
@@ -716,8 +684,116 @@ struct CarrouselServeurs: View {
       }
       .padding(.horizontal, 20)
       .padding(.vertical, 4)
+      // LE RETOUR HAPTIQUE DIT CE QUE L'ŒIL PEUT MANQUER. Choisir une machine
+      // déclenche une connexion de plusieurs secondes : sur un téléphone tenu à
+      // une main, la coche de la vignette peut être hors du regard, et rien ne
+      // confirmerait que l'appui a été pris en compte. Le retour ne se produit
+      // que si la machine courante CHANGE — pas à chaque rendu.
+      .sensoryFeedback(trigger: modele.serveurChoisi?.id) { ancien, nouveau in
+        ancien == nouveau ? nil : .selection
+      }
     }
     .scrollClipDisabled()
+  }
+
+  /// UNE VIGNETTE DE MACHINE, dans ses deux mécanismes de navigation.
+  ///
+  /// POURQUOI ELLE EST UNE FONCTION À PART. Le menu contextuel doit s'appliquer à
+  /// la vignette sur les DEUX plateformes, alors que la navigation, elle, diffère
+  /// — `NavigationLink` qui empile sur iPhone, `Button` qui remplace le contenu de
+  /// droite sur macOS. Un `#if` au milieu d'une chaîne de modificateurs ne se
+  /// compile pas, et dupliquer le menu l'aurait fait diverger d'une plateforme à
+  /// l'autre : c'est précisément ce que la vue partagée évite partout ailleurs.
+  ///
+  /// DEUX MÉCANISMES, PARCE QUE LES PLATEFORMES DIFFÈRENT. Sur macOS, les deux
+  /// colonnes sont visibles : la page remplace le contenu de droite. Sur iPhone,
+  /// la colonne de détail n'existe pas : il faut EMPILER la page
+  /// (`NavigationLink`), sinon l'appui ne montre rien — et un appui qui ne montre
+  /// rien est un appui cassé.
+  @ViewBuilder
+  private func vignette(_ serveur: ServeurMac) -> some View {
+    #if os(iOS)
+      NavigationLink(value: serveur) {
+        IconeServeur(
+          serveur: serveur,
+          choisi: modele.serveurChoisi == serveur,
+          sertDsh: modele.sertDsh(serveur))
+      }
+      .buttonStyle(.plain)
+      // Le lien EMPILE la page ; ce geste simultané dit au modèle laquelle
+      // est ouverte (pour que la vignette l'indique) ET lance la connexion.
+      .simultaneousGesture(
+        TapGesture().onEnded {
+          surSelectionServeur(serveur)
+          Task { await modele.choisirEtConnecter(serveur) }
+        })
+      .accessibilityLabel(
+        EtatMachine.libelleAccessible(
+          nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
+          estLocal: serveur.estLocal)
+      )
+    #else
+      Button {
+        // OUVRIR **ET** CONNECTER — les deux, et c'est une correction.
+        //
+        // J'avais séparé les deux gestes : l'appui ouvrait la page, et il
+        // fallait ensuite viser « Se connecter ». Le propriétaire a demandé le
+        // contraire : « je voulais lancer une méthode ». Toucher une machine,
+        // c'est vouloir s'y connecter ; la page, elle, est ce qui l'EXPLIQUE
+        // quand ça ne marche pas.
+        surSelectionServeur(serveur)
+        Task { await modele.choisirEtConnecter(serveur) }
+      } label: {
+        IconeServeur(
+          serveur: serveur,
+          choisi: modele.serveurChoisi == serveur,
+          sertDsh: modele.sertDsh(serveur))
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(
+        EtatMachine.libelleAccessible(
+          nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
+          estLocal: serveur.estLocal)
+      )
+    #endif
+  }
+
+  /// CE QU'UN APPUI LONG PROPOSE SUR UNE MACHINE.
+  ///
+  /// POURQUOI « OUblier » N'EST PAS OFFERT PARTOUT. `oublierServeur()` oublie
+  /// l'adresse MÉMORISÉE — celle de la machine courante —, et vide la liste venue
+  /// de son hôte. L'offrir sur une autre vignette agirait donc sur une machine
+  /// que l'utilisateur n'a pas désignée : un bouton qui agit ailleurs, exactement
+  /// ce que la page d'un serveur a déjà corrigé pour « Tester ». L'entrée
+  /// n'apparaît donc que sur la machine courante.
+  @ViewBuilder
+  private func menuDeMachine(_ serveur: ServeurMac) -> some View {
+    Button {
+      // SUR macOS, LE MENU REMPLACE LE CONTENU DE DROITE COMME L'APPUI ; sur
+      // iPhone, il n'y a rien à empiler depuis un menu contextuel — on connecte,
+      // et la page reste atteignable par la vignette.
+      #if os(macOS)
+        surSelectionServeur(serveur)
+      #endif
+      Task { await modele.choisirEtConnecter(serveur) }
+    } label: {
+      Label(
+        modele.serveurChoisi == serveur ? "Reconnecter" : "Se connecter",
+        systemImage: "bolt.horizontal")
+    }
+    Button {
+      PressePapiers.ecrire(serveur.adresse)
+    } label: {
+      Label("Copier l'adresse", systemImage: "doc.on.doc")
+    }
+    if modele.serveurChoisi == serveur {
+      Divider()
+      Button(role: .destructive) {
+        modele.oublierServeur()
+      } label: {
+        Label("Oublier ce serveur", systemImage: "trash")
+      }
+    }
   }
 }
 
@@ -1215,5 +1291,84 @@ struct LigneSession: View {
     // jamais dire l'état — la seule information qui demande d'agir.
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(affiche.libelleAccessible)
+  }
+}
+
+// MARK: - Les gestes d'une session
+
+extension View {
+  /// LES ACTIONS D'UNE SESSION, au glissement comme au menu contextuel.
+  ///
+  /// POURQUOI LES DEUX, ET POURQUOI LES MÊMES. Le glissement est le geste qu'on
+  /// essaie d'abord sur un iPhone ; le menu contextuel est le seul qui existe sur
+  /// les DEUX plateformes, qui s'ouvre au clavier et que VoiceOver atteint. Les
+  /// directives demandent que l'action de tête d'un glissement corresponde aux
+  /// entrées du menu : les deux listes sont donc écrites ici, côte à côte, et
+  /// l'ordre y est le même.
+  ///
+  /// POURQUOI LE GLISSEMENT EST RÉSERVÉ À iOS. Sur macOS, `swipeActions` se
+  /// compile mais ne se déclenche pas : un geste qu'aucun matériel ne produit est
+  /// du code mort, et le menu contextuel y fait déjà le travail.
+  ///
+  /// CE QU'IL N'Y A PAS, ET POURQUOI. Aucune action destructive : cette
+  /// application ne supprime pas de session, et un menu qui proposerait de le
+  /// faire promettrait ce que l'hôte ne sait pas faire.
+  @ViewBuilder
+  func gestesDeSession(_ session: SessionListee, modele: ModeleApp, rappelArme: Bool) -> some View {
+    #if os(iOS)
+      self
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+          // LE RAPPEL DE FIN SE CONSOMME ICI. Il ne s'effaçait qu'en ouvrant la
+          // session — c'est-à-dire en quittant la liste, au moment précis où l'on
+          // vient d'y repérer ce qui a fini.
+          if rappelArme {
+            Button {
+              modele.marquerCommeVue(session.id)
+            } label: {
+              Label("Vu", systemImage: "checkmark.circle")
+            }
+            .tint(.green)
+          }
+          Button {
+            PressePapiers.ecrire(session.titreAffiche)
+          } label: {
+            Label("Copier le titre", systemImage: "doc.on.doc")
+          }
+          .tint(.indigo)
+        }
+        .contextMenu { menuDeSession(session, modele: modele, rappelArme: rappelArme) }
+    #else
+      self.contextMenu { menuDeSession(session, modele: modele, rappelArme: rappelArme) }
+    #endif
+  }
+
+  /// LES ENTRÉES DE MENU D'UNE SESSION, partagées par les deux gestes.
+  ///
+  /// L'IDENTIFIANT EST COPIABLE, et ce n'est pas un détail de technicien : c'est
+  /// la clé qui relie une session à ce que l'hôte en dit — `dsh-remote-ctl`, le
+  /// journal, une autre machine. Sans lui, on ne peut désigner une session à
+  /// personne, ni la retrouver dans une sortie de commande.
+  @ViewBuilder
+  private func menuDeSession(_ session: SessionListee, modele: ModeleApp, rappelArme: Bool)
+    -> some View
+  {
+    Button {
+      PressePapiers.ecrire(session.titreAffiche)
+    } label: {
+      Label("Copier le titre", systemImage: "doc.on.doc")
+    }
+    Button {
+      PressePapiers.ecrire(session.id)
+    } label: {
+      Label("Copier l'identifiant", systemImage: "number")
+    }
+    if rappelArme {
+      Divider()
+      Button {
+        modele.marquerCommeVue(session.id)
+      } label: {
+        Label("Marquer comme vu", systemImage: "checkmark.circle")
+      }
+    }
   }
 }
