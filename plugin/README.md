@@ -134,7 +134,7 @@ appelle — pour frapper un code, voir les appareils, en révoquer un.
 | Route | Méthode | Garde | Rôle |
 |---|---|---|---|
 | `/dsh-remote/v1/appairage` | `POST` | **session navigateur** | frappe un **code à usage unique** (2 min) et rend la charge utile à afficher |
-| `/dsh-remote/v1/appareils` | `GET` | **session navigateur** | les appareils appairés : nom, portée, date, **empreinte** — jamais un jeton |
+| `/dsh-remote/v1/appareils` | `GET` | **session navigateur** | les appareils appairés **et** le jeton du terminal (`historique: true`, sans date) : nom, portée, **empreinte** — jamais un jeton |
 | `/dsh-remote/v1/appareils/revoquer` | `POST` | **session navigateur** | coupe UN appareil, désigné par son empreinte |
 | `/dsh-remote/v1/appairage/echange` | `POST` | **le code lui-même** | rend un jeton **propre à l'appareil** ; aucun `Origin` toléré |
 
@@ -365,7 +365,7 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 |---|---|
 | `dynamic/host.js` | le plugin : les routes, le cache, le flux, les jetons, le registre des appareils, les codes d'appairage |
 | `dynamic/appairage.js` | le contrat d'appairage — fonctions **pures** (construction, analyse, nom d'appareil), éprouvées et partagées avec le Swift |
-| `dynamic/client.js` | le panneau : **bundle client durable écrit à la main** (encodeur QR, compte à rebours, liste des appareils, révocation), servi tel quel par DSH |
+| `dynamic/client.js` | le panneau : **bundle client durable écrit à la main** (encodeur QR, compte à rebours, appareils appairés **puis** jeton du terminal, révocation), servi tel quel par DSH |
 | `package.json` | ce qui rend `client.js` **découvrable** (`dsh.client`, `exports["./client"]`) — aucune installation promise (RÈGLE #5) |
 | `dynamic/tailscale.js` | la découverte du tailnet — lancement du CLI local et **analyse pure** de sa sortie |
 | `dynamic/journal.js` | la lecture d'un journal de session : trames zstd concaténées, lignes JSONL, résumé |
@@ -491,6 +491,30 @@ rendrait le jeton serait un oracle.
 Rotation : supprimer l'enregistrement du coffre, le plugin en crée un nouveau au
 chargement suivant. Tous les appareils existants perdent l'accès.
 
+### Ce jeton n'est PAS un appareil appairé — et le panneau le dit
+
+Il a longtemps été listé sous le nom « jeton historique (terminal) », dans la même
+liste que les appareils appairés, avec une « date inconnue ». Le propriétaire a
+demandé **à quoi il correspondait** — ce qui est le défaut exact d'un nom qui
+n'explique rien : « historique » fait lire un vestige, alors que ce jeton porte des
+choses bien vivantes.
+
+| Qui s'en sert encore | Comment |
+|---|---|
+| **L'application sur le Mac, pour la machine LOCALE** | `CoffreDuHarness.jetonDeLaMachine()` lit cet enregistrement : c'est ce qui fait qu'un Mac est « prêt » sans aucun appairage |
+| **`dsh-remote-ctl`** | même lecture du coffre, pour la machine locale |
+| **Le repli manuel** | recopier le jeton affiché dans le terminal, quand l'appairage par code est impossible |
+
+Le panneau le sépare donc des appareils appairés : groupe « Appareils appairés (n) »,
+puis groupe « Jeton du terminal », une ligne qui dit **« non appairé »** au lieu d'une
+date, et une note qui explique sa révocation — il n'est pas supprimé pour de bon : un
+jeton neuf est tiré, et affiché dans le terminal, au prochain démarrage du harness.
+
+**Pourquoi il n'est pas SUPPRIMÉ, alors qu'il en a l'air.** Le retirer obligerait
+l'application du Mac à s'appairer avec sa propre machine : le confort qu'on vient de
+gagner (aucune saisie sur le Mac) repose sur ce jeton. C'est aussi le seul endroit qui
+le renouvelle — le panneau.
+
 ### Portée du jeton — `lecture` ou `ecriture`
 
 **Le problème que la portée résout.** Le jeton était tout-puissant : il ouvrait la
@@ -571,7 +595,7 @@ appareil présente avant d'avoir un jeton. Voir « Appairer un appareil » et
 | `/dsh-remote/v1/espaces` | `GET` | Espaces de travail du registre de l'hôte, **ceux sans session compris**, dans son ordre de création décroissante. |
 | `/dsh-remote/v1/serveurs` | `GET` | Liste des machines du tailnet qui peuvent héberger DSH, **découverte par l'hôte** — c'est ce qui donne une liste à l'iPhone. |
 | `/dsh-remote/v1/appairage` | `POST` | **Session navigateur.** Frappe un code à usage unique et rend la charge utile à afficher. Jamais tracée, `no-store`. |
-| `/dsh-remote/v1/appareils` | `GET` | **Session navigateur.** Les appareils appairés : nom, portée, date, empreinte — jamais un jeton. |
+| `/dsh-remote/v1/appareils` | `GET` | **Session navigateur.** Les appareils appairés et le jeton du terminal (`historique: true`, sans date) : nom, portée, empreinte — jamais un jeton. |
 | `/dsh-remote/v1/appareils/revoquer` | `POST` | **Session navigateur.** Coupe un appareil, désigné par son empreinte. |
 | `/dsh-remote/v1/appairage/echange` | `POST` | **Le code fait office de porteur.** Rend un jeton neuf, propre à l'appareil. Aucun `Origin` toléré. |
 | `/dsh-remote/v1/session/<id>` | `POST` | Une page du journal d'une session. |

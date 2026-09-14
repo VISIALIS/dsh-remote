@@ -395,9 +395,18 @@ test('la liste des appareils rend des EMPREINTES, jamais des jetons', async () =
   route(ctx, '/dsh-remote/v1/appareils').handler(requete({ url: '/dsh-remote/v1/appareils' }), liste)
   assert.equal(liste.code, 200)
   const corps = liste.json()
-  assert.equal(corps.appareils.length, 1, 'le jeton historique est le premier appareil')
+  assert.equal(corps.appareils.length, 1, 'le jeton du terminal est le premier appareil')
   assert.equal(corps.appareils[0].historique, true)
   assert.equal(corps.appareils[0].portee, 'lecture')
+  // SON NOM DIT CE QUE C'EST, ET À QUI ÇA SERT. « jeton historique (terminal) »
+  // faisait lire un vestige là où il y a la connexion de l'application SUR CE MAC
+  // à elle-même : le propriétaire a demandé à quoi il correspondait, ce qui est
+  // le défaut exact d'un nom qui n'explique rien.
+  assert.match(corps.appareils[0].nom, /terminal/i, 'le nom doit dire d\'où il vient')
+  assert.match(corps.appareils[0].nom, /dsh-remote-ctl/, 'et à quoi il sert encore')
+  // PAS DE DATE : il n'est pas appairé, et le panneau ne doit pas laisser croire
+  // à un appareil dont on aurait perdu la trace.
+  assert.equal(corps.appareils[0].creeLe, null)
   assert.match(corps.appareils[0].empreinte, /^[0-9a-f]{12}$/)
   assert.equal(liste.corps.includes(JETON_HISTORIQUE), false, 'la liste ne doit JAMAIS porter un jeton')
 })

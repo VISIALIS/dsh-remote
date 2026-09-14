@@ -902,64 +902,92 @@ function encodeQr(text) {
         }
       }
 
-      // ── Les appareils appairés ─────────────────────────────────────────────
+      // ── Les appareils appairés, PUIS le jeton du terminal ──────────────────
+      //
+      // POURQUOI DEUX GROUPES, ET PAS UNE SEULE LISTE. Le jeton du terminal n'est
+      // pas un appareil appairé : il est tiré au premier chargement du plugin,
+      // affiché une fois dans le terminal, et réutilisé à chaque démarrage. Le
+      // compter parmi les appareils — « Appareils appairés (2) » alors qu'un seul
+      // est appairé — puis lui donner une « date inconnue » faisait lire un
+      // vestige là où il y a la connexion de l'application SUR CE MAC à
+      // elle-même. Il reste dans le panneau, parce que c'est le seul endroit qui
+      // le renouvelle : il est simplement nommé pour ce qu'il est.
+      const appaires = appareils.filter((appareil) => appareil.historique !== true)
+      const duTerminal = appareils.filter((appareil) => appareil.historique === true)
+
+      // Une ligne d'appareil — la même pour les deux groupes, parce que les deux
+      /// se révoquent pareil et que deux dessins divergeraient.
+      //
+      // LA DEUXIÈME LIGNE NE MENT PAS SUR LA DATE : un appareil appairé a une
+      // date de création, le jeton du terminal n'en a pas — il dit « non
+      // appairé » au lieu d'une « date inconnue » qui laissait croire à un
+      // appareil dont on aurait perdu la trace.
+      const ligneAppareil = (appareil) => {
+        const enConfirmation = confirmation === appareil.empreinte
+        const quand = appareil.historique === true ? 'non appairé' : dateLisible(appareil.creeLe)
+        return React.createElement(
+          'div',
+          {
+            key: appareil.empreinte,
+            style: {
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+              boxSizing: 'border-box',
+              width: '100%',
+              padding: '7px 9px',
+              borderRadius: '7px',
+              background: COULEURS.couche,
+            },
+          },
+          React.createElement('span', { style: { fontSize: '12px', color: COULEURS.texte, wordBreak: 'break-all' } }, appareil.nom),
+          React.createElement(
+            'span',
+            { style: { fontSize: '11px', color: COULEURS.discret } },
+            (appareil.portee === 'ecriture' ? 'écriture' : 'lecture') + ' · ' + quand + ' · ' + appareil.empreinte,
+          ),
+          React.createElement(
+            'button',
+            {
+              type: 'button',
+              disabled: rechargement,
+              onClick: () => {
+                if (enConfirmation) revoquer(appareil.empreinte)
+                else setConfirmation(appareil.empreinte)
+              },
+              style: { ...boutonStyle(false), alignSelf: 'flex-start', color: enConfirmation ? COULEURS.danger : COULEURS.texte },
+            },
+            enConfirmation ? 'Confirmer la révocation' : 'Révoquer',
+          ),
+        )
+      }
+
       contenu.push(
         React.createElement(
           'div',
           { key: 'appareils-titre', style: { fontSize: '11px', fontWeight: 600, color: COULEURS.discret, width: '100%' } },
-          appareils.length === 0 ? 'Aucun appareil appairé' : 'Appareils appairés (' + String(appareils.length) + ')',
+          appaires.length === 0 ? 'Aucun appareil appairé' : 'Appareils appairés (' + String(appaires.length) + ')',
         ),
       )
-      for (const appareil of appareils) {
-        const enConfirmation = confirmation === appareil.empreinte
+      for (const appareil of appaires) contenu.push(ligneAppareil(appareil))
+
+      if (duTerminal.length > 0) {
         contenu.push(
           React.createElement(
             'div',
-            {
-              key: appareil.empreinte,
-              style: {
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px',
-                boxSizing: 'border-box',
-                width: '100%',
-                padding: '7px 9px',
-                borderRadius: '7px',
-                background: COULEURS.couche,
-              },
-            },
-            React.createElement('span', { style: { fontSize: '12px', color: COULEURS.texte, wordBreak: 'break-all' } }, appareil.nom),
-            React.createElement(
-              'span',
-              { style: { fontSize: '11px', color: COULEURS.discret } },
-              (appareil.portee === 'ecriture' ? 'écriture' : 'lecture') +
-                ' · ' +
-                dateLisible(appareil.creeLe) +
-                ' · ' +
-                appareil.empreinte,
-            ),
-            React.createElement(
-              'button',
-              {
-                type: 'button',
-                disabled: rechargement,
-                onClick: () => {
-                  if (enConfirmation) revoquer(appareil.empreinte)
-                  else setConfirmation(appareil.empreinte)
-                },
-                style: { ...boutonStyle(false), alignSelf: 'flex-start', color: enConfirmation ? COULEURS.danger : COULEURS.texte },
-              },
-              enConfirmation ? 'Confirmer la révocation' : 'Révoquer',
-            ),
+            { key: 'terminal-titre', style: { fontSize: '11px', fontWeight: 600, color: COULEURS.discret, width: '100%', marginTop: '4px' } },
+            'Jeton du terminal',
           ),
         )
+        for (const appareil of duTerminal) contenu.push(ligneAppareil(appareil))
       }
+
       contenu.push(
         React.createElement(
           'div',
           { key: 'appareils-note', style: { fontSize: '11px', lineHeight: 1.4, color: COULEURS.discret, width: '100%' } },
-          appareils.some((appareil) => appareil.historique === true)
-            ? "Révoquer coupe CET appareil. Le jeton historique (terminal) ne revient qu'au prochain démarrage du harness."
+          duTerminal.length > 0
+            ? "Le jeton du terminal n'est pas un appareil appairé : il est tiré au premier chargement du plugin et affiché UNE fois dans le terminal. L'application sur ce Mac et dsh-remote-ctl s'en servent pour la machine locale. Le révoquer ne le supprime pas vraiment : un jeton neuf sera tiré, et affiché dans le terminal, au prochain démarrage du harness."
             : 'Révoquer coupe cet appareil seulement : les autres continuent de fonctionner.',
         ),
       )

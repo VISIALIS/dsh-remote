@@ -397,7 +397,19 @@ export function apply(ctx, config) {
     const credentials = coffre()
     const entrees = []
     if (jeton !== null) {
-      entrees.push({ token: jeton, portee, creeLe: null, nom: 'jeton historique (terminal)', historique: true })
+      // LE NOM DIT CE QUE C'EST, ET À QUI ÇA SERT. « jeton historique » faisait
+      // lire un vestige là où il y a la connexion de l'application SUR CE MAC à
+      // elle-même (et celle de dsh-remote-ctl) : le propriétaire a demandé à quoi
+      // il correspondait, ce qui est exactement le défaut d'un nom qui n'explique
+      // rien. Il n'est pas appairé, il n'a pas de date, et le révoquer le remplace
+      // au prochain démarrage — le panneau le dit à côté.
+      entrees.push({
+        token: jeton,
+        portee,
+        creeLe: null,
+        nom: 'Jeton du terminal (ce Mac, dsh-remote-ctl)',
+        historique: true,
+      })
     }
     if (credentials === null) return entrees
     const registre = await credentials.readRecord(CLE_JETONS)
