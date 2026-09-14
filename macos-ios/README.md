@@ -1591,6 +1591,38 @@ processus **avorte** (mesuré : `NSInternalInconsistencyException:
 bundleProxyForCurrentProcess is nil`, code 134, signal 6). Sans la garde, `swift run
 DSHRemoteMac` — le chemin de développement documenté — mourrait au lancement.
 
+### Les blocs de code du journal
+
+**Ce qui manquait.** Le journal affichait le texte de l'agent en brut, coupé à quatre
+lignes. Mesuré sur 40 journaux réels de ce dépôt (52 669 événements, 9 491 messages
+d'assistant) : **8,2 % des messages portent un bloc délimité par trois accents graves**
+— et une sortie de `bash` ou un diff tronqué à quatre lignes de texte proportionnel ne
+se lit pas.
+
+**Ce qui est rendu, et ce qui ne l'est pas — une décision, pas un oubli.**
+
+| Rendu | Ce qui est traité |
+|---|---|
+| Cadre monospace, fond distinct, **bouton copier**, replié à 12 lignes | les blocs délimités par trois accents graves, avec ou sans langage annoncé |
+| Texte ordinaire, comme avant | **tout le reste** : titres, listes, gras, tableaux, liens. Un analyseur Markdown complet est un chantier de plusieurs jours, la RÈGLE #0 interdit d'en importer un, et le vrai lecteur d'un long document reste l'interface web |
+
+Le bouton « Développer » de l'événement déplie **le texte et les blocs d'un coup** : deux
+dépliages séparés se contrediraient.
+
+**Un piège de Swift, mesuré en écrivant l'analyseur.** « `\r\n` » est **un seul
+`Character`** (un groupe de graphèmes) : `split(separator: "\n")` ne le reconnaît pas et
+rend une ligne unique. Un texte venu d'une machine Windows ressortait donc en **un seul
+segment**, clôtures comprises, sans qu'aucun bloc ne soit vu. Le test qui l'a attrapé est
+gardé, et la normalisation est faite avant de découper.
+
+**Une ancre de vérification de plus : `--session=<fragment>`.** Le rendu d'un événement ne
+se juge pas sur du code compilé, et cet environnement n'injecte pas d'appui dans une
+liste. L'ancre ouvre le journal de la première session dont le titre ou le projet contient
+le fragment. **Elle se rejoue quand la liste arrive** : la première tentative tombe juste
+après `demarrer()`, qui rend la main sur la poignée de main — la liste suit, et l'ancre ne
+trouvait rien. Constaté deux fois : la capture montrait la session *restaurée* au lieu de
+celle demandée, ce qui rendait l'ancre trompeuse, donc pire que pas d'ancre du tout.
+
 ### Quand l'hôte n'écrit pas : le composeur absent SE DIT
 
 Le composeur n'apparaît que si l'hôte annonce `capacites.ecriture` — la règle du
@@ -2198,6 +2230,9 @@ inactive.
 | **Deux machines qui partageaient « MacBook » se distinguent** | capture des données réelles : « MacBook Air » et « MacBook Pro », là où deux vignettes disaient « MacBook » — 5 tests sur `NomsCourts` |
 | **L'état de navigation fait un aller-retour** | 2 tests : espaces triés relus par un SECOND modèle sur le même domaine ; une session mémorisée n'est rouverte que si l'hôte la nomme |
 | **Le collage iOS ne lit plus le presse-papiers à l'insu de l'utilisateur** | `PasteButton` des deux côtés (feuille Adresse, page d'une machine) ; compilation iOS complète par `Scripts/construire-app-ios.sh --simulateur` → `BUILD SUCCEEDED` |
+| **Les blocs de code sont reconnus, et la prose ne l'est pas** | 10 tests sur l'analyseur (`BlocsDeCodeTests`) : bloc avec ou sans langage, clôture non fermée, accents graves en milieu de ligne, fausse clôture, deux blocs, bloc vide, retour chariot Windows, clôture plus longue |
+| **Le rendu est vu, pas déduit** | capture sur une session réelle : une sortie `bash` encadrée en monospace avec son bouton copier et « Développer », la prose de l'agent en texte ordinaire, et « the file … has been updated successfully » non encadré |
+| **L'ancre `--session=` ouvre le bon journal** | capture : fenêtre titrée du nom de la session demandée, alors que la session restaurée était une autre |
 | **Les alertes ne partent que sur un CHANGEMENT, et jamais pour ce qu'on regarde** | 9 tests : attente nouvelle, regroupement, session regardée, ordre attente-avant-fin, première observation muette, éteintes par défaut, refus système qui laisse l'interrupteur éteint, préférence relue au lancement |
 | **`UNUserNotificationCenter` sans paquet fait AVORTER le processus** | mesuré sur un binaire nu : `NSInternalInconsistencyException: bundleProxyForCurrentProcess is nil`, code 134 — d'où la garde `AlerteurSysteme.possibles` |
 | **La suite de tests ne touche plus aux préférences de la machine** | 33 tests construisaient `ModeleApp()` sur le domaine partagé ; ils sont tous isolés. Mesure : **12 échecs sur 15 exécutions** avant, **0 sur 20** après |

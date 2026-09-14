@@ -313,10 +313,7 @@ struct LigneEvenement: View {
         }
       }
 
-      Text(evenement.resume)
-        .font(.callout)
-        .lineLimit(deplie ? nil : 4)
-        .textSelection(.enabled)
+      contenu
 
       // LE BOUTON DIT CE QU'IL CACHE. Il n'apparaissait qu'au-delà de 120
       // caractères, alors que la ligne en montre QUATRE : un message de six
@@ -332,6 +329,36 @@ struct LigneEvenement: View {
       }
     }
     .padding(.vertical, 2)
+  }
+
+  /// LE CONTENU, DÉCOUPÉ EN SEGMENTS — texte ordinaire, et blocs de code.
+  ///
+  /// POURQUOI LE DÉCOUPAGE SE FAIT À CHAQUE RENDU, ET NON UNE FOIS POUR TOUTES.
+  /// C'est une passe sur le texte, sans allocation notable, et le mémoriser
+  /// demanderait de le tenir à jour quand le dépliage change : deux états pour une
+  /// seule vérité. Le texte d'un événement ne change pas pendant la vie de la
+  /// ligne, donc la passe est faite au plus une fois par affichage utile.
+  ///
+  /// CE QUI N'EST PAS TRAITÉ, ET QUI EST UN CHOIX. Le reste du Markdown — titres,
+  /// listes, gras, tableaux — reste du texte. Un analyseur complet est un chantier
+  /// de plusieurs jours, la RÈGLE #0 interdit d'en importer un, et le vrai lecteur
+  /// d'un long document reste l'interface web. Ce qui est traité ici est ce qui
+  /// manquait le plus : 8,2 % des messages de l'agent portent un bloc de code
+  /// (mesuré sur 40 journaux réels), et c'est celui qu'on veut LIRE et RECOPIER.
+  @ViewBuilder
+  private var contenu: some View {
+    let segments = BlocsDeCode.decouper(evenement.resume)
+    ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+      switch segment {
+      case let .texte(texte):
+        Text(texte)
+          .font(.callout)
+          .lineLimit(deplie ? nil : 4)
+          .textSelection(.enabled)
+      case let .code(code, langue):
+        BlocDeCode(contenu: code, langue: langue, deplie: deplie)
+      }
+    }
   }
 
   private var icone: String {
@@ -355,6 +382,65 @@ struct LigneEvenement: View {
     case "tool/call", "tool/result": return .orange
     case "goal/change": return .green
     default: return .secondary
+    }
+  }
+}
+
+/// UN BLOC DE CODE DANS LE JOURNAL — monospace, fond distinct, copiable.
+///
+/// POURQUOI IL A SON PROPRE CADRE. Un bloc se reconnaît à sa FORME avant de se
+/// lire : c'est ce qui le distingue d'une phrase de l'agent. Le fond et la chasse
+/// fixe le disent sans un mot, et le bouton de copie évite de sélectionner à la
+/// main quarante caractères sur un téléphone — le geste qu'on vient y faire.
+///
+/// POURQUOI IL EST LIMITÉ À DOUZE LIGNES REPLIÉ. Un bloc peut en faire deux cents
+/// (un diff, un fichier entier) : le déplier d'office noierait la conversation.
+/// Le bouton « Développer » de l'événement le déplie avec le reste, et c'est le
+/// même état pour tout le message — deux dépliages séparés se contrediraient.
+struct BlocDeCode: View {
+  let contenu: String
+  /// Le langage annoncé après les accents graves, s'il y en a un.
+  let langue: String?
+  let deplie: Bool
+  @State private var copie = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 6) {
+        // LE LANGAGE N'EST MONTRÉ QUE S'IL EST CONNU. Écrire « code » quand
+        // l'agent ne l'a pas dit n'apprendrait rien : le cadre le dit déjà.
+        if let langue {
+          Text(langue).font(.caption2).foregroundStyle(.tertiary)
+        }
+        Spacer(minLength: 4)
+        Button {
+          copier()
+        } label: {
+          Image(systemName: copie ? "checkmark" : "doc.on.doc").font(.caption)
+        }
+        .buttonStyle(.borderless)
+        .cibleTactile()
+        .accessibilityLabel(copie ? "Bloc de code copié" : "Copier le bloc de code")
+        .sensoryFeedback(.success, trigger: copie) { ancien, nouveau in
+          !ancien && nouveau
+        }
+      }
+      Text(contenu)
+        .font(.caption.monospaced())
+        .lineLimit(deplie ? nil : 12)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(8)
+    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 6))
+  }
+
+  private func copier() {
+    PressePapiers.ecrire(contenu)
+    copie = true
+    Task {
+      try? await Task.sleep(nanoseconds: 1_800_000_000)
+      copie = false
     }
   }
 }

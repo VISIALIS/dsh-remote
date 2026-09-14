@@ -71,6 +71,21 @@ public struct VuePrincipale: View {
     ProcessInfo.processInfo.arguments.contains("--serveur")
   }
 
+  /// Le fragment demandé par `--session=<fragment>`, s'il y en a un.
+  ///
+  /// ANCRE DE VÉRIFICATION, comme `--serveur=` : cet environnement n'injecte pas
+  /// d'appui dans une liste, donc le JOURNAL d'une session ne peut être ni
+  /// capturé ni jugé sans elle — et « ça compile » tiendrait lieu de preuve pour
+  /// tout ce qui touche au rendu d'un événement. Le fragment est cherché dans le
+  /// titre et dans le projet, en minuscules.
+  private static var sessionDemandee: String? {
+    for argument in ProcessInfo.processInfo.arguments where argument.hasPrefix("--session=") {
+      let valeur = argument.dropFirst("--session=".count).lowercased()
+      if !valeur.isEmpty { return valeur }
+    }
+    return nil
+  }
+
   /// Ancre de VÉRIFICATION : `--page-seule` remplace la fenêtre entière par la
   /// page du serveur courant.
   ///
@@ -129,6 +144,21 @@ public struct VuePrincipale: View {
         contenu
       }
     }
+  }
+
+  /// Ouvre la session demandée par `--session=<fragment>`, si elle est là.
+  ///
+  /// ELLE NE FAIT RIEN SANS L'ARGUMENT, ni si une session est déjà ouverte : une
+  /// ancre de vérification ne doit jamais écraser un choix de l'utilisateur.
+  private func ouvrirSessionDemandee() {
+    guard sessionSelectionnee == nil, let demande = VuePrincipale.sessionDemandee else { return }
+    guard
+      let trouvee = modele.sessionsFiltrees.first(where: { session in
+        session.titreAffiche.lowercased().contains(demande)
+          || (session.projet ?? "").lowercased().contains(demande)
+      })
+    else { return }
+    sessionSelectionnee = trouvee
   }
 
   private var contenu: some View {
@@ -198,6 +228,10 @@ public struct VuePrincipale: View {
         // remède d'installation, qui n'a de sens que là.
         if let cible = machineDeLaPageSeule { modele.ouvrirPage(cible) }
       }
+      // ANCRE DE VÉRIFICATION : `--session=<fragment>` ouvre un journal précis.
+      // Elle passe AVANT la restauration — une ancre explicite ne doit pas être
+      // écrasée par ce qui a été consulté la veille.
+      ouvrirSessionDemandee()
       // LA SESSION CONSULTÉE SE ROUVRE, si l'hôte vient de la nommer.
       //
       // POURQUOI APRÈS `demarrer()` : la liste des sessions n'existe qu'une fois
@@ -215,6 +249,15 @@ public struct VuePrincipale: View {
     // LA SÉLECTION SE RETIENT, pour être rouverte au prochain lancement.
     .onChange(of: sessionSelectionnee) { _, nouvelle in
       modele.definirSessionConsultee(nouvelle?.id)
+    }
+    // L'ANCRE SE REJOUE QUAND LA LISTE ARRIVE — et c'est une correction mesurée.
+    // La première tentative tombe juste après `demarrer()`, qui rend la main sur
+    // la POIGNÉE DE MAIN : la liste des sessions arrive après, et l'ancre ne
+    // trouvait rien. Constaté deux fois : la capture montrait la session
+    // restaurée au lieu de celle demandée, ce qui rendait l'ancre trompeuse —
+    // pire que pas d'ancre du tout.
+    .onChange(of: modele.sessionsFiltrees) { _, _ in
+      ouvrirSessionDemandee()
     }
     // ── POURQUOI UNE ERREUR FORCE LA PAGE DU SERVEUR ───────────────────────
     //
