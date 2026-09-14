@@ -43,6 +43,21 @@ public actor RemoteClient {
     configuration.httpCookieAcceptPolicy = .never
     configuration.timeoutIntervalForRequest = delai
     configuration.timeoutIntervalForResource = max(delai, 120)
+    // ATTENDRE QUE LE RÉSEAU REVIENNE, AU LIEU D'ÉCHOUER TOUT DE SUITE.
+    //
+    // POURQUOI. Mesuré sur l'iPhone branché : trois `ping` tailnet vers
+    // l'appareil donnent 6 ms, 412 ms, 6 ms. Le chemin est direct (aucun relais
+    // DERP), donc ces pics ne sont pas du réseau : c'est la radio Wi-Fi de
+    // l'iPhone qui s'endort entre deux échanges. La première requête qui suit le
+    // réveil échouait alors en `-1001` (délai dépassé), et l'utilisateur voyait
+    // une panne de serveur là où il fallait attendre quelques centaines de
+    // millisecondes.
+    //
+    // Ce drapeau fait patienter `URLSession` jusqu'au retour du chemin réseau,
+    // dans la limite des délais ci-dessus. Il ne desserre aucun contrôle de
+    // sécurité : l'en-tête `Authorization` et l'absence d'`Origin` ne changent
+    // pas, et le serveur reste seul juge du jeton.
+    configuration.waitsForConnectivity = true
     self.session = URLSession(configuration: configuration)
   }
 
@@ -119,7 +134,14 @@ public actor RemoteClient {
       }
       if ns.code == NSURLErrorCannotFindHost { detail += " | CAUSE: nom d'hote non resolu" }
       if ns.code == NSURLErrorCannotConnectToHost { detail += " | CAUSE: rien n'ecoute sur cet hote et ce port" }
-      if ns.code == NSURLErrorTimedOut { detail += " | CAUSE: delai depasse, hote injoignable" }
+      if ns.code == NSURLErrorTimedOut {
+        detail += " | CAUSE: delai depasse, hote injoignable"
+        // Le meme code a DEUX causes que l'on confondait : un Mac eteint, et un
+        // iPhone dont la radio s'est rendormie. La seconde se voit dans les
+        // traces (`ping` qui saute de 6 ms a 400 ms) et se distingue ici par le
+        // fait que le service, lui, repond.
+        detail += " | SI le service repond par ailleurs: veille Wi-Fi de l'appareil, reessayer"
+      }
       throw ErreurRemote.transport(detail)
     }
     guard let http = reponse as? HTTPURLResponse else {
