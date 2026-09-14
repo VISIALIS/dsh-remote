@@ -58,8 +58,18 @@ public struct ServeurMac: Sendable, Identifiable, Hashable, Decodable {
   /// de Camille », « MacStudio Atelier » — et une légende d'icône se lit d'un
   /// mot : au-delà, elle est tronquée à l'écran et n'apprend rien. Le nom
   /// complet reste lu par VoiceOver, qui n'a pas cette contrainte de place.
+  ///
+  /// ATTENTION : CE N'EST PAS TOUJOURS ASSEZ. Deux machines peuvent partager leur
+  /// premier mot — « Portable Un » et « Portable Deux » —, et l'appui sur une
+  /// vignette change la connexion. Le carrousel n'emploie donc pas cette
+  /// propriété : il demande à `NomsCourts` les libellés de la LISTE, qui
+  /// s'allongent quand un mot ne distingue pas. Celle-ci reste pour les écrans qui
+  /// nomment UNE machine sans connaître ses voisines (une page, un message).
+  ///
+  /// La règle de découpage vit dans `NomsCourts.raccourci`, pour qu'il n'y en ait
+  /// qu'une.
   public var premierMot: String {
-    nom.split(separator: " ").first.map(String.init) ?? nom
+    NomsCourts.raccourci(nom, mots: 1)
   }
 
   /// Symbole à afficher, déduit du nom de la machine.

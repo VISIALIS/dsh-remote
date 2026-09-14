@@ -660,8 +660,37 @@ struct CarrouselServeurs: View {
   /// Touché « Ajouter » : la page qui dit comment faire naître un serveur.
   var surAjout: () -> Void
 
+  /// LE CÔTÉ D'UNE VIGNETTE, MIS À L'ÉCHELLE DU TEXTE DE L'APPAREIL.
+  ///
+  /// POURQUOI `@ScaledMetric`. La vignette portait un glyphe de 27 points et un
+  /// cadre de 68 **en dur** : à la taille de texte d'accessibilité, ils ne
+  /// grandissaient pas d'un point, alors que le nom et la légende — sémantiques,
+  /// eux — grossissaient : le texte finissait par ne plus tenir dans un cadre
+  /// prévu pour lui. C'est le défaut que l'audit a relevé sous le nom de
+  /// « Dynamic Type cassé », et il touchait le composant signature de l'écran.
+  ///
+  /// POURQUOI UN PLAFOND, ET POURQUOI IL EST ASSUMÉ. Au-delà de 96 points, une
+  /// vignette cesse d'être une vignette : trois machines ne tiennent plus dans la
+  /// colonne, et le carrousel perd ce pour quoi il existe — voir d'un coup d'œil
+  /// quelles machines répondent. Le texte, lui, continue de grandir jusqu'au bout.
+  @ScaledMetric(relativeTo: .caption2) private var coteMiseALEchelle: CGFloat = 62
+  private var cote: CGFloat { min(coteMiseALEchelle, 96) }
+
+  /// LES LIBELLÉS DE LA LISTE ENTIÈRE, calculés une fois par rendu.
+  ///
+  /// POURQUOI ICI, ET NON DANS LA VIGNETTE. Deux machines peuvent partager leur
+  /// premier mot : c'est la comparaison entre elles qui décide si un mot suffit.
+  /// Voir `NomsCourts`.
+  private var libelles: [String: String] { NomsCourts.libelles(pour: modele.serveurs) }
+
   var body: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
+    // LES INDICATEURS DE DÉFILEMENT SONT CEUX DU SYSTÈME. Ils étaient masqués
+    // (`showsIndicators: false`) : avec quatre machines, la quatrième apparaît
+    // COUPÉE au bord de la colonne sans que rien n'annonce qu'on peut faire
+    // défiler — constaté sur capture. La barre discrète du système est
+    // précisément l'affordance qui manquait, et elle ne s'affiche que pendant le
+    // geste.
+    ScrollView(.horizontal) {
       HStack(alignment: .top, spacing: 16) {
         ForEach(modele.serveurs) { serveur in
           // ── TOUCHER UNE MACHINE OUVRE SA PAGE ET S'Y CONNECTE ─────────────
@@ -697,7 +726,7 @@ struct CarrouselServeurs: View {
           // ni dans quel ordre. La recherche reste offerte DANS la page.
           #if os(iOS)
             NavigationLink(value: PageAjoutServeur()) {
-              ContenuAjouter(enRecherche: modele.synchronisationEnCours)
+              ContenuAjouter(enRecherche: modele.synchronisationEnCours, cote: cote)
             }
             .buttonStyle(.plain)
             .simultaneousGesture(TapGesture().onEnded { surAjout() })
@@ -705,7 +734,7 @@ struct CarrouselServeurs: View {
             Button {
               surAjout()
             } label: {
-              ContenuAjouter(enRecherche: modele.synchronisationEnCours)
+              ContenuAjouter(enRecherche: modele.synchronisationEnCours, cote: cote)
             }
             .buttonStyle(.plain)
           #endif
@@ -745,6 +774,8 @@ struct CarrouselServeurs: View {
       NavigationLink(value: serveur) {
         IconeServeur(
           serveur: serveur,
+          libelle: libelles[serveur.id] ?? serveur.premierMot,
+          cote: cote,
           choisi: modele.serveurChoisi == serveur,
           sertDsh: modele.sertDsh(serveur))
       }
@@ -775,6 +806,8 @@ struct CarrouselServeurs: View {
       } label: {
         IconeServeur(
           serveur: serveur,
+          libelle: libelles[serveur.id] ?? serveur.premierMot,
+          cote: cote,
           choisi: modele.serveurChoisi == serveur,
           sertDsh: modele.sertDsh(serveur))
       }
@@ -829,6 +862,22 @@ struct CarrouselServeurs: View {
 /// Une icône de serveur : la vignette, la pastille d'état, le nom d'un mot.
 struct IconeServeur: View {
   let serveur: ServeurMac
+  /// LE LIBELLÉ DE LA VIGNETTE — un mot, ou deux quand un seul ne distingue pas.
+  ///
+  /// POURQUOI IL VIENT DU DEHORS. Deux machines d'un même tailnet peuvent partager
+  /// leur premier mot — « Portable Un » et « Portable Deux » s'affichaient toutes
+  /// deux « Portable » —, et l'appui CHANGE la connexion. Le calcul appartient
+  /// donc à la LISTE (`NomsCourts`) : c'est la comparaison entre machines qui dit
+  /// si un mot suffit, et une vignette seule ne peut pas le savoir.
+  let libelle: String
+  /// LE CÔTÉ DE LA VIGNETTE, DÉJÀ MIS À L'ÉCHELLE DU TEXTE.
+  ///
+  /// POURQUOI UN SEUL CÔTÉ, ET NON CINQ. Le dessin est proportionné : le glyphe,
+  /// la pastille, la coche et la largeur des deux lignes se déduisent tous du
+  /// côté. Cinq `@ScaledMetric` indépendants auraient pu diverger et casser
+  /// l'alignement — celui, surtout, que la vignette partage avec le bouton
+  /// « Ajouter ».
+  let cote: CGFloat
   /// Le serveur CONNECTÉ, donc celui dont la page est ouverte : une coche.
   ///
   /// POURQUOI UN SEUL SIGNAL. J'avais ajouté un anneau bleu autour de la vignette
@@ -846,10 +895,16 @@ struct IconeServeur: View {
   /// « je ne sais pas », pas un « non ».
   let sertDsh: Bool?
 
+  /// Le côté du CADRE : la vignette, plus la marge qui la sépare des autres.
+  private var cadre: CGFloat { cote + 6 }
+  private var coteGlyphe: CGFloat { cote * 0.4355 }
+  private var cotePastille: CGFloat { cote * 0.242 }
+  private var coteCoche: CGFloat { cote * 0.3065 }
+
   var body: some View {
     VStack(spacing: 6) {
       ZStack {
-        RoundedRectangle(cornerRadius: 15, style: .continuous)
+        RoundedRectangle(cornerRadius: cote * 0.242, style: .continuous)
           .fill(
             LinearGradient(
               colors: serveur.enLigne
@@ -857,10 +912,10 @@ struct IconeServeur: View {
                 : [Color.secondary.opacity(0.45), Color.secondary.opacity(0.28)],
               startPoint: .topLeading, endPoint: .bottomTrailing)
           )
-          .frame(width: 62, height: 62)
+          .frame(width: cote, height: cote)
           .overlay {
             Image(systemName: serveur.symbole)
-              .font(.system(size: 27, weight: .regular))
+              .font(.system(size: coteGlyphe, weight: .regular))
               .foregroundStyle(.white)
           }
         // La sélection est une COCHE, dans le coin, et non un contour : sur une
@@ -870,32 +925,32 @@ struct IconeServeur: View {
         // pastille d'état occupe le coin bas-droit.
         if choisi {
           Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: 19))
+            .font(.system(size: coteCoche))
             .foregroundStyle(.white, Color.accentColor)
-            .offset(x: -29, y: -29)
+            .offset(x: -(cote / 2) + 2, y: -(cote / 2) + 2)
         }
       }
-      .frame(width: 62, height: 62)
+      .frame(width: cote, height: cote)
       .overlay(alignment: .bottomTrailing) {
         // Vert : en ligne ET DSH vérifié. Orange : en ligne, mais la sonde n'a
         // pas encore répondu. Gris : hors ligne, ou DSH absent — dans les deux
         // cas, appuyer ne donnera rien.
         Circle()
           .fill(couleurPastille)
-          .frame(width: 15, height: 15)
+          .frame(width: cotePastille, height: cotePastille)
           .overlay { Circle().strokeBorder(.background, lineWidth: 2.5) }
           .offset(x: 3, y: 3)
       }
-      .frame(width: 68, height: 68)
+      .frame(width: cadre, height: cadre)
       // Une vignette SANS DSH est atténuée : c'est ce qui se voit d'un coup
       // d'œil, avant même de lire la légende.
       .opacity(sertDsh == false ? 0.55 : 1)
 
-      Text(serveur.premierMot)
+      Text(libelle)
         .font(.caption2)
         .lineLimit(1)
         .foregroundStyle(choisi ? Color.primary : Color.secondary)
-        .frame(width: 68)
+        .frame(width: cadre)
       // La légende dit l'état RÉEL : « hôte » pour la machine interrogée, et
       // « pas de DSH » pour celle dont la sonde a montré qu'elle ne répondra
       // pas. Réservée en place (`opacity`) pour que les icônes restent alignées.
@@ -911,7 +966,7 @@ struct IconeServeur: View {
         .multilineTextAlignment(.center)
         .lineLimit(2)
         .foregroundStyle(.tertiary)
-        .frame(width: 68)
+        .frame(width: cadre)
         .opacity(legende.isEmpty ? 0 : 1)
     }
   }
@@ -984,32 +1039,41 @@ struct ContenuAjouter: View {
   /// Vrai pendant une recherche : le carré en pointillés se remplit d'un
   /// indicateur, pour qu'un appui ne reste jamais sans réponse visible.
   let enRecherche: Bool
+  /// Le côté de la vignette, mis à l'échelle du texte par le carrousel.
+  ///
+  /// IL VIENT DU DEHORS, ET C'EST LA CONDITION DE L'ALIGNEMENT : les deux dessins
+  /// — une machine et « Ajouter » — doivent partager la même cote au point près,
+  /// sinon l'un descend pendant que l'autre monte. Deux `@ScaledMetric` auraient
+  /// été deux sources de vérité pour une seule cote.
+  let cote: CGFloat
+
+  private var cadre: CGFloat { cote + 6 }
 
   var body: some View {
     VStack(spacing: 6) {
-      RoundedRectangle(cornerRadius: 15, style: .continuous)
+      RoundedRectangle(cornerRadius: cote * 0.242, style: .continuous)
         .strokeBorder(
           Color.secondary.opacity(0.45),
           style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
         )
-        .frame(width: 62, height: 62)
+        .frame(width: cote, height: cote)
         .overlay {
           if enRecherche {
             ProgressView().controlSize(.small)
           } else {
             Image(systemName: "plus")
-              .font(.system(size: 24, weight: .light))
+              .font(.system(size: cote * 0.387, weight: .light))
               .foregroundStyle(Color.secondary)
           }
         }
-        // Le cadre de 68 points, comme la vignette d'un serveur : c'est lui qui
-        // place les deux dessins à la même hauteur.
-        .frame(width: 68, height: 68)
+        // Le cadre, comme la vignette d'un serveur : c'est lui qui place les
+        // deux dessins à la même hauteur.
+        .frame(width: cadre, height: cadre)
 
       Text("Ajouter")
         .font(.caption2)
         .foregroundStyle(Color.secondary)
-        .frame(width: 68)
+        .frame(width: cadre)
     }
   }
 }
@@ -1203,14 +1267,29 @@ struct PastilleEtat: View {
         .onChange(of: reduireLesAnimations) { _, _ in reglerAnimation() }
         .foregroundStyle(Color.orange)
       case .attendReponse:
-        // Un point orange PLEIN, et non les carrés : ce n'est pas « ça tourne »,
-        // c'est « ça t'attend ». La distinction visuelle est le fond du message —
-        // une session bloquée sur une question ne repartira pas toute seule.
-        Circle().fill(Color.orange).frame(width: 8, height: 8)
+        // UN POINT D'INTERROGATION, et non un point orange de plus.
+        //
+        // POURQUOI LA FORME A CHANGÉ. « Attend une réponse » était un disque orange
+        // de 8 points, « terminée » un disque vert de 7 : un point de différence,
+        // c'est-à-dire rien. Or ces deux états appellent des gestes OPPOSÉS — l'un
+        // demande une décision, l'autre est une bonne nouvelle à lire —, et ils se
+        // distinguaient par la seule couleur, ce que la directive interdit
+        // précisément. Le glyphe dit l'état par sa forme, la couleur le confirme :
+        // un « ? » se reconnaît même pour qui ne distingue pas l'orange du vert.
+        //
+        // La taille reste celle des autres pastilles : c'est la forme qui porte le
+        // sens, pas le volume.
+        Image(systemName: "questionmark.circle.fill")
+          .font(.caption2)
+          .foregroundStyle(Color.orange)
+          .accessibilityHidden(true)
       case .terminee:
         // Le rappel de fin : plein et vert. Il s'efface quand la session est
         // ouverte.
         Circle().fill(Color.green).frame(width: 7, height: 7)
+        // Pas de glyphe ici : le disque vert est l'état le plus fréquent des deux
+        // « pleins », et lui donner un signe de plus encombrerait la liste. Ce qui
+        // compte est qu'il ne ressemble PAS au point d'interrogation.
       case .inconnue:
         // Anneau vide, et non point plein : l'état n'est pas connu, et cela doit
         // se voir. Un point vert ici affirmerait « terminée », ce que le serveur
