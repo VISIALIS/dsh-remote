@@ -892,6 +892,20 @@ diagnostic entier, jusqu'aux commandes destinées à l'autre Mac. Le message le 
 prenait la place des sessions, et il fallait faire défiler pour voir son propre travail.
 Le diagnostic appartient à la MACHINE : il vit donc sur sa page.
 
+**LA SECTION « ESPACES DE TRAVAIL » DISPARAÎT QUAND ELLE N'A RIEN À DIRE.** Demande du
+propriétaire : « pour l'espace de travail, le fait qu'un serveur n'existe pas encore —
+faire disparaître espace de travail s'il n'y a pas de serveur sélectionné ». Sur un
+appareil neuf, elle affichait un titre, « 0 session », et une phrase renvoyant à une
+machine inexistante, alors que le carrousel au-dessus dit déjà quoi faire.
+
+La règle vit dans le modèle (`ModeleApp.aQuelqueChoseADireDUneMachine`), parce qu'elle a
+un cas délicat : **ce n'est pas `serveurs.isEmpty`**. Une adresse SAISIE À LA MAIN
+n'appartient à aucune liste — la machine n'est donc pas dans `serveurs` — et pourtant ses
+espaces et ses sessions existent et s'affichent. Les cacher serait une régression, pas un
+nettoyage. La question est donc « y a-t-il une machine à montrer, OU quelque chose qui
+vienne d'une machine ? », et deux tests la tiennent (appareil neuf ; adresse saisie avec
+des espaces).
+
 ##### Tailscale a quitté le panneau latéral, et ce qui restait a été rétabli
 
 La colonne s'ouvrait sur une **carte d'état de Tailscale** — « connecté », « installé »,
