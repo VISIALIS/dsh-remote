@@ -2487,6 +2487,17 @@ swift run DSHRemoteMac                    # l'application, sur le Mac
 ./.build/debug/dsh-remote-ctl http://<nom-magicdns-du-mac> annuler <identifiant>
 ```
 
+**LE BINAIRE QUE VOUS LANCEZ N'EST PAS TOUJOURS CELUI QUE VOUS VENEZ DE CONSTRUIRE.**
+`swift run` ouvre le binaire du dépôt (`.build/`), mais l'application du quotidien est
+le PAQUET installé, `/Applications/DSH Remote.app` — et il ne se met pas à jour tout
+seul. Constaté à la dure : une refonte entière de la fiche a été vérifiée en capture
+sur `.build/` alors que l'application réellement ouverte datait d'une heure avant, et
+le propriétaire avait raison de dire « tu dois faire un rebuild ». Pour livrer :
+
+```bash
+Scripts/empaqueter-app-macos.sh --installer   # construit, VÉRIFIE l'empreinte, remplace, ouvre
+```
+
 ### Le projet Xcode est versionné, et il ne porte aucune valeur personnelle
 
 **Le schéma est partagé, donc versionné.** `xcodebuild -scheme DSHRemote` échouait sur
