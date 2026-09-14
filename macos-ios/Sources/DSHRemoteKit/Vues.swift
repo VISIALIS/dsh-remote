@@ -225,6 +225,17 @@ public struct VuePrincipale: View {
         VueAjoutServeur(modele: modele) { adresseOuverte = true }
       case let .serveur(serveur):
         VueServeur(modele: modele, serveur: serveur)
+      case let .selection(serveur):
+        // LA MACHINE EST SÉLECTIONNÉE, SA PAGE N'EST PAS OUVERTE. On ne laisse pas
+        // l'écran vide pour autant : on dit laquelle est choisie, ce que le
+        // premier appui vient de faire (ses sessions sont à gauche), et ce que le
+        // second fera. C'est la règle des deux temps, rendue lisible.
+        ContentUnavailableView {
+          Label { Text(serveur.nom) } icon: { Image(systemName: "checkmark.circle") }
+        } description: {
+          T("Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page.")
+        }
+        .accessibilityLabel(T("Serveur sélectionné"))
       case .rien:
         ContentUnavailableView {
           Label { T("Aucune session ouverte") } icon: { Image(systemName: "terminal") }
@@ -909,25 +920,46 @@ struct CarrouselServeurs: View {
   @ViewBuilder
   private func vignette(_ serveur: ServeurMac) -> some View {
     #if os(iOS)
-      NavigationLink(value: serveur) {
-        IconeServeur(
-          serveur: serveur,
-          libelle: libelles[serveur.id] ?? serveur.premierMot,
-          cote: cote,
-          choisi: modele.serveurChoisi == serveur,
-          sertDsh: modele.sertDsh(serveur))
+      // ── LE MÉCANISME SUIT LA RÈGLE, ET C'EST LA CORRECTION ─────────────────
+      //
+      // DÉFAUT MESURÉ : la vignette était TOUJOURS un `NavigationLink`, qui
+      // empile la page à CHAQUE appui — quoi que dise `GesteSurServeur`. Le
+      // premier appui ne pouvait donc pas se contenter de sélectionner : pour
+      // voir la liste d'à côté, il fallait ouvrir une fiche puis revenir en
+      // arrière, et l'infobulle (« un second appui ouvre sa page ») mentait.
+      //
+      // C'est le MÉCANISME qui obéit maintenant : un lien quand la page doit
+      // s'ouvrir, un bouton quand la machine doit être sélectionnée — et l'on
+      // reste alors sur la liste, le temps que SES sessions et SES espaces de
+      // travail se rechargent.
+      let geste = GesteSurServeur.pour(serveur, choisi: modele.serveurChoisi)
+      let icone = IconeServeur(
+        serveur: serveur,
+        libelle: libelles[serveur.id] ?? serveur.premierMot,
+        cote: cote,
+        choisi: modele.serveurChoisi == serveur,
+        sertDsh: modele.sertDsh(serveur))
+      // Le `Group` n'est pas décoratif : les modificateurs d'accessibilité qui
+      // suivent (libellé, infobulle, action nommée) s'appliquent à un TYPE DE VUE,
+      // et un `if` n'en est pas un — mesuré : « no exact matches in call to
+      // instance method 'accessibilityLabel' ». Le `Group` rend les deux branches
+      // habillables d'un seul jeu de modificateurs, donc d'un seul libellé.
+      Group {
+        if geste == .ouvrirLaPage {
+          NavigationLink(value: serveur) { icone }
+            .buttonStyle(.plain)
+            // Le lien EMPILE la page ; ce geste simultané dit au modèle laquelle
+            // est ouverte (pour que la vignette l'indique).
+            .simultaneousGesture(TapGesture().onEnded { surSelectionServeur(serveur) })
+        } else {
+          Button {
+            surSelectionServeur(serveur)
+          } label: {
+            icone
+          }
+          .buttonStyle(.plain)
+        }
       }
-      .buttonStyle(.plain)
-      // Le lien EMPILE la page ; ce geste simultané dit au modèle laquelle
-      // est ouverte (pour que la vignette l'indique) ET lance la connexion.
-      .simultaneousGesture(
-        TapGesture().onEnded {
-          // UN SEUL APPEL, ET LA RÈGLE DÉCIDE : sélectionner, ou ouvrir la page si
-          // la machine est déjà la cible. Le `choisirEtConnecter` qui vivait ici
-          // est parti dans `ModeleApp.toucher` — c'est ce qui permet à la règle
-          // d'exister une fois au lieu de cinq.
-          surSelectionServeur(serveur)
-        })
       .accessibilityLabel(
         EtatMachine.libelleAccessible(
           nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
@@ -935,19 +967,19 @@ struct CarrouselServeurs: View {
       )
       // ── LA CONNEXION DEVIENT UNE ACTION NOMMÉE, ET C'EST UNE CORRECTION ────
       //
-      // POURQUOI. Sur iPhone, la vignette est un `NavigationLink` doublé d'un
-      // geste parallèle : c'est le GESTE qui connecte. Or VoiceOver, le clavier
-      // externe, Voice Control et les interrupteurs activent le LIEN — ils
-      // naviguaient donc vers la page d'une machine sans s'y connecter, et rien
-      // ne le disait. Une action nommée rend la connexion atteignable par les
-      // mêmes moyens que le reste : c'est le chemin canonique, et il ne demande
-      // aucune refonte de la navigation.
+      // POURQUOI. Sur iPhone, la vignette est un LIEN doublé d'un geste parallèle :
+      // c'est le GESTE qui agit. Or VoiceOver, le clavier externe, Voice Control
+      // et les interrupteurs activent le LIEN — ils ouvraient donc la page d'une
+      // machine sans la sélectionner, et rien ne le disait. Une action nommée rend
+      // le geste atteignable par les mêmes moyens que le reste : c'est le chemin
+      // canonique, et il ne demande aucune refonte de la navigation.
       //
-      // L'INFOBULLE DIT CE QUE L'ACTIVATION SIMPLE FAIT VRAIMENT — ouvrir la page
-      // —, pour que personne n'attende d'un appui simple ce qu'il ne fait pas.
+      // L'INFOBULLE DIT CE QUE L'ACTIVATION SIMPLE FAIT VRAIMENT — sélectionner,
+      // et ouvrir la page au second appui —, et c'est désormais exact : le
+      // mécanisme suit la règle (voir plus haut).
       //
       // SUR macOS, RIEN À AJOUTER : la vignette y est un `Button` dont l'action
-      // connecte déjà, et son menu contextuel porte « Se connecter ».
+      // suit la même règle, et son menu contextuel porte « Se connecter ».
       .accessibilityHint(T("Sélectionne cette machine ; un second appui ouvre sa page"))
       .accessibilityAction(named: T("Se connecter")) {
         surSelectionServeur(serveur)

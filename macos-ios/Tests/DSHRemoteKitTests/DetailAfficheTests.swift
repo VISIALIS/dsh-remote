@@ -39,35 +39,42 @@ func lAjoutEnsuite() {
   #expect(detail == .ajout)
 }
 
-@Test("La page ouverte, puis l'erreur, puis la cible — dans cet ordre")
+@Test("La page ouverte, puis l'erreur — la SÉLECTION ne suffit plus")
 func lOrdreDesMachines() {
   // LA PAGE EXPLICITEMENT OUVERTE GAGNE : on peut consulter une fiche sans être
   // connecté à elle, et la remplacer par la cible ferait disparaître ce qu'on lit.
   let page = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: un, cibleEnErreur: deux, vise: trois, serveursAffiches: [un, deux, trois])
+    session: nil, ajout: false, pageOuverte: un, cibleEnErreur: deux, vise: trois,
+    serveursAffiches: [un, deux, trois])
   #expect(page == .serveur(un))
 
   // Sans page ouverte, une ERREUR désigne sa machine : sans cette branche, un
   // échec de connexion au lancement ne s'afficherait nulle part.
   let erreur = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: deux, vise: trois, serveursAffiches: [un, deux, trois])
+    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: deux, vise: trois,
+    serveursAffiches: [un, deux, trois])
   #expect(erreur == .serveur(deux))
 
-  // Sinon la cible — la machine à laquelle l'application se connecte.
+  // LA CIBLE SEULE, ELLE, N'OUVRE PAS LA PAGE — c'est la règle des deux temps :
+  // le premier appui sélectionne et recharge, le second ouvre. `vise` ne figure
+  // donc plus parmi les sources de `.serveur`, et ce test le tient : c'est
+  // exactement ce qui manquait, la page s'ouvrait du seul fait de la sélection.
   let cible = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: deux, serveursAffiches: [un, deux, trois])
-  #expect(cible == .serveur(deux))
+    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: deux,
+    serveursAffiches: [un, deux, trois])
+  #expect(cible == .selection(deux))
+  #expect(cible != .serveur(deux))
 }
 
-@Test("Sans cible, c'est le PREMIER serveur de la liste qui s'affiche")
+@Test("Sans cible, c'est le PREMIER serveur de la liste qui est SÉLECTIONNÉ")
 func lePremierParDefaut() {
-  // C'EST LA RÈGLE DEMANDÉE, et le cas se présente quand AUCUNE machine n'est en
-  // ligne : il n'y a alors aucune cible, et c'est la page de la première qui
-  // explique pourquoi. Avant, l'écran restait vide.
+  // Le cas se présente quand AUCUNE machine n'est en ligne : il n'y a alors
+  // aucune cible, et c'est la première qui est mise en avant — sa page s'ouvre
+  // au second appui, comme pour toute autre sélection.
   let detail = DetailAffiche.pour(
     session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: nil,
     serveursAffiches: [un, deux, trois])
-  #expect(detail == .serveur(un), "le premier de la liste, pas le premier en ligne")
+  #expect(detail == .selection(un), "le premier de la liste, pas le premier en ligne")
 }
 
 @Test("C'est la PREMIÈRE VIGNETTE qui s'affiche, pas le premier de la découverte")
@@ -82,7 +89,7 @@ func laPremiereVignette() {
   let detail = DetailAffiche.pour(
     session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: nil,
     serveursAffiches: [trois, un, deux])
-  #expect(detail == .serveur(trois), "la première de l'ordre affiché")
+  #expect(detail == .selection(trois), "la première de l'ordre affiché")
 }
 
 @Test("Sans aucun serveur, c'est la page d'ajout")
@@ -100,6 +107,35 @@ func leHorsLigneCompte() {
   // sa page dit l'état. La retirer de la règle rendrait l'écran vide au moment
   // précis où l'utilisateur a besoin de comprendre.
   let detail = DetailAffiche.pour(
-    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: nil, serveursAffiches: [trois])
-  #expect(detail == .serveur(trois))
+    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: nil,
+    serveursAffiches: [trois])
+  #expect(detail == .selection(trois))
+}
+
+@Test("LES DEUX TEMPS : sélectionner n'ouvre pas, un second appui ouvre")
+func lesDeuxTemps() {
+  // LA RÈGLE DU PROPRIÉTAIRE, POUR LES TROIS PLATEFORMES : « sélectionner un autre
+  // serveur change la sélection et actualise l'espace de travail ; sélectionner
+  // une icône déjà sélectionnée permet d'accéder à la page détail ». Ce test la
+  // tient du côté de l'ÉCRAN : la même machine, une fois par son seul état de
+  // sélection, une fois par sa page ouverte.
+  let selectionne = DetailAffiche.pour(
+    session: nil, ajout: false, pageOuverte: nil, cibleEnErreur: nil, vise: un,
+    serveursAffiches: [un, deux])
+  let ouvert = DetailAffiche.pour(
+    session: nil, ajout: false, pageOuverte: un, cibleEnErreur: nil, vise: un,
+    serveursAffiches: [un, deux])
+  #expect(selectionne == .selection(un))
+  #expect(ouvert == .serveur(un))
+  #expect(selectionne != ouvert, "les deux temps ne montrent pas la même chose")
+}
+
+@Test("Une session ouverte reste prioritaire, même sur une page ouverte")
+func laSessionRestePremiere() {
+  // Rien de ce qui précède ne doit ramener le journal sous une fiche : c'est la
+  // règle qui existait déjà, et la nouvelle ne la déplace pas.
+  let detail = DetailAffiche.pour(
+    session: "s-1", ajout: false, pageOuverte: un, cibleEnErreur: deux, vise: trois,
+    serveursAffiches: [un, deux, trois])
+  #expect(detail == .journal("s-1"))
 }

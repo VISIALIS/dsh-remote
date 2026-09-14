@@ -2061,6 +2061,26 @@ interface — et les défauts qu'elles ont corrigés étaient invisibles à la c
 | Ce qu'un appui sur une vignette fait | `GesteSurServeur` | la règle écrite à la main dans quatre vignettes : sélectionner, ou ouvrir la fiche si c'est déjà la cible |
 | Quelle machine est sélectionnée | `SelectionParDefaut` | voir ci-dessous — c'est le défaut le plus retors des trois |
 
+**LA RÈGLE DES DEUX TEMPS, POUR LES TROIS PLATEFORMES.** Le propriétaire l'a dite
+ainsi : « sélectionner un autre serveur change la sélection — la pastille en haut à
+gauche — et actualise l'espace de travail ; sélectionner une icône **déjà**
+sélectionnée permet d'accéder à la page détail. »
+
+Elle a demandé **deux** corrections, et la seconde ne se voyait que sur macOS et iPad :
+
+1. **sur iPhone**, la vignette était *toujours* un `NavigationLink`, qui empile la page
+   à chaque appui — quoi que dise la règle. Le premier appui ne pouvait donc pas se
+   contenter de sélectionner, et l'infobulle (« un second appui ouvre sa page »)
+   mentait. C'est le **mécanisme** qui suit maintenant la règle : un lien quand la page
+   doit s'ouvrir, un bouton quand la machine doit être sélectionnée ;
+2. **sur macOS et iPad**, `vise` figurait parmi les sources de la page : le volet de
+   droite rouvrait la fiche dès le premier appui, donc le second ne servait à rien.
+   `DetailAffiche` distingue maintenant `.selection(machine)` — page non ouverte — de
+   `.serveur(machine)` — page ouverte —, et **seul le lancement** ouvre la page de la
+   machine choisie par défaut : l'écran de droite n'est jamais vide au démarrage, mais
+   un appui ne l'ouvre jamais. Entre les deux appuis, le volet dit laquelle est
+   sélectionnée et ce que le second appui fera.
+
 **« IL DOIT TOUJOURS Y AVOIR UN SERVEUR SÉLECTIONNÉ »** — la coche en haut à gauche de
 la vignette, et sous elle les espaces de travail de ce serveur. Mesuré sur iPhone :
 l'application se connecte **d'abord** à l'adresse mémorisée, et la liste des machines
@@ -2085,11 +2105,12 @@ de travail** — la seule raison était un changement d'écriture d'adresse. Le 
 `estLocal` n'est utilisé que quand la liste vient de l'hôte : sur macOS, il désigne
 *notre* machine, pas celle à qui l'on parle.
 
-**Ce qui est prouvé de cette règle** : 13 tests (les trois cas, l'adresse vide, la liste
-vide, le choix déjà fait qui n'est jamais écrasé, et le marqueur `local` d'une découverte
-locale qui ne trompe pas) ; et deux captures du simulateur iPhone — avant (deux vignettes,
-aucune coche, espaces vides) et après (coche sur « MacBook Air », son nom au-dessus des
-espaces, six sessions).
+**Ce qui est prouvé de cette règle** : 15 tests (`SelectionParDefaut`, dont les deux qui
+tiennent le lancement : la page s'ouvre au démarrage, aucune page ne s'ouvre après une
+réponse de l'hôte) ; 13 tests (`DetailAffiche`, dont « les deux temps » et « la session
+reste prioritaire ») ; 5 tests (`GesteSurServeur`) ; et deux captures du simulateur
+iPhone — avant (deux vignettes, aucune coche, espaces vides) et après (coche sur
+« MacBook Air », son nom au-dessus des espaces, six sessions).
 
 ### Ce qui se retrouve à la réouverture
 

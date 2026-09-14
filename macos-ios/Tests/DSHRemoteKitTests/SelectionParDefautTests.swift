@@ -214,3 +214,37 @@ func seuleLaPremiereRemplace() {
     remplacerFauteDeMieux: true)
   #expect(choix == .premiere(hote))
 }
+
+@MainActor
+@Test("Au LANCEMENT, la page de la machine choisie est ouverte — pas après un appui")
+func auLancementLaPageEstOuverte() throws {
+  // C'EST LA MOITIÉ DE LA RÈGLE DES DEUX TEMPS QUI SE JOUE ICI. Au lancement,
+  // l'écran de droite ne doit pas rester vide : la page de la machine choisie par
+  // défaut s'ouvre. Mais un appui sur une AUTRE vignette ne l'ouvre pas — il
+  // sélectionne, et c'est le second appui qui ouvre (voir `DetailAffiche`).
+  let modele = modeleDeTest()
+  modele.definirAdresse("")
+  modele.remplacerServeursPourEssai([bureau, mini, portable])
+  #expect(modele.serveurOuvert == nil)
+
+  modele.assurerUneSelectionPourEssai(auLancement: true)
+
+  let choisie = try #require(modele.serveurChoisi)
+  #expect(modele.serveurOuvert == choisie.id, "la page de la machine choisie est ouverte")
+}
+
+@MainActor
+@Test("APRÈS une réponse de l'hôte, on n'ouvre AUCUNE page")
+func apresUneReponseAucunePage() throws {
+  // L'AUTRE MOITIÉ. La liste qui arrive doit donner une coche, pas une fiche :
+  // sinon le premier appui sur une autre machine ouvrirait sa page, et le second
+  // ne servirait à rien.
+  let modele = modeleDeTest()
+  modele.definirAdresse("http://127.0.0.1:3080")
+  modele.remplacerServeursPourEssai([hote, mini])
+
+  modele.assurerUneSelectionPourEssai(auLancement: false, listeVientDeLHote: true)
+
+  #expect(modele.serveurChoisi?.id == hote.id, "la coche est posée")
+  #expect(modele.serveurOuvert == nil, "et AUCUNE page n'est ouverte")
+}

@@ -52,6 +52,7 @@
 "Chargées en mémoire seulement" = "Loaded in memory only";
 "Chercher une machine" = "Find a machine";
 "Choisissez une session dans la liste pour lire son journal." = "Choose a session in the list to read its journal.";
+"Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page." = "Its sessions and workspaces are on the left. Tap its tile again to open its page.";
 "Coller le jeton depuis le presse-papier" = "Paste the token from the clipboard";
 "Coller un appairage" = "Paste a pairing";
 "connecté" = "connected";

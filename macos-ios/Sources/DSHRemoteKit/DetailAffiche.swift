@@ -26,8 +26,19 @@ public enum DetailAffiche: Equatable {
   case journal(String)
   /// La page d'ajout d'un serveur.
   case ajout
-  /// La page d'une machine.
+  /// La page d'une machine — OUVERTE EXPLICITEMENT (premier appui sur une autre
+  /// vignette : la page se ferme ; second appui : elle s'ouvre).
   case serveur(ServeurMac)
+  /// La machine SÉLECTIONNÉE, dont la page n'est pas encore ouverte.
+  ///
+  /// POURQUOI CE CAS EXISTE. La règle du propriétaire, pour les TROIS
+  /// plateformes : « sélectionner un autre serveur change la sélection et
+  /// actualise l'espace de travail ; sélectionner une icône déjà sélectionnée
+  /// permet d'accéder à la page détail ». Le volet de détail ne peut donc pas
+  /// suivre la cible : sinon la page s'ouvrirait dès le premier appui, et le
+  /// second ne servirait à rien — c'était le cas, `vise` figurait parmi les
+  /// sources de la page.
+  case selection(ServeurMac)
   /// Rien à montrer — il ne reste que ce cas quand il n'y a ni session, ni
   /// serveur, ni ajout en cours, ce qui ne devrait pas arriver : il est gardé
   /// pour que l'absence de réponse ne soit jamais confondue avec un écran vide
@@ -43,7 +54,9 @@ public enum DetailAffiche: Equatable {
   ///   - cibleEnErreur: la machine visée, quand une erreur l'attend — une erreur
   ///     concerne une machine, et sans cette branche elle ne s'afficherait nulle
   ///     part.
-  ///   - vise: la machine visée par la connexion (la « cible »).
+  ///   - vise: la machine visée par la connexion (la « cible »). Elle est
+  ///     SÉLECTIONNÉE, pas forcément ouverte : c'est tout l'objet du cas
+  ///     `.selection`.
   ///   - serveursAffiches: les machines dans l'ordre où elles S'AFFICHENT — celui
   ///     du carrousel (`ModeleApp.serveursAffiches`, joignables d'abord). Le nom
   ///     dit laquelle des deux listes passer : la règle doit tomber sur la MÊME
@@ -59,12 +72,16 @@ public enum DetailAffiche: Equatable {
   ) -> DetailAffiche {
     if let session { return .journal(session) }
     if ajout { return .ajout }
-    if let serveur = pageOuverte ?? cibleEnErreur ?? vise { return .serveur(serveur) }
-    // LE PREMIER DE LA LISTE AFFICHÉE, ET PAS « RIEN ». C'est la règle demandée :
-    // au lancement, une machine est sélectionnée, donc une page est affichée. Le
-    // cas se présente quand AUCUNE machine n'est en ligne : il n'y a alors aucune
-    // cible — et c'est justement la page de la première qui explique pourquoi.
-    if let premier = serveursAffiches.first { return .serveur(premier) }
+    // LA PAGE OUVERTE, OU L'ERREUR QUI ATTEND CETTE MACHINE — deux faits, et non
+    // une sélection. `vise` n'est PLUS ici : au lancement, c'est `ModeleApp` qui
+    // ouvre la page de la machine choisie par défaut ; ailleurs, c'est
+    // l'utilisateur, au second appui.
+    if let serveur = pageOuverte ?? cibleEnErreur { return .serveur(serveur) }
+    // LA MACHINE SÉLECTIONNÉE, PAGE NON OUVERTE. On dit laquelle, et qu'un second
+    // appui l'ouvre. Le repli sur la première vignette couvre le lancement d'une
+    // liste sans cible — aucune machine en ligne, par exemple.
+    if let choisie = vise { return .selection(choisie) }
+    if let premier = serveursAffiches.first { return .selection(premier) }
     // AUCUN SERVEUR : la seule chose utile à montrer est comment en ajouter un.
     return .ajout
   }

@@ -1201,6 +1201,11 @@ public final class ModeleApp {
       // choix — l'appelant se connecte juste après.
       choisir(machine)
     }
+    // AU LANCEMENT, LA PAGE DE LA MACHINE CHOISIE EST OUVERTE : l'écran de droite
+    // ne reste pas vide, il explique la machine qu'on a sous les yeux. AILLEURS ON
+    // N'OUVRE RIEN — un appui sur une autre vignette sélectionne et recharge ses
+    // sessions et ses espaces, et c'est le SECOND appui qui ouvre la page.
+    if auLancement { ouvrirPage(reconnue.machine) }
   }
 
   /// Consigne — ou efface — l'échec de la cible courante.
