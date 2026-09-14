@@ -294,6 +294,12 @@ public struct Sante: Sendable, Decodable {
   public let hote: String?
   public let acces: String?
   public let versionDsh: String?
+  /// La portée du jeton de CETTE application, telle que l'hôte la connaît.
+  ///
+  /// Optionnelle À DESSEIN : un hôte antérieur à la portée ne l'envoie pas, et
+  /// `nil` doit se lire « ne sait pas », jamais « lecture seule ». C'est ce qui
+  /// permet à l'écran d'expliquer l'absence d'écriture sans l'inventer.
+  public let portee: String?
   public let capacites: Capacites
 
   public struct Capacites: Sendable, Decodable {
@@ -347,6 +353,14 @@ public enum CauseSansDsh: Equatable, Sendable {
 public enum ErreurRemote: Error, CustomStringConvertible {
   case jetonRefuse
   case origineRefusee
+  /// Le jeton est VALIDE, mais il ne porte que la portée `lecture`.
+  ///
+  /// POURQUOI CE CAS EXISTE SÉPARÉMENT. L'hôte refuse l'écriture en 403, comme il
+  /// refuse une requête portant `Origin` — deux causes qui n'ont ni le même sens
+  /// ni le même remède. Les confondre affichait « un client natif ne doit jamais
+  /// envoyer d'en-tête Origin » à quelqu'un dont le jeton lit simplement sans
+  /// écrire.
+  case ecritureRefusee
   case versionIncompatible(recue: Int, supportee: Int)
   case reponseInattendue(code: Int)
   /// Refus EXPLICITE de l'hôte, avec le motif qu'il a donné.
@@ -374,6 +388,14 @@ public enum ErreurRemote: Error, CustomStringConvertible {
     }
   }
 
+  /// La raison que l'hôte écrit dans son corps de refus quand la portée manque.
+  ///
+  /// ELLE EST ICI, ET PAS DANS LE CLIENT SEUL : c'est un terme du CONTRAT entre
+  /// les deux moitiés — le plugin l'écrit, l'application la reconnaît —, et un
+  /// test de chaque côté la tient. Une chaîne recopiée deux fois aurait fini par
+  /// diverger, et le refus de portée serait redevenu un refus d'origine.
+  public static let raisonLectureSeule = "jeton en lecture seule"
+
   public var description: String {
     switch self {
     case .jetonRefuse:
@@ -393,6 +415,12 @@ public enum ErreurRemote: Error, CustomStringConvertible {
         "jeton refusé (401) — le jeton d'appareil est absent, révoqué ou faux. Recopiez celui qu'affiche le harness, puis collez-le dans le champ « Jeton d'appareil » : sur la page de cette machine, ou dans la feuille « Adresse » quand vous saisissez une adresse à la main."
     case .origineRefusee:
       return "origine refusée (403) — un client natif ne doit jamais envoyer d'en-tête Origin"
+    case .ecritureRefusee:
+      // LE REMÈDE EST NOMMÉ, ET IL EST AILLEURS : la portée se change sur la
+      // MACHINE qui héberge le harness, pas dans l'application. Un message qui
+      // laisserait chercher un réglage ici serait un faux remède.
+      return
+        "écriture refusée (403) — ce jeton autorise la lecture, pas l'écriture. Le harness a tiré un jeton en lecture seule : relancez-le avec DSH_REMOTE_PORTEE=ecriture, puis saisissez le nouveau jeton."
     case let .versionIncompatible(recue, supportee):
       return "protocole incompatible : le serveur annonce la version \(recue), ce client sait lire la \(supportee)"
     case let .reponseInattendue(code):

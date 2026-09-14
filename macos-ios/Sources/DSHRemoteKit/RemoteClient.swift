@@ -125,13 +125,34 @@ public actor RemoteClient {
     guard let http = reponse as? HTTPURLResponse else {
       throw ErreurRemote.transport("réponse sans statut HTTP")
     }
-    switch http.statusCode {
-    case 200...299:
-      return donnees
+    if (200...299).contains(http.statusCode) { return donnees }
+    throw RemoteClient.erreur(pour: http.statusCode, donnees: donnees)
+  }
+
+  /// UN STATUT ET UN CORPS DEVIENNENT UNE ERREUR TYPÉE.
+  ///
+  /// POURQUOI CETTE FONCTION EST PURE, ET POURQUOI ELLE EXISTE. Le choix du type
+  /// d'erreur décide du MESSAGE, et le message décide du REMÈDE. Il était noyé
+  /// dans une méthode qui parle au réseau : on ne pouvait donc l'éprouver qu'en
+  /// montant un serveur. Ici, deux `Data` suffisent — et c'est ce qui permet de
+  /// tenir le contrat avec le plugin, qui écrit la raison dans le corps.
+  ///
+  /// LE CAS QUI L'A RENDUE NÉCESSAIRE : l'hôte refuse en **403** aussi bien une
+  /// requête portant `Origin` (anti-CSRF) qu'une écriture demandée avec un jeton
+  /// en **LECTURE SEULE**. Les confondre affichait « un client natif ne doit
+  /// jamais envoyer d'en-tête Origin » à quelqu'un dont le jeton lit simplement
+  /// sans écrire : un message faux, donc un remède faux.
+  nonisolated static func erreur(pour statut: Int, donnees: Data) -> ErreurRemote {
+    switch statut {
     case 401:
-      throw ErreurRemote.jetonRefuse
+      return .jetonRefuse
     case 403:
-      throw ErreurRemote.origineRefusee
+      if let refus = try? JSONDecoder().decode(RefusEcriture.self, from: donnees),
+        refus.erreur == ErreurRemote.raisonLectureSeule
+      {
+        return .ecritureRefusee
+      }
+      return .origineRefusee
     default:
       // L'hôte joint un motif STRUCTURÉ à ses refus (`erreur`, `code`, `detail`).
       // Le perdre ici transformerait « aucun modèle n'est choisi pour cette
@@ -139,9 +160,9 @@ public actor RemoteClient {
       // peut pas suivre. On décode donc le corps avant de renoncer.
       if let refus = try? JSONDecoder().decode(RefusEcriture.self, from: donnees) {
         let motif = refus.detail?.isEmpty == false ? refus.detail! : (refus.erreur ?? "refus sans motif")
-        throw ErreurRemote.refusServeur(statut: http.statusCode, motif: motif, code: refus.code)
+        return .refusServeur(statut: statut, motif: motif, code: refus.code)
       }
-      throw ErreurRemote.reponseInattendue(code: http.statusCode)
+      return .reponseInattendue(code: statut)
     }
   }
 

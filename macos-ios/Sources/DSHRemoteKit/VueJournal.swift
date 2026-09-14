@@ -123,6 +123,20 @@ struct VueJournal: View {
           if !auBas, arrivesDepuis > 0 { boutonRevenirEnBas(proxy) }
           if modele.ecriturePossible {
             ComposeurEcriture(modele: modele, session: session)
+          } else if let raison = modele.raisonSansEcriture {
+            // LE COMPOSEUR ABSENT SE DIT. Il disparaissait sans un mot : l'écran
+            // semblait complet, et rien n'indiquait que répondre était impossible
+            // — ni pourquoi. La raison vient du modèle, qui la tient de l'hôte ;
+            // les causes ont des remèdes qui ne sont PAS au même endroit, et
+            // c'est précisément pour cela qu'il faut les nommer.
+            Label(raison, systemImage: "pencil.slash")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(.horizontal, 12)
+              .padding(.vertical, 8)
+              .background(.bar)
           }
         }
       }

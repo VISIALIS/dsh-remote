@@ -245,6 +245,15 @@ public final class ModeleApp {
     return nil
   }
 
+  /// La poignée de main REÇUE, quand une machine est jointe.
+  ///
+  /// Elle porte ce que les capacités ne disent pas : la PORTÉE du jeton, que
+  /// l'hôte est seul à connaître.
+  public var santeJointe: Sante? {
+    if case let .jointe(sante, _) = connexion { return sante }
+    return nil
+  }
+
   /// Vrai si les sessions affichées viennent bien du serveur visé.
   public var serveurJoint: Bool {
     if case .jointe = connexion { return true }
@@ -2220,6 +2229,46 @@ public final class ModeleApp {
   /// L'hôte a-t-il annoncé savoir écrire ? Sinon, aucun composeur n'est proposé :
   /// un champ de saisie qui ne peut rien envoyer est un mensonge d'interface.
   public var ecriturePossible: Bool { capacites?.ecriture == true }
+
+  /// POURQUOI CETTE MACHINE NE PEUT PAS ÉCRIRE — la question que l'écran doit
+  /// RÉPONDRE, et non seulement constater.
+  ///
+  /// POURQUOI CE TEXTE EXISTE. Le composeur disparaissait en silence quand l'hôte
+  /// n'annonçait pas l'écriture : l'écran avait l'air complet, et rien ne disait
+  /// que répondre était impossible — ni pourquoi. Or les causes ont des remèdes
+  /// qui ne sont PAS au même endroit :
+  ///
+  ///   - le jeton est en **lecture seule** : le remède est sur la machine qui
+  ///     héberge le harness (`DSH_REMOTE_PORTEE=ecriture`), pas ici ;
+  ///   - l'hôte **ne monte pas** le service d'écriture : c'est sa composition, et
+  ///     aucune action de l'application n'y changera rien ;
+  ///   - rien n'est **joint** : il n'y a rien à expliquer encore.
+  ///
+  /// `portee` est optionnelle, et c'est le point délicat : un hôte antérieur à la
+  /// portée ne la publie pas, et `nil` doit se lire « ne sait pas » — l'annoncer
+  /// comme « lecture seule » serait une affirmation inventée.
+  public var raisonSansEcriture: String? {
+    ModeleApp.raisonSansEcriture(capacites: capacites, portee: santeJointe?.portee)
+  }
+
+  /// Version PURE — éprouvable sans réseau, sans connexion et sans attente.
+  ///
+  /// `nonisolated` À DESSEIN, comme les autres décisions de ce modèle : elle ne
+  /// touche aucun état, donc un test l'interroge directement.
+  nonisolated static func raisonSansEcriture(capacites: Sante.Capacites?, portee: String?) -> String? {
+    // Rien n'est joint : il n'y a rien à expliquer encore, et dire « cet hôte
+    // n'annonce pas l'écriture » serait parler d'un hôte qu'on n'a pas joint.
+    guard let capacites else { return nil }
+    guard !capacites.ecriture else { return nil }
+    if portee == "lecture" {
+      return
+        "Ce jeton lit sans écrire : l'écriture demande un jeton de portée « ecriture », tiré par un harness relancé avec DSH_REMOTE_PORTEE=ecriture."
+    }
+    // La portée n'est pas dite, ou l'hôte ne monte pas le service : dans les deux
+    // cas, l'action est du côté de l'hôte, et on ne l'invente pas.
+    return
+      "Cet hôte n'annonce pas l'écriture : cette composition ne monte pas le service qui permet d'envoyer un message."
+  }
 
   /// L'hôte a-t-il annoncé savoir interrompre un tour ?
   ///

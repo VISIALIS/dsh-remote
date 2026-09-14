@@ -1552,6 +1552,32 @@ L'annulation **conserve la file d'attente** : ce qui n'a pas encore été trait�
 reste en attente. Une session froide est refusée (`404`) — il n'y a rien à
 interrompre.
 
+### Quand l'hôte n'écrit pas : le composeur absent SE DIT
+
+Le composeur n'apparaît que si l'hôte annonce `capacites.ecriture` — la règle du
+dépôt : « un bouton sans effet est un mensonge d'interface ». Mais il disparaissait
+**en silence** : l'écran semblait complet, et rien n'indiquait que répondre était
+impossible, ni pourquoi.
+
+Depuis la portée du jeton côté plugin, il y a **deux causes** possibles, et leurs
+remèdes ne sont pas au même endroit :
+
+| Ce que l'hôte annonce | Ce que l'écran dit | Où est le remède |
+|---|---|---|
+| `portee: "lecture"` | « Ce jeton lit sans écrire : … `DSH_REMOTE_PORTEE=ecriture` » | **sur la machine** qui héberge le harness |
+| pas de `portee`, ou `ecriture: false` | « Cet hôte n'annonce pas l'écriture : cette composition ne monte pas le service… » | dans la composition de l'hôte |
+| rien n'est joint | rien — il n'y a rien à expliquer encore | — |
+
+**`portee` est optionnelle, et `nil` ne veut pas dire « lecture seule »** : un hôte
+antérieur à la portée ne la publie pas, et l'écran ne l'invente pas. C'est la même
+discipline que partout ailleurs dans ce client — « je ne sais pas » n'est jamais
+rendu comme « non ».
+
+Et un `403` ne suffit pas à conclure : le même code sert à « origine refusée ». Le
+corps porte la raison, l'application la lit, et les deux moitiés ont un test sur la
+chaîne exacte. Sans cela, un jeton en lecture seule se serait affiché comme une
+requête suspecte — un message faux, donc un remède faux.
+
 ### Le journal dit la vérité sur sa session
 
 Trois défauts, tous visibles à l'écran et aucun à la compilation :
