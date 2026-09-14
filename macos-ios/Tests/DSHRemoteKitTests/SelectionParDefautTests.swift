@@ -248,3 +248,23 @@ func apresUneReponseAucunePage() throws {
   #expect(modele.serveurChoisi?.id == hote.id, "la coche est posée")
   #expect(modele.serveurOuvert == nil, "et AUCUNE page n'est ouverte")
 }
+
+@MainActor
+@Test("L'ordre du lancement ne change pas le résultat : la page s'ouvre quand même")
+func leLancementOuvreQuelQueSoitLOrdre() throws {
+  // LE DÉFAUT VU À L'ÉCRAN, ET PAS DÉDUIT. Sur macOS, le chargeur de liste attache
+  // la machine AVANT l'appel de lancement : celui-ci trouvait donc une cible déjà
+  // choisie, sortait sans rien faire, et le volet de droite affichait l'écran de
+  // sélection au lieu de la page. La capture de l'application installée l'a montré.
+  let modele = modeleDeTest()
+  modele.definirAdresse("http://macbook-air.exemple.ts.net")
+  modele.remplacerServeursPourEssai([hote, mini])
+  // 1. Le chargeur de liste, comme au démarrage : il attache, il n'ouvre pas.
+  modele.assurerUneSelectionPourEssai(auLancement: false)
+  #expect(modele.serveurChoisi?.id == hote.id)
+  #expect(modele.serveurOuvert == nil)
+  // 2. Puis l'étape de lancement, qui doit ouvrir la page de la machine DÉJÀ
+  //    sélectionnée.
+  modele.assurerUneSelectionPourEssai(auLancement: true)
+  #expect(modele.serveurOuvert == hote.id, "la page s'ouvre, quel que soit l'ordre")
+}

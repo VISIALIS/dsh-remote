@@ -1179,33 +1179,42 @@ public final class ModeleApp {
   /// le défaut : la coche n'apparaissait jamais, et les espaces de travail non
   /// plus.
   func assurerUneSelection(auLancement: Bool, listeVientDeLHote: Bool) {
-    guard cible.machine == nil else { return }
-    let liste = serveursAffiches
-    guard
-      let reconnue = SelectionParDefaut.aSelectionner(
+    if cible.machine == nil {
+      let liste = serveursAffiches
+      if let reconnue = SelectionParDefaut.aSelectionner(
         parmi: liste, adresse: adresse, listeVientDeLHote: listeVientDeLHote,
         remplacerFauteDeMieux: auLancement)
-    else { return }
-    switch reconnue {
-    case let .jointe(machine), let .hote(machine):
-      // ON ATTACHE, ON NE REMPLACE PAS — dans les DEUX cas, y compris quand
-      // l'adresse diffère. C'est ce que l'hôte qui se désigne lui-même a appris
-      // au simulateur : remplacer l'adresse de boucle locale par celle du
-      // tailnet a vidé les six sessions et les sept espaces de travail qui
-      // venaient d'être chargés, pour la seule raison qu'on changeait d'écriture
-      // d'adresse.
-      attacherLaMachine(machine)
-    case let .premiere(machine):
-      // Là seulement, la cible est REMPLACÉE : au lancement, l'adresse courante
-      // ne désigne personne, et la première machine de la liste est le meilleur
-      // choix — l'appelant se connecte juste après.
-      choisir(machine)
+      {
+        switch reconnue {
+        case let .jointe(machine), let .hote(machine):
+          // ON ATTACHE, ON NE REMPLACE PAS — dans les DEUX cas, y compris quand
+          // l'adresse diffère. C'est ce que l'hôte qui se désigne lui-même a
+          // appris au simulateur : remplacer l'adresse de boucle locale par celle
+          // du tailnet a vidé les six sessions et les sept espaces de travail qui
+          // venaient d'être chargés, pour la seule raison qu'on changeait
+          // d'écriture d'adresse.
+          attacherLaMachine(machine)
+        case let .premiere(machine):
+          // Là seulement, la cible est REMPLACÉE : au lancement, l'adresse
+          // courante ne désigne personne, et la première machine de la liste est
+          // le meilleur choix — l'appelant se connecte juste après.
+          choisir(machine)
+        }
+      }
     }
-    // AU LANCEMENT, LA PAGE DE LA MACHINE CHOISIE EST OUVERTE : l'écran de droite
-    // ne reste pas vide, il explique la machine qu'on a sous les yeux. AILLEURS ON
-    // N'OUVRE RIEN — un appui sur une autre vignette sélectionne et recharge ses
-    // sessions et ses espaces, et c'est le SECOND appui qui ouvre la page.
-    if auLancement { ouvrirPage(reconnue.machine) }
+    // AU LANCEMENT, LA PAGE DE LA MACHINE SÉLECTIONNÉE EST OUVERTE : l'écran de
+    // droite ne reste pas vide, il explique la machine qu'on a sous les yeux.
+    //
+    // POURQUOI CE N'EST PAS DANS LE BLOC CI-DESSUS, ET CE QUE LA CAPTURE A MONTRÉ.
+    // Le chargeur de liste (`chargerServeursLocaux`) appelle le même invariant
+    // AVANT le démarrage : la machine est donc DÉJÀ attachée quand on arrive ici,
+    // le bloc ne s'exécute pas, et le volet affichait l'écran de sélection au lieu
+    // de la page — vu à l'écran, pas déduit. L'ouverture doit donc dépendre de
+    // l'état, pas du chemin qui y a mené.
+    //
+    // AILLEURS ON N'OUVRE RIEN : un appui sur une autre vignette sélectionne et
+    // recharge ses sessions et ses espaces, et c'est le SECOND appui qui ouvre.
+    if auLancement, serveurOuvert == nil, let choisie = serveurChoisi { ouvrirPage(choisie) }
   }
 
   /// Consigne — ou efface — l'échec de la cible courante.
