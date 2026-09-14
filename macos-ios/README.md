@@ -64,7 +64,7 @@ Vérifications : aperçu inspecté jusqu'à 40 px ; dimensions, alpha, bleu exac
 niveaux de gris contrôlés ; dix représentations ICNS réextraites de 16 à 1024 px ;
 paquet macOS reconstruit et signature vérifiée ; compilation du simulateur réussie,
 avec `AppIcon` présent pour les familles iPhone et iPad. Les vérifications du dépôt
-passent : secrets, syntaxe, 120 tests de plugins et 260 tests Swift. Ces commandes
+passent : secrets, syntaxe, 120 tests de plugins et 273 tests Swift. Ces commandes
 ne réinstallent pas les copies déjà présentes sur les appareils.
 
 ### Où vit quoi : cinq pièces, et une seule porte sur le disque
@@ -2049,6 +2049,48 @@ que la documentation du SDK 26 demande précisément d'éviter ; elle reprend le
 du composeur. Et le nom d'une machine s'écrivait **deux fois** sur sa page (barre de
 titre de fenêtre et bande d'identité), à quarante points d'écart.
 
+### Trois règles d'affichage, sorties de la vue et éprouvées seules
+
+Trois décisions « quel écran, quelle coche, quel geste » vivaient dans la vue, en
+enchaînements de conditions. Elles sont maintenant trois types purs, éprouvés sans
+interface — et les défauts qu'elles ont corrigés étaient invisibles à la compilation.
+
+| Règle | Type | Le défaut qu'elle a corrigé |
+|---|---|---|
+| Ce que le volet de détail montre | `DetailAffiche` | cinq branches qui finissaient sur « Aucune session ouverte » : écran vide au lancement sur macOS et sur iPad alors qu'une machine était sélectionnée |
+| Ce qu'un appui sur une vignette fait | `GesteSurServeur` | la règle écrite à la main dans quatre vignettes : sélectionner, ou ouvrir la fiche si c'est déjà la cible |
+| Quelle machine est sélectionnée | `SelectionParDefaut` | voir ci-dessous — c'est le défaut le plus retors des trois |
+
+**« IL DOIT TOUJOURS Y AVOIR UN SERVEUR SÉLECTIONNÉ »** — la coche en haut à gauche de
+la vignette, et sous elle les espaces de travail de ce serveur. Mesuré sur iPhone :
+l'application se connecte **d'abord** à l'adresse mémorisée, et la liste des machines
+n'arrive **qu'après**, publiée par cet hôte. Rien ne rattachait alors la machine jointe à
+la cible : la liste s'affichait sans aucune coche, et le panneau des espaces restait vide.
+Sur macOS l'ordre est inverse — on découvre, puis on se connecte —, donc le défaut ne s'y
+voyait pas : *un défaut d'ordre se cache toujours dans la plateforme où l'ordre est
+favorable.*
+
+`SelectionParDefaut` distingue trois cas, et **la conséquence diffère** :
+
+1. **l'adresse courante désigne une machine de la liste** → c'est elle (un fait) ;
+2. **la liste vient de l'hôte et elle le désigne lui-même** (`estLocal`) → c'est lui
+   (un fait aussi). Sans ce cas, aucune correspondance n'aboutissait : connecté à
+   `127.0.0.1:3080`, l'hôte publie son nom de tailnet, pas la boucle locale ;
+3. **aucun des deux** → au LANCEMENT seulement, la première vignette (le choix demandé).
+
+Les deux premiers cas **attachent** la machine à la cible ; le troisième la **remplace**.
+La distinction n'est pas cosmétique : mesuré sur simulateur, attacher en passant par
+`choisir` a fait apparaître la coche **et disparaître les six sessions et les sept espaces
+de travail** — la seule raison était un changement d'écriture d'adresse. Le marqueur
+`estLocal` n'est utilisé que quand la liste vient de l'hôte : sur macOS, il désigne
+*notre* machine, pas celle à qui l'on parle.
+
+**Ce qui est prouvé de cette règle** : 13 tests (les trois cas, l'adresse vide, la liste
+vide, le choix déjà fait qui n'est jamais écrasé, et le marqueur `local` d'une découverte
+locale qui ne trompe pas) ; et deux captures du simulateur iPhone — avant (deux vignettes,
+aucune coche, espaces vides) et après (coche sur « MacBook Air », son nom au-dessus des
+espaces, six sessions).
+
 ### Ce qui se retrouve à la réouverture
 
 L'application repartait à zéro à chaque lancement : espaces repliés, aucune session
@@ -2592,6 +2634,7 @@ inactive.
 | **La réinitialisation efface TOUS les jetons, y compris d'hôtes oubliés** | 6 tests (`ReinitialisationTests`) : deux jetons dont un d'une machine qu'on ne visite plus, modèle ramené à neuf, diagnostic effacé, fichier d'amorçage CONSERVÉ **et nommé**, nombres réels, second passage qui dit « aucun jeton n'était gardé » |
 | **Après elle, les réglages d'avant ne reviennent pas** | test dédié, et défaut RÉINTRODUIT pour vérifier qu'il le tient : sans la remise à zéro des miroirs, il échoue sur `modeEnvoi` (`.steer` au lieu de `.queue`) et sur `sessionConsultee` (`session-1` au lieu de `nil`) |
 | **Le geste est à l'écran, et il annonce ce qu'il fait** | captures de l'application INSTALLÉE (`/Applications/DSH Remote.app`) : section « Réinitialiser », bouton destructif, pied nommant ce qui n'est PAS effacé, puis la confirmation « Réinitialiser l'application ? » avec « Annuler » et « Tout effacer » |
+| **Une machine est TOUJOURS sélectionnée** | 13 tests (`SelectionParDefaut`) : adresse jointe, hôte qui se désigne lui-même, première vignette au lancement, adresse vide, liste vide, choix déjà fait jamais écrasé, marqueur `local` d'une découverte locale qui ne trompe pas — plus deux captures du simulateur iPhone (avant : aucune coche, espaces vides ; après : coche « MacBook Air », son nom, six sessions) |
 | **ÉCHAP n'efface pas** | sonde SwiftUI isolée, à la structure exacte de `VueReglages` (`Sondes/dialogue`, procédure dans `Sondes/README.md`) : ÉCHAP → `ISSUE=annule` sur les deux variantes, RETOUR → rien (aucun bouton par défaut), clic sur « Tout effacer » → `ISSUE=destructif` — contrôle positif compris |
 | **Le collage iOS ne lit plus le presse-papiers à l'insu de l'utilisateur** | `PasteButton` des deux côtés (feuille Adresse, page d'une machine) ; compilation iOS complète par `Scripts/construire-app-ios.sh --simulateur` → `BUILD SUCCEEDED` |
 | **L'iPad en anglais, sur simulateur** | langue du simulateur passée à l'anglais, application relancée, capture : « DeepSeek Harness server », « Needs your attention », « Workspaces », « No session open », « DSH · host », « no DSH », « offline » — et les deux colonnes de l'iPad |

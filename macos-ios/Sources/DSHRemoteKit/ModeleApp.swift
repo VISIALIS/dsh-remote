@@ -559,6 +559,8 @@ public final class ModeleApp {
     diagnosticServeurs = diagnostic
     sourceServeurs = .tailscaleLocal
     relireEtatTailscale()
+    // Après une réponse, on n'écrase pas une cible : on rattache seulement.
+    assurerUneSelection(auLancement: false, listeVientDeLHote: false)
   }
 
   /// Liste des machines publiée PAR L'HÔTE — donnée d'un serveur, donc gardée.
@@ -570,6 +572,12 @@ public final class ModeleApp {
     // ne se corrigent pas de la même façon.
     diagnosticServeurs = liste.diagnostic
     sourceServeurs = .hote
+    // LE CAS DU DÉFAUT, ET LE SEUL ENDROIT OÙ IL POUVAIT ÊTRE CORRIGÉ. Sur
+    // iPhone, cette liste arrive APRÈS la connexion : sans cet appel, la coche
+    // n'apparaissait sur aucune vignette et le panneau des espaces restait vide.
+    // C'est aussi le seul cas où le marqueur `estLocal` de la liste est un FAIT :
+    // l'hôte se désigne lui-même, et c'est lui qu'on interroge.
+    assurerUneSelection(auLancement: false, listeVientDeLHote: true)
   }
 
   /// Macs du tailnet qui ont RÉPONDU à la sonde de découverte.
@@ -618,6 +626,12 @@ public final class ModeleApp {
     /// La liste des machines découvertes, pour éprouver les transitions de la
     /// cible sans dépendre de Tailscale.
     func remplacerServeursPourEssai(_ valeur: [ServeurMac]) { serveurs = valeur }
+    /// L'invariant « il y a toujours une machine sélectionnée », éprouvé sans
+    /// réseau : c'est le même appel que celui des deux endroits où la liste
+    /// devient connue.
+    func assurerUneSelectionPourEssai(auLancement: Bool, listeVientDeLHote: Bool = false) {
+      assurerUneSelection(auLancement: auLancement, listeVientDeLHote: listeVientDeLHote)
+    }
     /// Poser le journal d'UNE session SANS RÉSEAU, pour éprouver qu'une réponse
     /// arrivée en retard ne s'affiche pas sous une autre.
     func remplacerJournalPourEssai(_ evenements: [EvenementAffiche], de session: String) {
@@ -1138,6 +1152,57 @@ public final class ModeleApp {
     viser(nouvelle)
   }
 
+  /// ATTACHE À LA CIBLE LA MACHINE QU'ON VIENT DE RECONNAÎTRE — sans changer de cible.
+  ///
+  /// POURQUOI CE N'EST PAS `viser`, ET POURQUOI ÇA COMPTE. `viser` remplace la
+  /// cible et incrémente la génération, ce qui JETTE les réponses en vol. Ici
+  /// l'adresse ne change pas, la machine non plus : on ajoute seulement le fait
+  /// qu'on sait LAQUELLE c'est. Passer par `viser` ferait disparaître la liste des
+  /// sessions qui arrive au même moment — et l'écran resterait vide jusqu'au
+  /// cycle suivant, quinze secondes plus tard.
+  private func attacherLaMachine(_ machine: ServeurMac) {
+    guard cible.machine?.id != machine.id else { return }
+    cible.machine = machine
+    cible.nom = machine.nom
+    memoriserPreference()
+  }
+
+  /// GARANTIT QU'UNE MACHINE EST SÉLECTIONNÉE DÈS QU'IL Y EN A UNE.
+  ///
+  /// LA RÈGLE EST DANS `SelectionParDefaut`, et elle est éprouvée là-bas : la
+  /// machine jointe d'abord (un fait), la première de la liste affichée ensuite —
+  /// mais seulement au lancement, jamais après une réponse de l'hôte.
+  ///
+  /// ELLE EST APPELÉE LÀ OÙ LA LISTE DEVIENT CONNUE, et pas seulement au
+  /// démarrage : sur iPhone, c'est la réponse de l'hôte qui apporte la liste,
+  /// donc bien après le début du lancement. C'est exactement l'ordre qui cachait
+  /// le défaut : la coche n'apparaissait jamais, et les espaces de travail non
+  /// plus.
+  func assurerUneSelection(auLancement: Bool, listeVientDeLHote: Bool) {
+    guard cible.machine == nil else { return }
+    let liste = serveursAffiches
+    guard
+      let reconnue = SelectionParDefaut.aSelectionner(
+        parmi: liste, adresse: adresse, listeVientDeLHote: listeVientDeLHote,
+        remplacerFauteDeMieux: auLancement)
+    else { return }
+    switch reconnue {
+    case let .jointe(machine), let .hote(machine):
+      // ON ATTACHE, ON NE REMPLACE PAS — dans les DEUX cas, y compris quand
+      // l'adresse diffère. C'est ce que l'hôte qui se désigne lui-même a appris
+      // au simulateur : remplacer l'adresse de boucle locale par celle du
+      // tailnet a vidé les six sessions et les sept espaces de travail qui
+      // venaient d'être chargés, pour la seule raison qu'on changeait d'écriture
+      // d'adresse.
+      attacherLaMachine(machine)
+    case let .premiere(machine):
+      // Là seulement, la cible est REMPLACÉE : au lancement, l'adresse courante
+      // ne désigne personne, et la première machine de la liste est le meilleur
+      // choix — l'appelant se connecte juste après.
+      choisir(machine)
+    }
+  }
+
   /// Consigne — ou efface — l'échec de la cible courante.
   ///
   /// NE CHANGE QUE L'ÉCHEC. Un échec ne doit jamais changer la machine de
@@ -1205,7 +1270,9 @@ public final class ModeleApp {
     }
     if decouverteLocalePossible { await chargerServeursLocaux() }
     await ajusterAuParc()
-    if serveurChoisi == nil, let hote = serveurs.first(where: \.enLigne) { choisir(hote) }
+    // AU LANCEMENT, ET LÀ SEULEMENT, on peut remplacer faute de mieux : la liste
+    // affichée est en ligne d'abord, donc « le premier » est le premier joignable.
+    assurerUneSelection(auLancement: true, listeVientDeLHote: false)
     guard !adresse.isEmpty else { return }
     await connecter()
   }
