@@ -216,21 +216,27 @@ n'épuise pas les moyens praticables.
 | Le client la lit | `RemoteClient.listerServeurs()` |
 | Le modèle la consomme | `ModeleApp` : après une connexion réussie, si `capacites.decouverte` |
 | L'ordre des sources | hôte joint d'abord, Tailscale local (`macOS`) seulement en son absence |
-| L'ordre d'affichage des machines | le serveur **connecté** d'abord, puis les joignables, puis les autres — à rang égal, par nom (`DecouverteServeurs.ordonnerPourAffichage`) |
+| L'ordre d'affichage des machines | joignables d'abord ; à joignabilité égale, les machines **prêtes** (qui servent DSH) avant celles restant à configurer ; puis par nom (`DecouverteServeurs.ordonnerPourAffichage`) |
 | La liste s'affiche avec icône, état, et « hôte interrogé » | `VueListeSessions` |
 | Une liste vide dit POURQUOI | `ModeleApp.messageListeVide`, qui distingue « l'hôte ne voit personne » de « cette plateforme ne peut pas voir » |
 | Le tout est éprouvable sans interface | `dsh-remote-ctl <adresse> serveurs` |
 
-**L'ORDRE DU CARROUSEL RÉPOND À UNE QUESTION PRÉCISE : QUELLE MACHINE EST LA MIENNE.**
-La liste était triée « joignable d'abord, puis par nom » — stable d'un rendu à
-l'autre, mais la vignette **cochée** restait au milieu des autres. Signalé sur cette
-installation : `MacMini`, connecté, passait après un autre Mac joignable dont le nom
-vient avant le sien. Le serveur connecté ouvre donc la liste, **même s'il est hors
-ligne** (`tailscale serve` peut répondre là où `Online` dit non) ; le reste suit la
-règle d'origine. Le tri se fait **à la lecture** (`ModeleApp.serveursAffiches`), pas
-au rangement : choisir une machine la fait passer devant sans réécrire la liste que
-la découverte vient de rendre — une liste réécrite au choix serait périmée au rendu
-suivant, la cible changeant aussi par bascule, par mémorisation et au lancement.
+**L'ORDRE DU CARROUSEL NE DÉPEND QUE DES MACHINES — JAMAIS DE LA SÉLECTION.** Deux
+clés, dans cet ordre : la machine **joignable** avant l'éteinte (une machine éteinte
+ne peut rien rendre, quelle que soit sa configuration), et à joignabilité égale,
+celle qui **sert DSH** avant celle qui reste à configurer — c'est celle-là qu'on vient
+ouvrir. À égalité sur les deux, le nom. La vignette « Ajouter » est rendue **après**
+la liste, donc après les éteintes, et n'entre pas dans ce tri.
+
+**UN TRI PAR « MACHINE CONNECTÉE D'ABORD » A EXISTÉ ICI, ET IL A ÉTÉ RETIRÉ.** Il
+répondait à une remarque juste — la vignette **cochée** n'était pas la première — mais
+il produisait le défaut qu'on veut éviter : **toucher une vignette CONNECTE**, donc la
+machine touchée sautait en tête à l'instant même du toucher, le contenu se décalait
+sous le doigt et la **barre de défilement s'agitait à chaque connexion**. Une liste
+qu'on parcourt du doigt ne bouge pas parce qu'on l'a touchée : l'ordre ne dépend ni
+du dernier choix, ni de l'heure, ni de l'état de connexion. Trois tests le
+verrouillent — `ordreJoignablePuisPret`, `leChoixNeReordonnePasLeCarrousel`,
+`machinePreteAvantAConfigurer`.
 
 **Ce que la voie 1 a demandé, et qui ne se devinait pas.** Côté hôte, le CHEMIN du
 binaire Tailscale décide du succès : `/usr/local/bin/tailscale` est un lien symbolique

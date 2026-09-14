@@ -775,9 +775,9 @@ struct CarrouselServeurs: View {
   ///
   /// POURQUOI ICI, ET NON DANS LA VIGNETTE. Deux machines peuvent partager leur
   /// premier mot : c'est la comparaison entre elles qui décide si un mot suffit.
-  /// Voir `NomsCourts`. La liste est celle de l'AFFICHAGE — le connecté en tête :
-  /// les libellés sont calculés sur l'ensemble, donc l'ordre ne les change pas,
-  /// mais une seule liste circule dans la vue.
+  /// Voir `NomsCourts`. La liste est celle de l'AFFICHAGE : les libellés sont
+  /// calculés sur l'ENSEMBLE des machines, donc l'ordre ne les change pas — mais
+  /// une seule liste circule dans la vue.
   private var libelles: [String: String] { NomsCourts.libelles(pour: modele.serveursAffiches) }
 
   var body: some View {
@@ -789,8 +789,12 @@ struct CarrouselServeurs: View {
     // geste.
     ScrollView(.horizontal) {
       HStack(alignment: .top, spacing: 16) {
-        // L'ORDRE EST CELUI DE L'AFFICHAGE, pas celui de la découverte : le
-        // serveur connecté vient en tête (voir `ModeleApp.serveursAffiches`).
+        // L'ORDRE EST CELUI DE L'AFFICHAGE : joignables d'abord, prêtes en premier
+        // (voir `ModeleApp.serveursAffiches`) — et il ne dépend PAS de la sélection.
+        // Il en a dépendu : la vignette touchée sautait en tête, le contenu se
+        // décalait sous le doigt, et la barre de défilement s'agitait à chaque
+        // connexion. Une liste qu'on parcourt du doigt ne bouge pas parce qu'on
+        // l'a touchée.
         ForEach(modele.serveursAffiches) { serveur in
           // ── TOUCHER UNE MACHINE OUVRE SA PAGE ET S'Y CONNECTE ─────────────
           //

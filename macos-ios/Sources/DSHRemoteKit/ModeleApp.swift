@@ -412,21 +412,21 @@ public final class ModeleApp {
   /// serveur encore connu), et la saisie manuelle reste toujours disponible.
   public private(set) var serveurs: [ServeurMac] = []
 
-  /// LES MACHINES TELLES QU'ELLES S'AFFICHENT — le serveur connecté en tête.
+  /// LES MACHINES TELLES QU'ELLES S'AFFICHENT — joignables d'abord, prêtes en premier.
   ///
-  /// POURQUOI CE N'EST PAS `serveurs`. La liste rangée est celle de la découverte
-  /// ou de l'hôte ; l'ordre d'affichage, lui, dépend d'un fait que cette liste ne
-  /// porte pas : à quelle machine on est CONNECTÉ. Le tri est donc fait À LA
-  /// LECTURE, et non au rangement — choisir une machine la fait passer devant
-  /// sans réécrire aucune liste, et une liste réécrite au moment du choix serait
-  /// périmée dès le rendu suivant (la cible change aussi par bascule, par
-  /// mémorisation et au lancement).
+  /// POURQUOI CE N'EST PAS `serveurs`. La liste rangée vient de la découverte ou de
+  /// l'hôte ; l'ordre d'affichage, lui, dépend d'un fait que cette liste ne porte
+  /// pas : le verdict de la SONDE (« cette machine sert DSH »). Le tri se fait donc
+  /// à la lecture, sur les deux seuls critères qui comptent — joignable, puis
+  /// prête — et JAMAIS sur la sélection.
   ///
-  /// Le défaut qui a motivé la règle : `MacMini`, connecté, s'affichait APRÈS un
-  /// autre Mac joignable dont le nom passe avant le sien — la vignette cochée
-  /// n'était pas la première.
+  /// LE DÉFAUT QUE LA SÉLECTION A CAUSÉ, ET QUI A ÉTÉ RETIRÉ. Un tri « machine
+  /// connectée d'abord » a existé ici : la vignette visée SAUTAIT à l'instant où
+  /// on la touchait, puisque le toucher connecte. L'ordre d'une liste qu'on
+  /// parcourt du doigt ne doit dépendre que des machines, jamais de ce qu'on vient
+  /// de faire.
   public var serveursAffiches: [ServeurMac] {
-    DecouverteServeurs.ordonnerPourAffichage(serveurs, connecte: serveurChoisi?.id)
+    DecouverteServeurs.ordonnerPourAffichage(serveurs) { sertDsh($0) == true }
   }
 
   /// Le serveur dont la PAGE est ouverte, s'il y en a un.

@@ -51,39 +51,34 @@ func analyseTailnet() throws {
   #expect(machines[1].nom == "Portable Un")
 }
 
-@Test("Le serveur CONNECTÉ passe devant les machines seulement joignables")
-func serveurConnecteEnTete() {
-  // Le cas signalé, reproduit : « MacBook Air » passe avant « MacMini » par le
-  // nom, et MacMini — la machine à laquelle l'application est connectée — se
-  // retrouvait en seconde position, sa coche loin du premier regard.
-  let macmini = ServeurMac(nom: "MacMini", nomDNS: "macmini.exemple.ts.net", enLigne: true)
-  let macbook = ServeurMac(nom: "MacBook Air", nomDNS: "macbook.exemple.ts.net", enLigne: true)
-  let eteint = ServeurMac(nom: "iMac", nomDNS: "imac.exemple.ts.net", enLigne: false)
+@Test("Joignables d'abord, puis les PRÊTES avant celles restant à configurer")
+func ordreJoignablePuisPret() {
+  // L'ordre demandé, dans cet ordre exact : les machines joignables passent avant
+  // les éteintes, et parmi les joignables, celles qui SERVENT DSH passent avant
+  // celles qui restent à configurer. La vignette « Ajouter » est rendue après la
+  // liste : elle vient donc après les éteintes, sans entrer dans ce tri.
+  let prete = ServeurMac(nom: "Zulu", nomDNS: "zulu.exemple.ts.net", enLigne: true)
+  let aConfigurer = ServeurMac(nom: "Alpha", nomDNS: "alpha.exemple.ts.net", enLigne: true)
+  let eteinte = ServeurMac(nom: "Bravo", nomDNS: "bravo.exemple.ts.net", enLigne: false)
 
-  // Sans connexion, la règle d'origine tient : joignables d'abord, puis par nom.
+  // Le nom de la machine prête passe APRÈS celui de la machine à configurer :
+  // seule la sonde décide, et elle la fait remonter.
   #expect(
-    DecouverteServeurs.ordonnerPourAffichage([macmini, eteint, macbook], connecte: nil).map(\.nom)
-      == ["MacBook Air", "MacMini", "iMac"])
+    DecouverteServeurs.ordonnerPourAffichage([aConfigurer, eteinte, prete]) { $0.id == prete.id }.map(\.nom)
+      == ["Zulu", "Alpha", "Bravo"])
 
-  // Connecté, MacMini ouvre la liste — et l'ordre du reste ne change pas.
+  // La JOIGNABILITÉ prime sur tout le reste : une machine éteinte reste derrière
+  // une machine joignable qui ne sert pas encore DSH, même si une sonde ancienne
+  // l'avait dite prête.
   #expect(
-    DecouverteServeurs.ordonnerPourAffichage([macbook, eteint, macmini], connecte: macmini.id).map(\.nom)
-      == ["MacMini", "MacBook Air", "iMac"])
+    DecouverteServeurs.ordonnerPourAffichage([eteinte, aConfigurer]) { $0.id == eteinte.id }.map(\.nom)
+      == ["Alpha", "Bravo"])
 
-  // Un connecté HORS LIGNE reste en tête : c'est la connexion qui prime, pas la
-  // supposition du tailnet (`tailscale serve` peut répondre là où `Online` dit non).
+  // Sans verdict — découverte locale, ou sonde encore en vol — il ne reste que la
+  // joignabilité et le nom : c'est la règle d'origine, et elle est stable.
   #expect(
-    DecouverteServeurs.ordonnerPourAffichage([macbook, macmini], connecte: macmini.id).first?.id
-      == macmini.id)
-  #expect(
-    DecouverteServeurs.ordonnerPourAffichage([eteint, macbook], connecte: eteint.id).map(\.nom)
-      == ["iMac", "MacBook Air"])
-
-  // Un identifiant absent de la liste ne déplace rien : l'ordre reste celui des
-  // joignables, puis des autres.
-  #expect(
-    DecouverteServeurs.ordonnerPourAffichage([eteint, macbook], connecte: "inconnu.exemple.ts.net").map(\.nom)
-      == ["MacBook Air", "iMac"])
+    DecouverteServeurs.ordonnerPourAffichage([aConfigurer, eteinte, prete]).map(\.nom)
+      == ["Alpha", "Zulu", "Bravo"])
 }
 
 @Test("Le point final du nom DNS est retiré : l'adresse doit être utilisable telle quelle")

@@ -378,42 +378,43 @@ public enum DecouverteServeurs {
       }
     }
 
-    // En ligne d'abord, puis par nom : c'est la règle d'affichage, ici sans
-    // serveur connecté — la découverte ne sait pas encore à qui l'application
-    // est connectée, et c'est `ModeleApp.serveursAffiches` qui le lui dira.
-    return ordonnerPourAffichage(trouves, connecte: nil)
+    // En ligne d'abord, puis par nom : c'est la règle d'affichage sans verdict de
+    // sonde — la découverte ne sait rien de ce qui sert DSH, et c'est
+    // `ModeleApp.serveursAffiches` qui apporte ce fait.
+    return ordonnerPourAffichage(trouves)
   }
 
-  /// LE RANG D'UNE MACHINE DANS LA LISTE : connectée (0), joignable (1), autre (2).
-  private static func rang(_ serveur: ServeurMac, connecte: String?) -> Int {
-    if serveur.id == connecte { return 0 }
-    return serveur.enLigne ? 1 : 2
-  }
-
-  /// L'ORDRE D'AFFICHAGE DES MACHINES — LE SERVEUR CONNECTÉ EN TÊTE.
+  /// L'ORDRE D'AFFICHAGE DES MACHINES — JOIGNABLES D'ABORD, PRÊTES EN PREMIER.
   ///
-  /// POURQUOI CETTE RÈGLE A CHANGÉ. La liste était triée « joignable d'abord,
-  /// puis par nom », ce qui était déjà mieux que l'ordre rendu par Tailscale.
-  /// Mais la machine à laquelle l'application est CONNECTÉE n'y avait aucune
-  /// place réservée : signalé sur cette installation, `MacMini` — connecté —
-  /// passait APRÈS un autre Mac joignable dont le nom vient avant le sien. La
-  /// vignette cochée n'était donc pas la première, et il fallait la chercher.
+  /// DEUX CLÉS, DANS CET ORDRE, ET RIEN D'AUTRE :
   ///
-  /// L'ordre est : le connecté, puis les joignables, puis les autres ; à rang
-  /// égal, par nom. Il reste STABLE d'un rendu à l'autre — seuls une connexion
-  /// ou un changement d'état du tailnet le déplacent.
+  ///   1. la machine JOIGNABLE avant celle qui ne l'est pas — une machine éteinte
+  ///      ne peut rien rendre, quelle que soit sa configuration ;
+  ///   2. à joignabilité égale, celle qui SERT DSH (« prête ») avant celle qui
+  ///      reste à configurer : c'est celle-là qu'on vient ouvrir.
   ///
-  /// Le connecté passe même s'il est HORS LIGNE : c'est la connexion qui prime,
-  /// pas la supposition du tailnet.
+  /// À égalité sur les deux, l'ordre est celui du nom — et il ne dépend NI de la
+  /// sélection, NI du dernier choix, NI de l'heure. **L'ordre ne doit pas bouger
+  /// sous le doigt** de celui qui vient de toucher une vignette : un tri par
+  /// « machine connectée d'abord » a existé ici, et il est retiré pour cette
+  /// raison précise — la vignette visée sautait à l'instant où on la touchait.
+  ///
+  /// La vignette « Ajouter » n'entre pas dans ce tri : elle est rendue APRÈS la
+  /// liste, donc après les machines hors ligne.
   ///
   /// - Parameters:
   ///   - serveurs: les machines à ordonner.
-  ///   - connecte: l'identifiant (nom DNS) du serveur connecté, s'il y en a un.
-  static func ordonnerPourAffichage(_ serveurs: [ServeurMac], connecte: String?) -> [ServeurMac] {
+  ///   - sertDsh: le verdict de la sonde pour une machine — `true` = elle sert
+  ///     DSH. Par défaut aucune n'est déclarée prête : la découverte locale, qui
+  ///     ne sonde rien, garde l'ordre « joignable d'abord, puis par nom ».
+  static func ordonnerPourAffichage(
+    _ serveurs: [ServeurMac], sertDsh: (ServeurMac) -> Bool = { _ in false }
+  ) -> [ServeurMac] {
     serveurs.sorted { gauche, droite in
-      let rangGauche = rang(gauche, connecte: connecte)
-      let rangDroit = rang(droite, connecte: connecte)
-      if rangGauche != rangDroit { return rangGauche < rangDroit }
+      if gauche.enLigne != droite.enLigne { return gauche.enLigne }
+      let gauchePrete = sertDsh(gauche)
+      let droitePrete = sertDsh(droite)
+      if gauchePrete != droitePrete { return gauchePrete }
       return gauche.nom.localizedStandardCompare(droite.nom) == .orderedAscending
     }
   }

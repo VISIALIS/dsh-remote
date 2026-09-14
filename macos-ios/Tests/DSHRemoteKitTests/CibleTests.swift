@@ -106,26 +106,38 @@ func adresseEcriteSansMachine() {
 }
 
 @MainActor
-@Test("La vignette du serveur CONNECTÉ est la première du carrousel")
-func serveurConnecteEnPremierePosition() {
+@Test("Choisir une machine NE CHANGE PAS l'ordre du carrousel")
+func leChoixNeReordonnePasLeCarrousel() {
   let modele = modeleDeTest()
-  // « MacBook Air » passe avant « MacMini » par le nom : c'est le cas signalé,
-  // où la vignette cochée n'était pas la première de la liste.
   let macbook = ServeurMac(nom: "MacBook Air", nomDNS: "macbook.exemple.ts.net", enLigne: true)
   let macmini = ServeurMac(nom: "MacMini", nomDNS: "macmini.exemple.ts.net", enLigne: true)
   let eteint = ServeurMac(nom: "iMac", nomDNS: "imac.exemple.ts.net", enLigne: false)
   modele.remplacerServeursPourEssai([macbook, eteint, macmini])
 
-  // Avant toute connexion : joignables d'abord, puis par nom.
-  #expect(modele.serveursAffiches.map(\.nom) == ["MacBook Air", "MacMini", "iMac"])
+  let avant = modele.serveursAffiches.map(\.nom)
+  #expect(avant == ["MacBook Air", "MacMini", "iMac"])
 
-  // Le choix de la machine — c'est-à-dire la connexion — la fait passer devant,
-  // sans qu'aucune liste n'ait été réécrite.
+  // Le toucher CONNECTE : c'est ce geste qui, lorsqu'il réordonnait la liste,
+  // faisait sauter la vignette visée sous le doigt — et s'agiter la barre de
+  // défilement. L'ordre est une propriété des machines, jamais de la sélection.
   modele.choisir(macmini)
   #expect(modele.serveurChoisi == macmini)
-  #expect(modele.serveursAffiches.map(\.nom) == ["MacMini", "MacBook Air", "iMac"])
+  #expect(modele.serveursAffiches.map(\.nom) == avant)
+}
 
-  // Et la liste RANGÉE n'a pas bougé : l'ordre d'affichage est une lecture, pas
-  // un rangement — sinon la prochaine réponse de découverte l'écraserait.
-  #expect(modele.serveurs.map(\.nom) == ["MacBook Air", "iMac", "MacMini"])
+@MainActor
+@Test("Une machine PRÊTE passe devant une machine restant à configurer")
+func machinePreteAvantAConfigurer() {
+  let modele = modeleDeTest()
+  let aConfigurer = ServeurMac(nom: "Alpha", nomDNS: "alpha.exemple.ts.net", enLigne: true)
+  let prete = ServeurMac(nom: "Zulu", nomDNS: "zulu.exemple.ts.net", enLigne: true)
+  let eteinte = ServeurMac(nom: "Bravo", nomDNS: "bravo.exemple.ts.net", enLigne: false)
+  modele.remplacerServeursPourEssai([aConfigurer, eteinte, prete])
+
+  // Aucun verdict de sonde : joignables d'abord, puis par nom.
+  #expect(modele.serveursAffiches.map(\.nom) == ["Alpha", "Zulu", "Bravo"])
+
+  // Le verdict tombe : la machine qui SERT DSH remonte, malgré son nom.
+  modele.remplacerSondePourEssai(.connue(Sonde.Verdict(serventDsh: [prete.id])))
+  #expect(modele.serveursAffiches.map(\.nom) == ["Zulu", "Alpha", "Bravo"])
 }
