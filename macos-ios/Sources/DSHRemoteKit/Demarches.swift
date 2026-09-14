@@ -26,20 +26,17 @@ struct DemarcheInstallationPlugin: View {
   var body: some View {
 
     VStack(alignment: .leading, spacing: 8) {
-      Label(
-        "Le plugin `dsh-remote` n'est pas installé sur cette machine. DSH y tourne et son port 80 est publié — mais rien n'y expose DSH Remote.",
-        systemImage: "puzzlepiece.extension"
-      )
+      Label { T("Le plugin `dsh-remote` n'est pas installé sur cette machine. DSH y tourne et son port 80 est publié — mais rien n'y expose DSH Remote.") } icon: { Image(systemName: "puzzlepiece.extension") }
       .font(.footnote)
       .foregroundStyle(.orange)
       .fixedSize(horizontal: false, vertical: true)
 
-      Text("1. Avoir le dépôt `dsh-plugins` sur cette machine, et y prendre `plugins/dsh-remote`.")
+      T("1. Avoir le dépôt `dsh-plugins` sur cette machine, et y prendre `plugins/dsh-remote`.")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
 
-      Text("2. Déclarer le plugin dans `~/.dsh/profiles/web/cordis.patch.yml` :")
+      T("2. Déclarer le plugin dans `~/.dsh/profiles/web/cordis.patch.yml` :")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -56,7 +53,7 @@ struct DemarcheInstallationPlugin: View {
           """,
         libelle: "bloc")
 
-      Text("3. Relancer le harness sur cette machine — ici `dsh web`. Le CODE d'un plugin n'est pas rechargé à chaud : sans redémarrage, l'ancien processus continue de répondre.")
+      T("3. Relancer le harness sur cette machine — ici `dsh web`. Le CODE d'un plugin n'est pas rechargé à chaud : sans redémarrage, l'ancien processus continue de répondre.")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -65,14 +62,14 @@ struct DemarcheInstallationPlugin: View {
       // LA VÉRIFICATION EST FOURNIE, ET ELLE MARCHE SANS JETON : mesuré, la route
       // répond 401 quand aucun jeton n'est présenté, et 200 quand il l'est. Les
       // deux prouvent que le plugin est chargé — ce qui est la question ici.
-      Text("Vérifiez sur cette machine : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal).")
+      T("Vérifiez sur cette machine : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal).")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
       LigneCommande(
         commande: "curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3080/dsh-remote/v1/sante")
 
-      Text("Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre.")
+      T("Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre.")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -85,10 +82,7 @@ struct DemarchePublicationPort: View {
   var body: some View {
 
     VStack(alignment: .leading, spacing: 8) {
-      Label(
-        "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond.",
-        systemImage: "network.slash"
-      )
+      Label { T("Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond.") } icon: { Image(systemName: "network.slash") }
       .font(.footnote)
       .foregroundStyle(.orange)
       .fixedSize(horizontal: false, vertical: true)
@@ -97,19 +91,19 @@ struct DemarchePublicationPort: View {
       // être tapées sur l'AUTRE Mac. La commande a été vérifiée sur cette
       // machine — `tailscale serve status --json` est resté IDENTIQUE avant et
       // après.
-      Text("Sur cette machine-là, publiez l'instance DSH :")
+      T("Sur cette machine-là, publiez l'instance DSH :")
         .font(.caption)
         .foregroundStyle(.secondary)
       LigneCommande(commande: "tailscale serve --bg --http=80 http://127.0.0.1:3080")
-      Text("Vérifiez ensuite, sur cette machine-là :")
+      T("Vérifiez ensuite, sur cette machine-là :")
         .font(.caption)
         .foregroundStyle(.secondary)
       LigneCommande(commande: "tailscale serve status")
-      Text("Le plugin `dsh-remote` doit AUSSI y être chargé : publier DSH ne suffit pas. S'il manque, la page de cette machine donnera sa démarche d'installation.")
+      T("Le plugin `dsh-remote` doit AUSSI y être chargé : publier DSH ne suffit pas. S'il manque, la page de cette machine donnera sa démarche d'installation.")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
-      Text("Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre.")
+      T("Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre.")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)

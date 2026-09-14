@@ -81,7 +81,7 @@ struct ParcoursDesEtapes<Methode: View>: View {
             .font(.caption)
             .foregroundStyle(.tertiary)
         } else if etape.etat == .inconnue {
-          Text("à vérifier")
+          T("à vérifier")
             .font(.caption)
             .foregroundStyle(.secondary)
         }

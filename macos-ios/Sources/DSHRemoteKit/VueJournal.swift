@@ -192,21 +192,21 @@ struct VueJournal: View {
       if enLecture {
         HStack(spacing: 8) {
           ProgressView().controlSize(.small)
-          Text("Lecture du journal…").font(.callout).foregroundStyle(.secondary)
+          T("Lecture du journal…").font(.callout).foregroundStyle(.secondary)
         }
       }
 
       // ON A ÉCHOUÉ : on le dit, et on offre de recommencer.
       if let erreurDeLecture {
         VStack(alignment: .leading, spacing: 8) {
-          Label("Le journal n'a pas pu être lu.", systemImage: "exclamationmark.triangle")
+          Label { T("Le journal n'a pas pu être lu.") } icon: { Image(systemName: "exclamationmark.triangle") }
             .font(.callout)
             .foregroundStyle(.orange)
           Text(erreurDeLecture)
             .font(.caption.monospaced())
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-          Button("Réessayer") {
+          Button(L("Réessayer")) {
             Task { await modele.ouvrir(session) }
           }
           .buttonStyle(.bordered)
@@ -215,11 +215,11 @@ struct VueJournal: View {
 
       // ON A LU, ET IL N'Y A RIEN : un état vide se dit, il ne se devine pas.
       if evenements.isEmpty, !enLecture, erreurDeLecture == nil {
-        ContentUnavailableView(
-          "Aucun événement",
-          systemImage: "text.page.slash",
-          description: Text("Cette session n'a encore rien écrit.")
-        )
+        ContentUnavailableView {
+          Label { T("Aucun événement") } icon: { Image(systemName: "text.page.slash") }
+        } description: {
+          T("Cette session n'a encore rien écrit.")
+        }
       }
     }
   }

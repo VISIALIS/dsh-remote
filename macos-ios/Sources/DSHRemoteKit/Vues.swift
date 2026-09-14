@@ -191,11 +191,11 @@ public struct VuePrincipale: View {
       } else if let serveur = serveurDeLaPage ?? serveurDUneErreur {
         VueServeur(modele: modele, serveur: serveur)
       } else {
-        ContentUnavailableView(
-          "Aucune session ouverte",
-          systemImage: "terminal",
-          description: Text("Choisissez une session dans la liste pour lire son journal.")
-        )
+        ContentUnavailableView {
+          Label { T("Aucune session ouverte") } icon: { Image(systemName: "terminal") }
+        } description: {
+          T("Choisissez une session dans la liste pour lire son journal.")
+        }
       }
     }
     .sheet(isPresented: $reglagesOuverts) {
@@ -440,7 +440,7 @@ struct VueListeSessions: View {
                 .foregroundStyle(.secondary)
               Text(espace.nom).font(.body)
               Spacer()
-              Text("aucune session")
+              T("aucune session")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
             }
@@ -523,25 +523,23 @@ struct VueListeSessions: View {
             // que la machine n'a rien — mesuré : 156 sessions rendues, 8
             // vivantes, et un arbre vide dès qu'aucune n'est en mémoire.
             VStack(alignment: .leading, spacing: 10) {
-              ContentUnavailableView(
-                "Aucune session en mémoire",
-                systemImage: "memorychip",
-                description: Text(
+              ContentUnavailableView {
+                Label { T("Aucune session en mémoire") } icon: { Image(systemName: "memorychip") }
+              } description: {
+                Text(
                   "Ce serveur en connaît \(modele.sessions.count), mais le filtre « Chargées en mémoire seulement » n'affiche que celles qui sont prêtes à reprendre tout de suite."
                 )
-              )
-              Button("Les afficher toutes") { modele.afficherToutesLesSessions() }
+              }
+              Button(L("Les afficher toutes")) { modele.afficherToutesLesSessions() }
                 .buttonStyle(.bordered)
                 .frame(maxWidth: .infinity)
             }
           } else {
-            ContentUnavailableView(
-              "Aucune session",
-              systemImage: "rectangle.stack",
-              description: Text(
-                "Les sessions de cette machine apparaîtront ici. Lancez-en une sur le Mac, ou choisissez une autre machine ci-dessus."
-              )
-            )
+            ContentUnavailableView {
+              Label { T("Aucune session") } icon: { Image(systemName: "rectangle.stack") }
+            } description: {
+              T("Les sessions de cette machine apparaîtront ici. Lancez-en une sur le Mac, ou choisissez une autre machine ci-dessus.")
+            }
           }
         }
       } header: {
@@ -622,7 +620,7 @@ struct VueListeSessions: View {
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
     #endif
-    .navigationTitle("DSH Remote")
+    .navigationTitle(T("DSH Remote"))
     #if os(iOS)
       // La destination des icônes de serveur, déclarée DANS la colonne qui
       // l'affiche : sur iPhone elle s'empile, sur iPad elle remplit le détail.
@@ -649,7 +647,7 @@ struct VueListeSessions: View {
           } label: {
             Image(systemName: "gearshape")
           }
-          .accessibilityLabel("Réglages")
+          .accessibilityLabel(T("Réglages"))
         }
       #endif
     }
@@ -943,14 +941,14 @@ struct CarrouselServeurs: View {
     Button {
       PressePapiers.ecrire(serveur.adresse)
     } label: {
-      Label("Copier l'adresse", systemImage: "doc.on.doc")
+      Label { T("Copier l'adresse") } icon: { Image(systemName: "doc.on.doc") }
     }
     if modele.serveurChoisi == serveur {
       Divider()
       Button(role: .destructive) {
         modele.oublierServeur()
       } label: {
-        Label("Oublier ce serveur", systemImage: "trash")
+        Label { T("Oublier ce serveur") } icon: { Image(systemName: "trash") }
       }
     }
   }
@@ -1167,7 +1165,7 @@ struct ContenuAjouter: View {
         // deux dessins à la même hauteur.
         .frame(width: cadre, height: cadre)
 
-      Text("Ajouter")
+      T("Ajouter")
         .font(.caption2)
         .foregroundStyle(Color.secondary)
         .frame(width: cadre)
@@ -1217,7 +1215,7 @@ struct ServeursVides: View {
           // Même mécanique que la vignette « Ajouter » du carrousel : sur iPhone,
           // la page s'EMPILE.
           NavigationLink(value: PageAjoutServeur()) {
-            Label("Ajouter un serveur", systemImage: "plus.square.dashed")
+            Label { T("Ajouter un serveur") } icon: { Image(systemName: "plus.square.dashed") }
               .font(.callout)
           }
           .buttonStyle(.borderedProminent)
@@ -1226,7 +1224,7 @@ struct ServeursVides: View {
           Button {
             surAjout()
           } label: {
-            Label("Ajouter un serveur", systemImage: "plus.square.dashed")
+            Label { T("Ajouter un serveur") } icon: { Image(systemName: "plus.square.dashed") }
               .font(.callout)
           }
           .buttonStyle(.borderedProminent)
@@ -1235,7 +1233,7 @@ struct ServeursVides: View {
         Button {
           surAdresse()
         } label: {
-          Label("Saisir une adresse", systemImage: "keyboard")
+          Label { T("Saisir une adresse") } icon: { Image(systemName: "keyboard") }
             .font(.callout)
         }
         .buttonStyle(.bordered)
@@ -1244,7 +1242,7 @@ struct ServeursVides: View {
         // découverte locale est impossible, et un bouton sans effet est un
         // mensonge d'interface.
         if modele.rechercheServeursPossible {
-          Button("Chercher une machine") { Task { await modele.synchroniserServeurs() } }
+          Button(L("Chercher une machine")) { Task { await modele.synchroniserServeurs() } }
             .font(.callout)
             .buttonStyle(.bordered)
             .disabled(modele.synchronisationEnCours)
@@ -1267,7 +1265,13 @@ struct BarreRecherche: View {
     HStack(spacing: 8) {
       Image(systemName: "magnifyingglass")
         .foregroundStyle(.secondary)
-      TextField("Rechercher une session, un projet…", text: $texte)
+      // LA FORME À FERMETURE, ET NON LE TITRE EN LITTÉRAL : c'est le seul moyen de
+      // dire DANS QUEL PAQUET chercher la traduction. Mesuré : un littéral passé
+      // directement cherche dans le programme principal, où la table de la
+      // bibliothèque n'est pas.
+      TextField(text: $texte) {
+        T("Rechercher une session, un projet…")
+      }
         .textFieldStyle(.plain)
         .autocorrectionDisabled()
         .focused($champActif)
@@ -1293,7 +1297,7 @@ struct BarreRecherche: View {
             .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Effacer la recherche")
+        .accessibilityLabel(T("Effacer la recherche"))
         .cibleTactile()
       }
     }
@@ -1557,14 +1561,14 @@ extension View {
             Button {
               modele.marquerCommeVue(session.id)
             } label: {
-              Label("Vu", systemImage: "checkmark.circle")
+              Label { T("Vu") } icon: { Image(systemName: "checkmark.circle") }
             }
             .tint(.green)
           }
           Button {
             PressePapiers.ecrire(session.titreAffiche)
           } label: {
-            Label("Copier le titre", systemImage: "doc.on.doc")
+            Label { T("Copier le titre") } icon: { Image(systemName: "doc.on.doc") }
           }
           .tint(.indigo)
         }
@@ -1587,19 +1591,19 @@ extension View {
     Button {
       PressePapiers.ecrire(session.titreAffiche)
     } label: {
-      Label("Copier le titre", systemImage: "doc.on.doc")
+      Label { T("Copier le titre") } icon: { Image(systemName: "doc.on.doc") }
     }
     Button {
       PressePapiers.ecrire(session.id)
     } label: {
-      Label("Copier l'identifiant", systemImage: "number")
+      Label { T("Copier l'identifiant") } icon: { Image(systemName: "number") }
     }
     if rappelArme {
       Divider()
       Button {
         modele.marquerCommeVue(session.id)
       } label: {
-        Label("Marquer comme vu", systemImage: "checkmark.circle")
+        Label { T("Marquer comme vu") } icon: { Image(systemName: "checkmark.circle") }
       }
     }
   }

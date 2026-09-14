@@ -37,16 +37,14 @@ struct VueAjoutServeur: View {
       .frame(maxWidth: 680, alignment: .leading)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .navigationTitle("Ajouter un serveur")
+    .navigationTitle(T("Ajouter un serveur"))
   }
 
   private var enTete: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Label("Ajouter un serveur", systemImage: "plus.square.dashed")
+      Label { T("Ajouter un serveur") } icon: { Image(systemName: "plus.square.dashed") }
         .font(.title3.weight(.semibold))
-      Text(
-        "Une machine devient un serveur DSH en quatre étapes. Elles se font dans cet ordre : chacune suppose la précédente."
-      )
+      T("Une machine devient un serveur DSH en quatre étapes. Elles se font dans cet ordre : chacune suppose la précédente.")
       .font(.callout)
       .foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
@@ -68,9 +66,7 @@ struct VueAjoutServeur: View {
       // juge pas une machine qu'on n'a pas encore —, donc la frontière ne peut
       // pas avancer toute seule. Sans cette phrase, on croirait que les étapes
       // grisées sont fermées ; sans le dépliage, elles le seraient pour de bon.
-      Text(
-        "L'ordre est celui du travail : chaque étape suppose la précédente. Les étapes grisées restent lisibles — dépliez « Voir la méthode » si vous les avez déjà faites, ou pour savoir ce qui vous attend."
-      )
+      T("L'ordre est celui du travail : chaque étape suppose la précédente. Les étapes grisées restent lisibles — dépliez « Voir la méthode » si vous les avez déjà faites, ou pour savoir ce qui vous attend.")
       .font(.caption)
       .foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
@@ -105,19 +101,19 @@ struct VueAjoutServeur: View {
       .buttonStyle(.borderless)
       .font(.caption)
       #if os(macOS)
-        Text("Ou, en ligne de commande :")
+        T("Ou, en ligne de commande :")
           .font(.caption)
           .foregroundStyle(.secondary)
         LigneCommande(commande: "tailscale status")
         LigneCommande(commande: "tailscale up")
       #endif
     case 2:
-      Text("Sur cette machine-là : installez Tailscale, connectez-le, puis vérifiez :")
+      T("Sur cette machine-là : installez Tailscale, connectez-le, puis vérifiez :")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
       LigneCommande(commande: "tailscale status")
-      Text("Il doit y apparaître en ligne, avec un nom en `.ts.net`.")
+      T("Il doit y apparaître en ligne, avec un nom en `.ts.net`.")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -139,14 +135,14 @@ struct VueAjoutServeur: View {
         Button {
           Task { await modele.synchroniserServeurs() }
         } label: {
-          Label("Chercher une machine", systemImage: "arrow.clockwise")
+          Label { T("Chercher une machine") } icon: { Image(systemName: "arrow.clockwise") }
         }
         .disabled(modele.synchronisationEnCours)
       }
       Button {
         surAdresse()
       } label: {
-        Label("Saisir une adresse", systemImage: "keyboard")
+        Label { T("Saisir une adresse") } icon: { Image(systemName: "keyboard") }
       }
     }
     .font(.callout)

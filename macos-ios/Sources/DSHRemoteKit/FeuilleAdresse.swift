@@ -59,13 +59,13 @@ struct FeuilleAdresse: View {
         sectionJeton
         sectionActions
       }
-      .navigationTitle("Adresse")
+      .navigationTitle(T("Adresse"))
       #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
       #endif
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
-          Button("Terminé") { fermer() }
+          Button(L("Terminé")) { fermer() }
         }
       }
       // LE CHAMP MONTRE LE JETON DE L'ADRESSE AFFICHÉE. `viser` recharge déjà
@@ -119,7 +119,7 @@ struct FeuilleAdresse: View {
           .fixedSize(horizontal: false, vertical: true)
       }
     } header: {
-      Text("Adresse de la machine")
+      T("Adresse de la machine")
     } footer: {
       Text(conseil.aide)
         .fixedSize(horizontal: false, vertical: true)
@@ -156,7 +156,7 @@ struct FeuilleAdresse: View {
           .labelStyle(.iconOnly)
           .buttonStyle(.borderless)
           .cibleTactile()
-          .accessibilityLabel("Coller le jeton depuis le presse-papier")
+          .accessibilityLabel(T("Coller le jeton depuis le presse-papier"))
         #else
           Button {
             coller()
@@ -165,7 +165,7 @@ struct FeuilleAdresse: View {
           }
           .buttonStyle(.borderless)
           .cibleTactile()
-          .accessibilityLabel("Coller le jeton depuis le presse-papier")
+          .accessibilityLabel(T("Coller le jeton depuis le presse-papier"))
         #endif
 
         if !jeton.isEmpty {
@@ -176,7 +176,7 @@ struct FeuilleAdresse: View {
           }
           .buttonStyle(.borderless)
           .cibleTactile()
-          .accessibilityLabel("Effacer le jeton saisi")
+          .accessibilityLabel(T("Effacer le jeton saisi"))
         }
       }
 
@@ -196,20 +196,15 @@ struct FeuilleAdresse: View {
       // Le rappel du `401` est ICI AUSSI : c'est le message que reçoit un
       // appareil neuf, et le champ qui répare est juste au-dessus.
       if modele.jetonRefuseParLeService {
-        Label(
-          "Le service a refusé ce jeton. Chaque machine a le sien : recopiez celui de CET hôte.",
-          systemImage: "key"
-        )
+        Label { T("Le service a refusé ce jeton. Chaque machine a le sien : recopiez celui de CET hôte.") } icon: { Image(systemName: "key") }
         .font(.caption)
         .foregroundStyle(.orange)
         .fixedSize(horizontal: false, vertical: true)
       }
     } header: {
-      Text("Jeton d'appareil")
+      T("Jeton d'appareil")
     } footer: {
-      Text(
-        "Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il est gardé au trousseau — jamais dans les préférences — et n'est jamais renvoyé par une route."
-      )
+      T("Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il est gardé au trousseau — jamais dans les préférences — et n'est jamais renvoyé par une route.")
       .fixedSize(horizontal: false, vertical: true)
     }
   }
@@ -219,13 +214,13 @@ struct FeuilleAdresse: View {
   private var sectionActions: some View {
     Section {
       HStack(spacing: 12) {
-        Button("Se connecter") {
+        Button(L("Se connecter")) {
           soumettre { await modele.connecter() }
         }
         .buttonStyle(.borderedProminent)
         .disabled(modele.enChargement || !adresseRenseignee)
 
-        Button("Tester l'adresse") {
+        Button(L("Tester l'adresse")) {
           soumettre { await modele.testerAdresse() }
         }
         .disabled(modele.enChargement || !adresseRenseignee)
@@ -239,7 +234,7 @@ struct FeuilleAdresse: View {
       case .inconnu:
         EmptyView()
       case .enCours:
-        Label("test de l'adresse…", systemImage: "hourglass").font(.caption)
+        Label { T("test de l'adresse…") } icon: { Image(systemName: "hourglass") }.font(.caption)
       case let .joignable(reponses):
         Label("\(reponses) session(s) — adresse et jeton acceptés", systemImage: "checkmark.circle")
           .font(.caption)
@@ -251,9 +246,7 @@ struct FeuilleAdresse: View {
           .fixedSize(horizontal: false, vertical: true)
       }
     } footer: {
-      Text(
-        "« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé."
-      )
+      T("« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé.")
       .fixedSize(horizontal: false, vertical: true)
     }
   }

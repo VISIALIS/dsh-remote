@@ -4,6 +4,17 @@
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>fr</string>
   <key>CFBundleDisplayName</key><string>DSH Remote</string>
+  <!--
+    LES LANGUES SERVIES. `CFBundleDevelopmentRegion` est déjà le français, mais
+    la liste explicite est ce qui fait entrer l'anglais dans les langues que le
+    système propose — et ce qui fait retomber un appareil dont la langue n'est ni
+    l'une ni l'autre sur le français, la langue des clés.
+  -->
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>fr</string>
+    <string>en</string>
+  </array>
   <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>

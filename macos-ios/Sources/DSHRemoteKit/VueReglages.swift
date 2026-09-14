@@ -59,14 +59,14 @@ public struct FeuilleReglages: View {
         diagnostic
         aPropos
       }
-      .navigationTitle("Réglages")
+      .navigationTitle(T("Réglages"))
       #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
       #endif
       .toolbar {
         #if os(iOS)
           ToolbarItem(placement: .confirmationAction) {
-            Button("Terminé") { fermer() }
+            Button(L("Terminé")) { fermer() }
           }
         #endif
       }
@@ -117,11 +117,11 @@ public struct FeuilleReglages: View {
       if ExceptionATS.sousATS {
         LabeledContent("Transport en clair", value: etatTransport)
       }
-      Button("Vérifier maintenant") {
+      Button(L("Vérifier maintenant")) {
         let _ = modele.relireEtatTailscale()
       }
     } header: {
-      Text("Cet appareil")
+      T("Cet appareil")
     } footer: {
       Text(
         modele.tailnetDeLAppareil == true
@@ -150,18 +150,18 @@ public struct FeuilleReglages: View {
   private var alertes: some View {
     Section {
       Toggle(
-        "Me prévenir quand l'agent attend ou termine",
         isOn: Binding(
           get: { modele.alertesActives },
           set: { actives in
             Task { await modele.definirAlertes(actives) }
-          }))
+          })
+      ) {
+        T("Me prévenir quand l'agent attend ou termine")
+      }
     } header: {
-      Text("Alertes")
+      T("Alertes")
     } footer: {
-      Text(
-        "Une alerte part quand une session se met à ATTENDRE une réponse, ou quand un tour se termine — jamais pour ce que vous êtes en train de regarder. Elle n'est envoyée que tant que l'application tourne : iOS la suspend en arrière-plan, et la réveiller demanderait un serveur de notification, que ce projet n'a pas."
-      )
+      T("Une alerte part quand une session se met à ATTENDRE une réponse, ou quand un tour se termine — jamais pour ce que vous êtes en train de regarder. Elle n'est envoyée que tant que l'application tourne : iOS la suspend en arrière-plan, et la réveiller demanderait un serveur de notification, que ce projet n'a pas.")
       .fixedSize(horizontal: false, vertical: true)
     }
   }
@@ -206,7 +206,7 @@ public struct FeuilleReglages: View {
   private var diagnostic: some View {
     Section {
       if let chemin {
-        Button("Copier le chemin du fichier") {
+        Button(L("Copier le chemin du fichier")) {
           PressePapiers.ecrire(chemin)
         }
         Text(chemin)
@@ -215,16 +215,14 @@ public struct FeuilleReglages: View {
           .textSelection(.enabled)
           .fixedSize(horizontal: false, vertical: true)
       } else {
-        Text("Aucun dossier de documents : cette exécution n'écrit pas de diagnostic.")
+        T("Aucun dossier de documents : cette exécution n'écrit pas de diagnostic.")
           .font(.callout)
           .foregroundStyle(.secondary)
       }
     } header: {
-      Text("Diagnostic")
+      T("Diagnostic")
     } footer: {
-      Text(
-        "Les erreurs qu'aucune explication ne couvre y sont écrites : l'adresse visée, le message, la longueur du jeton et une empreinte de celui-ci. Le jeton lui-même n'y est jamais recopié."
-      )
+      T("Les erreurs qu'aucune explication ne couvre y sont écrites : l'adresse visée, le message, la longueur du jeton et une empreinte de celui-ci. Le jeton lui-même n'y est jamais recopié.")
       .fixedSize(horizontal: false, vertical: true)
     }
   }
@@ -245,7 +243,7 @@ public struct FeuilleReglages: View {
   /// est ce qui permet de comprendre ce message. Le reste — mentions, licence —
   /// appartient au dépôt, pas à l'écran.
   private var aPropos: some View {
-    Section("À propos") {
+    Section(header: T("À propos")) {
       LabeledContent("Application", value: versionApplication)
       LabeledContent("Protocole lu", value: "version \(versionProtocoleSupportee)")
       #if os(iOS)

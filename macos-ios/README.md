@@ -1591,6 +1591,44 @@ processus **avorte** (mesuré : `NSInternalInconsistencyException:
 bundleProxyForCurrentProcess is nil`, code 134, signal 6). Sans la garde, `swift run
 DSHRemoteMac` — le chemin de développement documenté — mourrait au lancement.
 
+### La langue de l'interface : le français reste la source, l'anglais est ajouté
+
+**La décision** : le code, les commentaires, les clés et la documentation restent en
+français (RÈGLE #1) ; l'interface se traduit. Les tables vivent dans la
+bibliothèque, avec le français pour langue de référence.
+
+**Ce qui est traduit aujourd'hui, et ce qui ne l'est pas encore** — l'état exact,
+parce qu'une application à moitié traduite qui se dit bilingue serait une promesse
+non tenue :
+
+| Élément | État |
+|---|---|
+| Les **89 phrases de l'interface** (titres, boutons, libellés, infobulles, libellés VoiceOver) | **traduites** — tables `fr` et `en`, parité tenue par un test |
+| Les **langues de l'application** sont déclarées (`CFBundleDevelopmentRegion = fr`, `CFBundleLocalizations = [fr, en]`) | **fait**, sur les deux plateformes |
+| Les **messages construits par le modèle** (« installé », « connecté », « hors ligne sur le tailnet », les remèdes du diagnostic, les erreurs du protocole) | **restent en français** — prochaine tranche |
+| Les phrases **interpolées** avec un nombre (`« 3 sessions »`, `« 42 évts »`) | **restent en français** : elles demandent des règles de pluriel, donc un traitement à part |
+
+**Trois choses mesurées en chemin, et qui expliquent la forme du code.**
+
+1. **Un littéral passé à `Text` cherche dans le programme PRINCIPAL**, où les tables
+   de la bibliothèque ne sont pas : l'interface restait en français même lancée en
+   anglais. C'est pourquoi les appels nomment le paquet (`bundle: .module`), par
+   les deux fonctions `T` (texte) et `L` (chaîne) — `Button`, `Toggle` et `Section`
+   n'offrant pas d'initialiseur qui accepte à la fois un `Text` et un paquet.
+2. **SwiftPM recopie un catalogue `.xcstrings` sans le compiler** : le paquet de
+   ressources ne contenait alors aucun `.lproj`, et rien n'était traduit. Les tables
+   sont donc des `.lproj/Localizable.strings`, que SwiftPM **et** Xcode copient tels
+   quels.
+3. **Sans langues déclarées, l'application n'annonce rien** — et le binaire nu
+   (`swift run DSHRemoteMac`) reçoit alors l'anglais par défaut, mesuré. Les deux
+   `Info.plist` déclarent donc `fr` et `en` : sur l'application empaquetée, un
+   système français affiche le français, et un système anglais l'anglais.
+
+Le générateur des deux tables (`/tmp/generer-tables.py` pendant la session) **relit
+les clés dans les sources et refuse de produire une table anglaise incomplète** :
+la parité n'est pas seulement vérifiée à l'exécution par un test, elle est exigée à
+l'écriture.
+
 ### L'iPad : une cible réelle, et ce qu'elle a révélé
 
 **La décision.** L'application ne se déclarait que pour iPhone (`TARGETED_DEVICE_FAMILY = 1`) :
@@ -2269,6 +2307,9 @@ inactive.
 | **Deux machines qui partageaient « MacBook » se distinguent** | capture des données réelles : « MacBook Air » et « MacBook Pro », là où deux vignettes disaient « MacBook » — 5 tests sur `NomsCourts` |
 | **L'état de navigation fait un aller-retour** | 2 tests : espaces triés relus par un SECOND modèle sur le même domaine ; une session mémorisée n'est rouverte que si l'hôte la nomme |
 | **Le collage iOS ne lit plus le presse-papiers à l'insu de l'utilisateur** | `PasteButton` des deux côtés (feuille Adresse, page d'une machine) ; compilation iOS complète par `Scripts/construire-app-ios.sh --simulateur` → `BUILD SUCCEEDED` |
+| **Les deux tables de traduction sont complètes** | 4 tests : les deux tables se lisent depuis le paquet, elles portent EXACTEMENT les mêmes clés (89), aucune valeur n'est vide, une clé absente rend `nil` |
+| **L'anglais s'affiche vraiment** | capture avec la langue forcée : « Settings », « This device », « Check now », « Alerts », « Diagnostic », « Copy the file path », « About » — et le champ de recherche « Search a session or a project… » |
+| **Le français reste le défaut** | capture de l'application EMPAQUETÉE, sans argument : tout en français. Le défaut anglais ne touchait que le binaire nu, qui n'annonce aucune langue |
 | **L'iPad est une cible, pas un mode compatibilité** | `UIDeviceFamily = [1, 2]` dans l'`Info.plist` construit ; installation et lancement sur un iPad (A16) simulé, captures en portrait et en paysage — deux colonnes, carrousel, espaces, recherche |
 | **La colonne latérale était à l'étroit sur iPad** | défaut vu à l'écran : la contrainte de largeur ne s'appliquait qu'à macOS. Corrigée (340 pt minimum), et la capture montre le carrousel à trois chicons entiers au lieu de deux |
 | **Les blocs de code sont reconnus, et la prose ne l'est pas** | 10 tests sur l'analyseur (`BlocsDeCodeTests`) : bloc avec ou sans langage, clôture non fermée, accents graves en milieu de ligne, fausse clôture, deux blocs, bloc vide, retour chariot Windows, clôture plus longue |

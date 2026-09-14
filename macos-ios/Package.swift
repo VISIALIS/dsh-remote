@@ -17,6 +17,11 @@ import PackageDescription
 // l'application installable sur iPhone.
 let package = Package(
   name: "DSHRemote",
+  // LA LANGUE SOURCE DU PAQUET, ET ELLE EST OBLIGATOIRE : SwiftPM refuse un
+  // paquet qui porte des ressources localisées sans dire laquelle fait référence.
+  // C'est le français — le code, les commentaires et les clés le sont (RÈGLE #1) ;
+  // l'anglais est une TRADUCTION ajoutée, pas une seconde source.
+  defaultLocalization: "fr",
   platforms: [
     .macOS(.v14),
     .iOS(.v17),
@@ -43,6 +48,19 @@ let package = Package(
   targets: [
     .target(
       name: "DSHRemoteKit",
+      // LES TABLES DE TRADUCTION SONT DES RESSOURCES DE LA BIBLIOTHÈQUE, et c'est
+      // une contrainte mesurée, pas un choix. Les vues vivent ici, donc leurs
+      // chaînes aussi : une table posée dans la cible d'application iOS ne serait
+      // pas vue par l'application macOS, qui est un binaire SwiftPM sans cible
+      // Xcode.
+      //
+      // POURQUOI DES `.lproj/Localizable.strings` ET NON UN CATALOGUE `.xcstrings`,
+      // ET C'EST UNE MESURE : SwiftPM *recopie* un `.xcstrings` tel quel, sans le
+      // compiler — le paquet de ressources ne contenait alors aucun `.lproj`, et
+      // l'interface restait en français même lancée en anglais. Le format
+      // classique, lui, est copié tel quel par SwiftPM **et** par Xcode, et il est
+      // lu par `Bundle.module` sur les deux plateformes.
+      resources: [.process("Ressources")],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
     .executableTarget(

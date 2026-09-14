@@ -68,6 +68,23 @@ cat >"$bundle/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key><string>0.2</string>
   <key>CFBundleVersion</key><string>3</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <!--
+    LES LANGUES SERVIES, ET CE N'EST PAS DÉCORATIF.
+
+    Sans ces deux clés, l'application n'annonce AUCUNE langue : le système lui
+    donne alors l'anglais par défaut, et les tables de traduction du paquet
+    répondent en anglais — MESURÉ sur le binaire nu, où l'interface basculait en
+    anglais sans qu'on ait rien demandé. `CFBundleDevelopmentRegion` dit la
+    langue de référence (le français, comme les clés et les commentaires), et
+    `CFBundleLocalizations` déclare les deux langues servies : le système choisit
+    alors celle de l'utilisateur, et retombe sur le français.
+  -->
+  <key>CFBundleDevelopmentRegion</key><string>fr</string>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>fr</string>
+    <string>en</string>
+  </array>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict>

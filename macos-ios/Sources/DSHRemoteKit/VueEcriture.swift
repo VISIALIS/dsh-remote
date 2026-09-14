@@ -51,13 +51,14 @@ struct ComposeurEcriture: View {
         // unique du modèle faisait suivre le texte d'une session à l'autre :
         // un message écrit pour l'une pouvait partir vers l'autre.
         TextField(
-          "Écrire à cette session…",
           text: Binding(
             get: { modele.brouillon(pour: session.id) },
             set: { modele.definirBrouillon($0, pour: session.id) }
           ),
           axis: .vertical
-        )
+        ) {
+          T("Écrire à cette session…")
+        }
         .textFieldStyle(.plain)
         .lineLimit(1...5)
         .focused($champActif)
@@ -82,8 +83,8 @@ struct ComposeurEcriture: View {
           )
           .disabled(modele.brouillonVide(pour: session.id))
           .cibleTactile()
-          .help("Envoyer")
-          .accessibilityLabel("Envoyer le message")
+          .help(T("Envoyer"))
+          .accessibilityLabel(T("Envoyer le message"))
         }
 
         if modele.estEnCours(session.id), modele.annulationPossible {
@@ -105,19 +106,19 @@ struct ComposeurEcriture: View {
           .buttonStyle(.plain)
           .foregroundStyle(Color.red)
           .cibleTactile()
-          .help("Interrompre le tour en cours — la file d'attente est conservée")
-          .accessibilityLabel("Interrompre le tour en cours")
+          .help(T("Interrompre le tour en cours — la file d'attente est conservée"))
+          .accessibilityLabel(T("Interrompre le tour en cours"))
           .confirmationDialog(
             "Interrompre le tour en cours ?",
             isPresented: $confirmationInterruption,
             titleVisibility: .visible
           ) {
-            Button("Interrompre", role: .destructive) {
+            Button(L("Interrompre"), role: .destructive) {
               Task { await modele.annulerTour(session) }
             }
-            Button("Annuler", role: .cancel) {}
+            Button(L("Annuler"), role: .cancel) {}
           } message: {
-            Text("Le travail déjà fait est conservé, et la file d'attente aussi.")
+            T("Le travail déjà fait est conservé, et la file d'attente aussi.")
           }
         }
       }
@@ -151,12 +152,12 @@ struct ComposeurEcriture: View {
       Button {
         definirMode(.queue)
       } label: {
-        Label("À la suite", systemImage: mode == .queue ? "checkmark" : "text.badge.plus")
+        Label { T("À la suite") } icon: { Image(systemName: mode == .queue ? "checkmark" : "text.badge.plus") }
       }
       Button {
         definirMode(.steer)
       } label: {
-        Label("Tout de suite (interrompt)", systemImage: mode == .steer ? "checkmark" : "bolt.fill")
+        Label { T("Tout de suite (interrompt)") } icon: { Image(systemName: mode == .steer ? "checkmark" : "bolt.fill") }
       }
     } label: {
       Image(systemName: mode == .queue ? "text.badge.plus" : "bolt.fill")

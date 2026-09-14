@@ -85,7 +85,7 @@ struct VueServeur: View {
         }
         Spacer(minLength: 8)
         if modele.serveurChoisi == serveur {
-          Label("serveur courant", systemImage: "checkmark.circle.fill")
+          Label { T("serveur courant") } icon: { Image(systemName: "checkmark.circle.fill") }
             .font(.caption)
             .foregroundStyle(Color.accentColor)
         }
@@ -195,7 +195,7 @@ struct VueServeur: View {
   /// voisines auraient redit la même séparation que le texte.
   private var carteDiagnostic: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Diagnostic")
+      T("Diagnostic")
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(.secondary)
 
@@ -232,7 +232,7 @@ struct VueServeur: View {
       }
       .padding(.top, 10)
     } label: {
-      Label("Réglages de cette machine", systemImage: "slider.horizontal.3")
+      Label { T("Réglages de cette machine") } icon: { Image(systemName: "slider.horizontal.3") }
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(.secondary)
     }
@@ -250,17 +250,21 @@ struct VueServeur: View {
   private var suiviEtFiltre: some View {
     VStack(alignment: .leading, spacing: 10) {
       Toggle(
-        "Suivre l'activité",
         isOn: Binding(
           get: { modele.preferences(pour: serveur.adresse).suivi },
-          set: { actif in modele.definirPreferences(pour: serveur.adresse) { $0.suivi = actif } }))
+          set: { actif in modele.definirPreferences(pour: serveur.adresse) { $0.suivi = actif } })
+      ) {
+        T("Suivre l'activité")
+      }
       Toggle(
-        "Chargées en mémoire seulement",
         isOn: Binding(
           get: { modele.preferences(pour: serveur.adresse).chargeesSeulement },
           set: { actif in
             modele.definirPreferences(pour: serveur.adresse) { $0.chargeesSeulement = actif }
-          }))
+          })
+      ) {
+        T("Chargées en mémoire seulement")
+      }
 
       Text(
         modele.serveurVise?.id == serveur.id
@@ -289,7 +293,7 @@ struct VueServeur: View {
   /// `serveur.adresse`.
   private var jeton: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text("Jeton d'appareil de cet hôte")
+      T("Jeton d'appareil de cet hôte")
         .font(.caption)
         .foregroundStyle(.secondary)
       HStack(spacing: 8) {
@@ -324,7 +328,7 @@ struct VueServeur: View {
           .labelStyle(.iconOnly)
           .buttonStyle(.borderless)
           .cibleTactile()
-          .accessibilityLabel("Coller le jeton depuis le presse-papier")
+          .accessibilityLabel(T("Coller le jeton depuis le presse-papier"))
         #else
           Button {
             // UN COLLAGE REFUSÉ SE DIT : un presse-papiers vide ne doit pas
@@ -337,7 +341,7 @@ struct VueServeur: View {
           }
           .buttonStyle(.borderless)
           .cibleTactile()
-          .accessibilityLabel("Coller le jeton depuis le presse-papier")
+          .accessibilityLabel(T("Coller le jeton depuis le presse-papier"))
         #endif
         if modele.jetonDisponible(pour: serveur.adresse) {
           Button {
@@ -347,7 +351,7 @@ struct VueServeur: View {
           }
           .buttonStyle(.borderless)
           .cibleTactile()
-          .accessibilityLabel("Effacer le jeton")
+          .accessibilityLabel(T("Effacer le jeton"))
         }
       }
 
@@ -373,10 +377,7 @@ struct VueServeur: View {
       // connexion en cours, pas d'une fiche qu'on consulte.
       if modele.jetonRefuseParLeService, ModeleApp.vise(modele.adresse, serveur) {
         VStack(alignment: .leading, spacing: 8) {
-          Label(
-            "Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien.",
-            systemImage: "key"
-          )
+          Label { T("Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien.") } icon: { Image(systemName: "key") }
           .font(.caption)
           .foregroundStyle(.orange)
           .fixedSize(horizontal: false, vertical: true)
@@ -387,11 +388,11 @@ struct VueServeur: View {
           // C'est la sortie de secours qui manquait : un jeton étranger refusé
           // laissait l'application bloquée, sans autre issue qu'un recollage.
           if modele.jetonDuCoffreDiffert(pour: serveur.adresse) {
-            Text("Le coffre du harness de cette machine contient un AUTRE jeton.")
+            T("Le coffre du harness de cette machine contient un AUTRE jeton.")
               .font(.caption)
               .foregroundStyle(.secondary)
               .fixedSize(horizontal: false, vertical: true)
-            Button("Essayer le jeton du coffre") {
+            Button(L("Essayer le jeton du coffre")) {
               modele.adopterLeJetonDuCoffre(pour: serveur.adresse)
               Task { await modele.choisirEtConnecter(serveur) }
             }
@@ -401,7 +402,7 @@ struct VueServeur: View {
         }
       }
 
-      Text("Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il n'est jamais renvoyé par une route.")
+      T("Il s'affiche une seule fois, dans la sortie du harness, au premier chargement du plugin sur cette machine. Il n'est jamais renvoyé par une route.")
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -430,7 +431,7 @@ struct VueServeur: View {
           .fixedSize(horizontal: false, vertical: true)
           .padding(.top, 8)
       } label: {
-        Label("Détail technique", systemImage: "text.alignleft")
+        Label { T("Détail technique") } icon: { Image(systemName: "text.alignleft") }
           .font(.subheadline.weight(.semibold))
           .foregroundStyle(.secondary)
       }
@@ -483,7 +484,7 @@ struct VueServeur: View {
       #if os(macOS)
         // SUR macOS, l'appareil qui affiche la page est aussi celui qui a le CLI :
         // la commande est le moyen le plus direct, et elle se copie.
-        Text("Ou, en ligne de commande :")
+        T("Ou, en ligne de commande :")
           .font(.caption)
           .foregroundStyle(.secondary)
         LigneCommande(commande: "tailscale status")
@@ -492,17 +493,17 @@ struct VueServeur: View {
     case 2:
       // LA MACHINE VISÉE, pas cet appareil-ci : ces commandes se tapent SUR ELLE.
       if connue {
-        Text("Allumez cette machine-là, et vérifiez que Tailscale y est connecté :")
+        T("Allumez cette machine-là, et vérifiez que Tailscale y est connecté :")
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
         LigneCommande(commande: "tailscale status")
-        Text("S'il n'y est pas connecté :")
+        T("S'il n'y est pas connecté :")
           .font(.caption)
           .foregroundStyle(.secondary)
         LigneCommande(commande: "tailscale up")
       } else {
-        Text("Vérifiez l'état du tailnet, sur cette machine-là ou sur une autre :")
+        T("Vérifiez l'état du tailnet, sur cette machine-là ou sur une autre :")
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
@@ -512,7 +513,7 @@ struct VueServeur: View {
       if connue {
         DemarchePublicationPort()
       } else {
-        Text("Vérifiez sur cette machine ce qui est publié :")
+        T("Vérifiez sur cette machine ce qui est publié :")
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
