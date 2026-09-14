@@ -2031,7 +2031,7 @@ iOS, où la feuille est le lieu prévu.
 
 L'écran de réglages ne dit plus qu'il est vide : il porte l'état de **cet appareil**
 (Tailscale, tailnet, exceptions ATS du paquet construit), le chemin du fichier de
-diagnostic — copiable —, et les versions. L'état de l'appareil y est à sa place : il
+diagnostic — copiable —, les versions, et la section **Réinitialiser** (voir plus bas). L'état de l'appareil y est à sa place : il
 est la première étape du parcours de **chaque** machine, et il n'était lisible nulle
 part quand aucune machine n'est connue — exactement l'état d'un appareil neuf.
 
@@ -2073,6 +2073,50 @@ un test de persistance instable pour rien.
 alors que l'utilisateur **demande** ce collage. `PasteButton` exprime la même intention
 au système, qui accorde l'accès sans bannière. La validation, elle, reste la même des
 deux côtés (`ModeleApp.jetonPlausible`), et le message d'échec n'est écrit qu'une fois.
+
+### « Réinitialiser l'application » : le seul geste irréversible, et ce qu'il dit
+
+L'application garde des secrets et des préférences, et **rien** ne permettait de les
+effacer : une adresse mémorisée par erreur ne partait qu'en désinstallant, et des jetons
+d'appareil de machines qu'on ne visite plus restaient vivants. Les réglages portent donc
+une section **Réinitialiser**, avec un bouton destructif, une confirmation, et un compte
+rendu.
+
+**CE QU'ELLE EFFACE.** Les jetons d'appareil **tous**, y compris ceux d'hôtes qu'on ne
+visite plus — c'est le cas que le geste doit couvrir, et `GardienDeJetons.effacerTout()`
+énumère au lieu de supprimer « ceux qu'on connaît » ; l'adresse et le nom mémorisés ;
+les préférences par serveur ; l'état de navigation (espaces dépliés, mode d'envoi,
+session consultée) ; le réglage des alertes ; le fichier de diagnostic.
+
+**CE QU'ELLE NE TOUCHE PAS, ET QUI EST DIT À L'ÉCRAN.** Le **jeton du harness**, sur le
+Mac : il vit dans son coffre, pas dans cette application. Et le **fichier d'amorçage**
+déposé à la main : l'application ne le crée jamais, le supprimer serait effacer le
+travail de quelqu'un d'autre — mais il **ré-amorcera** au lancement suivant, donc une
+réinitialisation qui se tairait serait un mensonge par omission. Le compte rendu le
+nomme.
+
+**LE DÉFAUT QUE LES TESTS ONT TROUVÉ, ET QUI SE SERAIT VU PLUS TARD.** `toutOublier()`
+retire les clés du disque ; le modèle, lui, gardait en mémoire ce qu'il avait **lu**
+(`navigation`, `preferences`). La première écriture venue — un espace qu'on déplie, un
+mode d'envoi qu'on change — les réécrivait : l'appareil se disait vierge et se réveillait
+avec les réglages d'hier. `reinitialiser()` remet donc aussi les miroirs à zéro, et un
+test le tient : mesuré, sans cette remise à zéro, il échoue sur `modeEnvoi` (`.steer` au
+lieu de `.queue`) et sur `sessionConsultee` (`session-1` au lieu de `nil`).
+
+**LE COMPTE RENDU DIT DES NOMBRES, PAS DES INTENTIONS.** `effacerTout()` ne compte que
+les suppressions **réussies** — annoncer « 3 » parce qu'on a *demandé* trois
+suppressions serait un compte rendu faux —, et l'écran affiche « aucun jeton n'était
+gardé » sur un appareil déjà propre, jamais « 0 jeton » comme un échec. Le mot
+« trousseau » a été retiré de cette ligne : sur macOS les jetons vivent en mémoire
+(`GardienParDefaut`), pas dans le trousseau, et la phrase doit être vraie des deux côtés.
+
+**LA CONFIRMATION ELLE-MÊME A ÉTÉ MESURÉE.** Une action irréversible derrière une touche
+réflexe serait un défaut de sécurité : ÉCHAP déclenche-t-il « Tout effacer » ? Mesuré sur
+une sonde SwiftUI isolée, à la structure exacte de `VueReglages` : **ÉCHAP annule**,
+**RETOUR n'agit pas** (aucun bouton par défaut), et le clic explicite sur « Tout effacer »
+déclenche bien l'action — contrôle positif compris, sans quoi « ÉCHAP annule » ne
+prouverait rien. La sonde est versionnée dans `Sondes/dialogue` avec sa procédure
+(`Sondes/README.md`).
 
 ### Deux points de l'audit qu'on ne corrige PAS, et pourquoi
 
@@ -2163,6 +2207,16 @@ redécouvre pas comme des oublis.
   commits, alors que ce même fichier affirmait déjà l'installation : deux
   affirmations incompatibles dans un document dont l'argument EST le tableau des
   preuves, c'est précisément ce que la RÈGLE #5 interdit.
+- **L'effacement des jetons dans le trousseau d'un iPhone RÉEL.**
+  `TrousseauDeLaMachine.effacerTout()` est écrit, compilé, et sa requête est close sur
+  le service `org.example.dsh-remote` — elle ne peut donc pas viser le mot de passe
+  d'une autre application. Mais il n'est pas exercé par un test : sur macOS le gardien
+  par défaut est **en mémoire** (`GardienParDefaut`), et les tests emploient une
+  doublure. Ce qui EST prouvé, c'est le compte rendu (6 tests, dont « aucune
+  suppression non réussie n'est comptée »), la remise à zéro du modèle, et le fait que
+  le geste est à l'écran avec sa confirmation. La mesure qui manque — appairer un
+  iPhone, réinitialiser, vérifier que l'appairage est bien perdu — se fait sur
+  l'appareil, et elle coûte un réappairage.
 - **Les questions de l'agent et les approbations.** Le composeur envoie un message,
   il ne répond pas à un `ask_user` ni à une demande de permission : ces surfaces ne
   sont pas exposées par le plugin, pour la raison documentée dans son README.
@@ -2358,13 +2412,15 @@ Sources/
 │   ├── VueAjoutServeur.swift  # page « Ajouter un serveur »
 │   ├── FeuilleAdresse.swift  # adresse ET jeton — le seul écran qu'un appareil neuf puisse ouvrir
 │   ├── VueEcriture.swift  # composeur (écrire, interrompre)
-│   └── VueReglages.swift  # réglages généraux — vides à dessein, et ils le disent
+│   └── VueReglages.swift  # cet appareil, alertes, diagnostic, réinitialisation, versions
 ├── DSHRemoteCtl/          # tool de validation (macOS)
 │   └── main.swift
 └── DSHRemoteApp/          # application macOS : `swift run DSHRemoteMac`
     └── main.swift
 Tests/
 └── DSHRemoteKitTests/     # décodage des charges utiles réelles, écriture, rappels de fin
+Sondes/
+└── dialogue/              # sonde isolée : que fait ÉCHAP sur une confirmation destructive ?
 ```
 
 L'interface vit dans la **bibliothèque**, pas dans une cible d'application : c'est
@@ -2515,6 +2571,10 @@ inactive.
 | **Le nom d'une machine ne s'écrit qu'une fois** | captures avant/après : barre de titre de fenêtre ET bande d'identité → barre de titre seule |
 | **Deux machines qui partageaient « MacBook » se distinguent** | capture des données réelles : « MacBook Air » et « MacBook Pro », là où deux vignettes disaient « MacBook » — 5 tests sur `NomsCourts` |
 | **L'état de navigation fait un aller-retour** | 2 tests : espaces triés relus par un SECOND modèle sur le même domaine ; une session mémorisée n'est rouverte que si l'hôte la nomme |
+| **La réinitialisation efface TOUS les jetons, y compris d'hôtes oubliés** | 6 tests (`ReinitialisationTests`) : deux jetons dont un d'une machine qu'on ne visite plus, modèle ramené à neuf, diagnostic effacé, fichier d'amorçage CONSERVÉ **et nommé**, nombres réels, second passage qui dit « aucun jeton n'était gardé » |
+| **Après elle, les réglages d'avant ne reviennent pas** | test dédié, et défaut RÉINTRODUIT pour vérifier qu'il le tient : sans la remise à zéro des miroirs, il échoue sur `modeEnvoi` (`.steer` au lieu de `.queue`) et sur `sessionConsultee` (`session-1` au lieu de `nil`) |
+| **Le geste est à l'écran, et il annonce ce qu'il fait** | captures de l'application INSTALLÉE (`/Applications/DSH Remote.app`) : section « Réinitialiser », bouton destructif, pied nommant ce qui n'est PAS effacé, puis la confirmation « Réinitialiser l'application ? » avec « Annuler » et « Tout effacer » |
+| **ÉCHAP n'efface pas** | sonde SwiftUI isolée, à la structure exacte de `VueReglages` (`Sondes/dialogue`, procédure dans `Sondes/README.md`) : ÉCHAP → `ISSUE=annule` sur les deux variantes, RETOUR → rien (aucun bouton par défaut), clic sur « Tout effacer » → `ISSUE=destructif` — contrôle positif compris |
 | **Le collage iOS ne lit plus le presse-papiers à l'insu de l'utilisateur** | `PasteButton` des deux côtés (feuille Adresse, page d'une machine) ; compilation iOS complète par `Scripts/construire-app-ios.sh --simulateur` → `BUILD SUCCEEDED` |
 | **L'iPad en anglais, sur simulateur** | langue du simulateur passée à l'anglais, application relancée, capture : « DeepSeek Harness server », « Needs your attention », « Workspaces », « No session open », « DSH · host », « no DSH », « offline » — et les deux colonnes de l'iPad |
 | **Le paquet iOS porte les deux tables** | dans le `.app` construit : `DSHRemote_DSHRemoteKit.bundle/{fr,en}.lproj/Localizable.strings`, **141 entrées** chacun, et `CFBundleLocalizations = [fr, en]` |

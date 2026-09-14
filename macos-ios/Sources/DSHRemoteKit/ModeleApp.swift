@@ -1961,6 +1961,85 @@ public final class ModeleApp {
     return await appairer(brut)
   }
 
+  /// CE QU'UNE RÉINITIALISATION A EFFECTIVEMENT EFFACÉ.
+  ///
+  /// POURQUOI UN COMPTE RENDU, ET PAS SEULEMENT UN EFFET. Un bouton qui ne dit pas
+  /// ce qu'il a fait ne vaut pas mieux qu'un bouton sans effet : l'utilisateur ne
+  /// peut pas savoir si ses jetons sont partis, ni si le fichier d'amorçage va
+  /// tout ramener au lancement suivant. Ces trois nombres et ces deux drapeaux
+  /// sont ce que l'écran affiche.
+  public struct RapportDeReinitialisation: Equatable, Sendable {
+    public let jetonsEffaces: Int
+    public let clesOubliees: Int
+    public let diagnosticEfface: Bool
+    /// Un fichier d'amorçage est présent, et il N'A PAS été touché : il ré-amorcera
+    /// l'application au lancement suivant. Le dire est le seul moyen de ne pas
+    /// mentir sur ce que « réinitialiser » a fait.
+    public let amorcageRestant: Bool
+  }
+
+  /// RÉINITIALISE L'APPLICATION SUR CET APPAREIL.
+  ///
+  /// CE QU'ELLE EFFACE : les jetons d'appareil du trousseau (TOUS, y compris ceux
+  /// d'hôtes qu'on ne visite plus — voir `GardienDeJetons.effacerTout`), l'adresse
+  /// et le nom mémorisés, les préférences par serveur, l'état de navigation, le
+  /// réglage des alertes, et le fichier de diagnostic.
+  ///
+  /// CE QU'ELLE NE TOUCHE PAS, ET QUI EST DIT À L'ÉCRAN : le jeton du harness sur
+  /// le Mac (il vit dans son coffre, pas ici), et le **fichier d'amorçage** déposé
+  /// à la main — que l'application ne crée jamais, et qui la ré-amorcerait au
+  /// lancement suivant.
+  ///
+  /// ELLE EST IRRÉVERSIBLE : un jeton effacé se retrouve en réappairant, pas en
+  /// annulant. C'est pourquoi l'appelant demande confirmation AVANT.
+  @discardableResult
+  public func reinitialiser() async -> RapportDeReinitialisation {
+    // L'AMORÇAGE EST LU AVANT TOUT : après le geste, la réponse doit décrire ce
+    // qui RESTE, pas ce qui était là.
+    let amorcage = persistance.amorcagePresent
+    let jetons = gardien.effacerTout()
+    let cles = persistance.toutOublier()
+    let diagnostic = persistance.effacerDiagnostic()
+    // LE MODÈLE REVIENT À L'ÉTAT D'UN APPAREIL NEUF. On réutilise `oublierServeur`
+    // — une seule remise à zéro, celle qui est éprouvée — plutôt que d'en écrire
+    // une seconde, qui oublierait forcément un champ.
+    oublierServeur()
+    // LES MIROIRS EN MÉMOIRE AUSSI — sans quoi la remise à zéro serait partielle
+    // et se verrait plus tard. `toutOublier` a retiré les clés du disque, mais le
+    // modèle garde encore ce qu'il avait LU : l'état de navigation (mode d'envoi,
+    // session consultée, espaces dépliés) et les préférences par serveur. La
+    // première écriture venue — un espace qu'on déplie, un mode qu'on change —
+    // les remettrait sur le disque, et l'appareil « remis à zéro » retrouverait
+    // les réglages d'avant.
+    navigation = EtatDeNavigation()
+    preferences = [:]
+    alertesActives = false
+    return RapportDeReinitialisation(
+      jetonsEffaces: jetons, clesOubliees: cles, diagnosticEfface: diagnostic,
+      amorcageRestant: amorcage)
+  }
+
+  /// Le texte du compte rendu — écrit ici pour que l'écran n'invente rien.
+  public func texteDuRapport(_ rapport: RapportDeReinitialisation) -> String {
+    var morceaux: [String] = []
+    morceaux.append(
+      rapport.jetonsEffaces == 0
+        ? L("aucun jeton n'était gardé")
+        : String(format: L("%d jeton(s) d'appareil effacé(s)"), rapport.jetonsEffaces))
+    morceaux.append(
+      rapport.clesOubliees == 0
+        ? L("aucune préférence à oublier")
+        : String(format: L("%d préférence(s) oubliée(s)"), rapport.clesOubliees))
+    if rapport.diagnosticEfface { morceaux.append(L("diagnostic effacé")) }
+    if rapport.amorcageRestant {
+      morceaux.append(
+        L(
+          "le fichier d'amorçage est TOUJOURS LÀ : il ramènera l'adresse et le jeton au prochain lancement. Supprimez-le depuis le Mac si vous voulez une remise à zéro complète."
+        ))
+    }
+    return morceaux.joined(separator: " · ")
+  }
+
   /// Oublie le serveur mémorisé, adresse comprise.
   ///
   /// Sans cela, une adresse mémorisée par erreur ne pourrait être retirée qu'en
@@ -2766,3 +2845,4 @@ public final class ModeleApp {
       empreinteJeton: empreinteJeton, longueurJeton: longueurJeton)
   }
 }
+

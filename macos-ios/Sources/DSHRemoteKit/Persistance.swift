@@ -198,6 +198,55 @@ public struct Persistance {
 
   // MARK: - Le diagnostic d'un échec
 
+  /// EFFACE TOUT CE QUE L'APPLICATION A ÉCRIT DANS LES PRÉFÉRENCES, ET LE DIT.
+  ///
+  /// POURQUOI ELLE EST ICI, ET PAS DANS LE MODÈLE. Les clés sont définies dans ce
+  /// fichier : les énumérer ailleurs, c'est se donner une liste à tenir à jour —
+  /// et la première clé ajoutée sans y penser serait celle qu'une
+  /// réinitialisation oublierait.
+  ///
+  /// - Returns: le nombre de clés effectivement retirées, pour le compte rendu.
+  @discardableResult
+  public func toutOublier() -> Int {
+    var retirees = 0
+    for cle in [
+      Self.cleAdresse, Self.cleNomServeur, Self.clePreferences, Self.cleNavigation, Self.cleAlertes,
+    ] where defaults.object(forKey: cle) != nil {
+      defaults.removeObject(forKey: cle)
+      retirees += 1
+    }
+    return retirees
+  }
+
+  /// LE FICHIER D'AMORÇAGE EST-IL LÀ ? — et il n'est PAS effacé, délibérément.
+  ///
+  /// POURQUOI ON LE SIGNALE SANS LE SUPPRIMER. L'application ne l'écrit jamais :
+  /// il a été déposé à la main, pour essayer, et le supprimer serait effacer le
+  /// travail de quelqu'un d'autre. Mais s'il est là, il **ré-amorcera** au
+  /// lancement suivant — adresse et jeton reviendront. Une réinitialisation qui
+  /// ne le dit pas est celle qui ment : l'écran doit donc le nommer.
+  public var amorcagePresent: Bool {
+    guard let documents else { return false }
+    return FileManager.default.fileExists(
+      atPath: documents.appendingPathComponent(Self.nomDuFichierDAmorcage).path)
+  }
+
+  /// Efface le fichier de diagnostic, s'il existe. Rend `true` s'il a été retiré.
+  @discardableResult
+  public func effacerDiagnostic() -> Bool {
+    guard let documents else { return false }
+    let chemin = documents.appendingPathComponent(Self.nomDuDiagnostic)
+    guard FileManager.default.fileExists(atPath: chemin.path) else { return false }
+    do {
+      try FileManager.default.removeItem(at: chemin)
+      return true
+    } catch {
+      // Un fichier qu'on n'a pas pu retirer n'est pas un fichier retiré : on ne
+      // l'annonce pas comme tel.
+      return false
+    }
+  }
+
   /// Écrit la dernière erreur de connexion dans le conteneur de l'application.
   ///
   /// POURQUOI. Un message d'erreur affiché à l'écran d'un téléphone est difficile

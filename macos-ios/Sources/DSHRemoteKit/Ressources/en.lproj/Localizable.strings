@@ -3,6 +3,8 @@
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
    144 clés. */
 
+"%d jeton(s) d'appareil effacé(s)" = "%d device token(s) erased";
+"%d préférence(s) oubliée(s)" = "%d preference(s) forgotten";
 "1. Avoir le dépôt `dsh-plugins` sur cette machine, et y prendre `plugins/dsh-remote`." = "1. Have the `dsh-plugins` repository on that machine, and take `plugins/dsh-remote` from it.";
 "2. Déclarer le plugin dans `~/.dsh/profiles/web/cordis.patch.yml` :" = "2. Declare the plugin in `~/.dsh/profiles/web/cordis.patch.yml`:";
 "3. Relancer le harness sur cette machine — ici `dsh web`. Le CODE d'un plugin n'est pas rechargé à chaud : sans redémarrage, l'ancien processus continue de répondre." = "3. Restart the harness on that machine — here, `dsh web`. A plugin's CODE is not hot-reloaded: without a restart, the old process keeps answering.";
@@ -21,9 +23,11 @@
 "au repos" = "idle";
 "aucun" = "none";
 "Aucun dossier de documents : cette exécution n'écrit pas de diagnostic." = "No documents folder: this run does not write a diagnostic.";
+"aucun jeton n'était gardé" = "no token was kept";
 "aucun modèle n'est disponible pour cette session : choisissez-en un sur l'hôte" = "no model is available for this session: choose one on the host";
 "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond." = "No service is listening on that machine's port 80. The tailnet itself works: the machine answers.";
 "Aucun événement" = "No events";
+"aucune préférence à oublier" = "no preference to forget";
 "aucune session" = "no sessions";
 "Aucune session" = "No sessions";
 "Aucune session en mémoire" = "No sessions in memory";
@@ -58,6 +62,7 @@
 "Demande votre attention" = "Needs your attention";
 "demandez un nouveau code dans le panneau « Appairer un appareil » du Mac." = "Ask for a new code in the “Pair a device” panel on the Mac.";
 "Diagnostic" = "Diagnostic";
+"diagnostic effacé" = "diagnostic erased";
 "DSH" = "DSH";
 "DSH Remote" = "DSH Remote";
 "DSH Remote doit y répondre : publier DSH ne suffit pas." = "DSH Remote must answer there: publishing DSH is not enough.";
@@ -67,6 +72,7 @@
 "DSH · hôte" = "DSH · host";
 "DSH · hôte interrogé" = "DSH · host queried";
 "Détail technique" = "Technical detail";
+"Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit." = "Erases the device tokens kept on this device — ALL of them, including those of machines you no longer visit —, the remembered address and name, the per-server preferences, the last consulted session, the alerts setting and the diagnostic file. The harness token, on the Mac, is not touched. A hand-placed bootstrap file is NOT erased: it would bring the address and token back on the next launch, and the report says so.";
 "Effacer la recherche" = "Clear the search";
 "Effacer le jeton" = "Clear the token";
 "Effacer le jeton saisi" = "Clear the entered token";
@@ -96,6 +102,7 @@
 "L'ordre est celui du travail : chaque étape suppose la précédente. Les étapes grisées restent lisibles — dépliez « Voir la méthode » si vous les avez déjà faites, ou pour savoir ce qui vous attend." = "The order is the order of the work: each step assumes the previous one. Greyed steps stay readable — unfold “See the method” if you have already done them, or to see what awaits you.";
 "La machine à ajouter est sur le tailnet" = "The machine to add is on the tailnet";
 "Le coffre du harness de cette machine contient un AUTRE jeton." = "The harness vault on that machine holds a DIFFERENT token.";
+"le fichier d'amorçage est TOUJOURS LÀ : il ramènera l'adresse et le jeton au prochain lancement. Supprimez-le depuis le Mac si vous voulez une remise à zéro complète." = "the bootstrap file is STILL THERE: it will bring the address and token back on the next launch. Delete it from the Mac for a complete reset.";
 "le fuseau horaire envoyé n'est pas reconnu" = "the time zone sent is not recognised";
 "Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre." = "The token is not what failed here: nothing could be reached. Note that it is SPECIFIC TO EACH HOST — this machine's token will not work for another.";
 "Le journal n'a pas pu être lu." = "The journal could not be read.";
@@ -119,6 +126,7 @@
 "Lecture du journal…" = "Reading the journal…";
 "Les afficher toutes" = "Show them all";
 "Les erreurs qu'aucune explication ne couvre y sont écrites : l'adresse visée, le message, la longueur du jeton et une empreinte de celui-ci. Le jeton lui-même n'y est jamais recopié." = "Errors that no explanation covers are written there: the address targeted, the message, the token length and a fingerprint of it. The token itself is never copied there.";
+"Les jetons gardés sur cet appareil seront effacés : il faudra réappairer pour retrouver l'accès. Cette action ne se défait pas." = "The tokens kept on this device will be erased: you will have to pair again to regain access. This action cannot be undone.";
 "Les sessions de cette machine apparaîtront ici. Lancez-en une sur le Mac, ou choisissez une autre machine ci-dessus." = "This machine's sessions will appear here. Start one on the host, or choose another machine above.";
 "Marquer comme vu" = "Mark as seen";
 "Me prévenir quand l'agent attend ou termine" = "Notify me when the agent waits or finishes";
@@ -133,6 +141,9 @@
 "Rafraîchir" = "Refresh";
 "Rechercher une session" = "Search for a session";
 "Rechercher une session, un projet…" = "Search a session or a project…";
+"Réinitialiser" = "Reset";
+"Réinitialiser l'application" = "Reset the app";
+"Réinitialiser l'application ?" = "Reset the app?";
 "Rien à coller : le presse-papier est vide. Copiez le texte affiché sous le QR code du panneau « Appairer un appareil »." = "Nothing to paste: the clipboard is empty. Copy the text shown under the QR code in the “Pair a device” panel.";
 "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet." = "Nothing can be reached on this machine while it is offline on the tailnet.";
 "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas." = "Nothing answers on its port 80: `tailscale serve` does not publish it.";
@@ -159,6 +170,7 @@
 "tour en cours" = "turn in progress";
 "tout de suite (interrompt le tour en cours)" = "right away (interrupts the current turn)";
 "Tout de suite (interrompt)" = "Right away (interrupts)";
+"Tout effacer" = "Erase everything";
 "Un nouvel événement — aller à la fin du journal" = "A new event — go to the end of the journal";
 "Un tour vient de se terminer" = "A turn just finished";
 "Une alerte part quand une session se met à ATTENDRE une réponse, ou quand un tour se termine — jamais pour ce que vous êtes en train de regarder. Elle n'est envoyée que tant que l'application tourne : iOS la suspend en arrière-plan, et la réveiller demanderait un serveur de notification, que ce projet n'a pas." = "An alert is sent when a session STARTS waiting for an answer, or when a turn finishes — never for what you are already looking at. It is only sent while the application is running: iOS suspends it in the background, and waking it up would require a notification server, which this project does not have.";

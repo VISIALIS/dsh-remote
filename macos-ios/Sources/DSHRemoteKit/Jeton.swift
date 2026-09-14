@@ -22,6 +22,19 @@ public protocol GardienDeJetons: Sendable {
   func lire(pour hote: String) -> String?
   func ecrire(_ valeur: String, pour hote: String)
   func effacer(pour hote: String)
+  /// EFFACE TOUS LES JETONS DE CETTE APPLICATION, ET REND LE COMPTE.
+  ///
+  /// POURQUOI CE N'EST PAS « effacer(pour:) » APPLIQUÉ AUX HÔTES CONNUS. Un hôte
+  /// qu'on a retiré de la liste n'est plus connu de l'application — et son jeton
+  /// resterait dans le trousseau, vivant, pour une machine qu'on ne visite plus.
+  /// Une réinitialisation qui laisserait ces entrées-là serait celle qui ment :
+  /// elle dirait « tout est effacé » en gardant des accès.
+  ///
+  /// LE COMPTE EST RENDU, et il n'est pas décoratif : c'est ce que l'écran affiche
+  /// après le geste. Un bouton qui ne dit pas ce qu'il a fait ne vaut pas mieux
+  /// qu'un bouton sans effet.
+  @discardableResult
+  func effacerTout() -> Int
 }
 
 /// Le trousseau de la machine : le jeton ne doit JAMAIS atterrir dans les
@@ -82,6 +95,15 @@ public final class GardienEnMemoire: GardienDeJetons, @unchecked Sendable {
     defer { verrou.unlock() }
     jetons[hote] = nil
   }
+
+  @discardableResult
+  public func effacerTout() -> Int {
+    verrou.lock()
+    defer { verrou.unlock() }
+    let compte = jetons.count
+    jetons.removeAll()
+    return compte
+  }
 }
 
 public struct TrousseauDeLaMachine: GardienDeJetons {
@@ -135,6 +157,45 @@ public struct TrousseauDeLaMachine: GardienDeJetons {
         kSecAttrAccount as String: Self.compte(pour: hote),
       ]
       SecItemDelete(requete as CFDictionary)
+    #endif
+  }
+
+  /// EFFACE TOUT CE QUE CETTE APPLICATION A DÉPOSÉ — et rien d'autre.
+  ///
+  /// LA REQUÊTE EST CLOSE SUR NOTRE `service` : c'est ce qui garantit qu'on ne
+  /// touche à aucun autre mot de passe de l'appareil. On ÉNUMÈRE au lieu de
+  /// supprimer en bloc parce que `SecItemDelete` veut une requête qui désigne des
+  /// entrées ; on supprime donc compte par compte, en comptant.
+  ///
+  /// UN ÉCHEC DE SUPPRESSION N'EST PAS COMPTÉ. Rendre « 3 » parce qu'on a
+  /// DEMANDÉ trois suppressions serait un compte rendu faux — et c'est exactement
+  /// ce que l'écran ne doit pas afficher.
+  @discardableResult
+  public func effacerTout() -> Int {
+    #if canImport(Security)
+      let requete: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: Self.service,
+        kSecReturnAttributes as String: true,
+        kSecMatchLimit as String: kSecMatchLimitAll,
+      ]
+      var resultat: CFTypeRef?
+      guard SecItemCopyMatching(requete as CFDictionary, &resultat) == errSecSuccess,
+        let trouves = resultat as? [[String: Any]]
+      else { return 0 }
+      var effaces = 0
+      for entree in trouves {
+        guard let compte = entree[kSecAttrAccount as String] as? String else { continue }
+        let cible: [String: Any] = [
+          kSecClass as String: kSecClassGenericPassword,
+          kSecAttrService as String: Self.service,
+          kSecAttrAccount as String: compte,
+        ]
+        if SecItemDelete(cible as CFDictionary) == errSecSuccess { effaces += 1 }
+      }
+      return effaces
+    #else
+      return 0
     #endif
   }
 }

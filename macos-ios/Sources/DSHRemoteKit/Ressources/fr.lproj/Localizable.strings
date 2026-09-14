@@ -3,6 +3,8 @@
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
    144 clés. */
 
+"%d jeton(s) d'appareil effacé(s)" = "%d jeton(s) d'appareil effacé(s)";
+"%d préférence(s) oubliée(s)" = "%d préférence(s) oubliée(s)";
 "1. Avoir le dépôt `dsh-plugins` sur cette machine, et y prendre `plugins/dsh-remote`." = "1. Avoir le dépôt `dsh-plugins` sur cette machine, et y prendre `plugins/dsh-remote`.";
 "2. Déclarer le plugin dans `~/.dsh/profiles/web/cordis.patch.yml` :" = "2. Déclarer le plugin dans `~/.dsh/profiles/web/cordis.patch.yml` :";
 "3. Relancer le harness sur cette machine — ici `dsh web`. Le CODE d'un plugin n'est pas rechargé à chaud : sans redémarrage, l'ancien processus continue de répondre." = "3. Relancer le harness sur cette machine — ici `dsh web`. Le CODE d'un plugin n'est pas rechargé à chaud : sans redémarrage, l'ancien processus continue de répondre.";
@@ -21,9 +23,11 @@
 "au repos" = "au repos";
 "aucun" = "aucun";
 "Aucun dossier de documents : cette exécution n'écrit pas de diagnostic." = "Aucun dossier de documents : cette exécution n'écrit pas de diagnostic.";
+"aucun jeton n'était gardé" = "aucun jeton n'était gardé";
 "aucun modèle n'est disponible pour cette session : choisissez-en un sur l'hôte" = "aucun modèle n'est disponible pour cette session : choisissez-en un sur l'hôte";
 "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond." = "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond.";
 "Aucun événement" = "Aucun événement";
+"aucune préférence à oublier" = "aucune préférence à oublier";
 "aucune session" = "aucune session";
 "Aucune session" = "Aucune session";
 "Aucune session en mémoire" = "Aucune session en mémoire";
@@ -58,6 +62,7 @@
 "Demande votre attention" = "Demande votre attention";
 "demandez un nouveau code dans le panneau « Appairer un appareil » du Mac." = "demandez un nouveau code dans le panneau « Appairer un appareil » du Mac.";
 "Diagnostic" = "Diagnostic";
+"diagnostic effacé" = "diagnostic effacé";
 "DSH" = "DSH";
 "DSH Remote" = "DSH Remote";
 "DSH Remote doit y répondre : publier DSH ne suffit pas." = "DSH Remote doit y répondre : publier DSH ne suffit pas.";
@@ -67,6 +72,7 @@
 "DSH · hôte" = "DSH · hôte";
 "DSH · hôte interrogé" = "DSH · hôte interrogé";
 "Détail technique" = "Détail technique";
+"Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit." = "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit.";
 "Effacer la recherche" = "Effacer la recherche";
 "Effacer le jeton" = "Effacer le jeton";
 "Effacer le jeton saisi" = "Effacer le jeton saisi";
@@ -96,6 +102,7 @@
 "L'ordre est celui du travail : chaque étape suppose la précédente. Les étapes grisées restent lisibles — dépliez « Voir la méthode » si vous les avez déjà faites, ou pour savoir ce qui vous attend." = "L'ordre est celui du travail : chaque étape suppose la précédente. Les étapes grisées restent lisibles — dépliez « Voir la méthode » si vous les avez déjà faites, ou pour savoir ce qui vous attend.";
 "La machine à ajouter est sur le tailnet" = "La machine à ajouter est sur le tailnet";
 "Le coffre du harness de cette machine contient un AUTRE jeton." = "Le coffre du harness de cette machine contient un AUTRE jeton.";
+"le fichier d'amorçage est TOUJOURS LÀ : il ramènera l'adresse et le jeton au prochain lancement. Supprimez-le depuis le Mac si vous voulez une remise à zéro complète." = "le fichier d'amorçage est TOUJOURS LÀ : il ramènera l'adresse et le jeton au prochain lancement. Supprimez-le depuis le Mac si vous voulez une remise à zéro complète.";
 "le fuseau horaire envoyé n'est pas reconnu" = "le fuseau horaire envoyé n'est pas reconnu";
 "Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre." = "Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre.";
 "Le journal n'a pas pu être lu." = "Le journal n'a pas pu être lu.";
@@ -119,6 +126,7 @@
 "Lecture du journal…" = "Lecture du journal…";
 "Les afficher toutes" = "Les afficher toutes";
 "Les erreurs qu'aucune explication ne couvre y sont écrites : l'adresse visée, le message, la longueur du jeton et une empreinte de celui-ci. Le jeton lui-même n'y est jamais recopié." = "Les erreurs qu'aucune explication ne couvre y sont écrites : l'adresse visée, le message, la longueur du jeton et une empreinte de celui-ci. Le jeton lui-même n'y est jamais recopié.";
+"Les jetons gardés sur cet appareil seront effacés : il faudra réappairer pour retrouver l'accès. Cette action ne se défait pas." = "Les jetons gardés sur cet appareil seront effacés : il faudra réappairer pour retrouver l'accès. Cette action ne se défait pas.";
 "Les sessions de cette machine apparaîtront ici. Lancez-en une sur le Mac, ou choisissez une autre machine ci-dessus." = "Les sessions de cette machine apparaîtront ici. Lancez-en une sur le Mac, ou choisissez une autre machine ci-dessus.";
 "Marquer comme vu" = "Marquer comme vu";
 "Me prévenir quand l'agent attend ou termine" = "Me prévenir quand l'agent attend ou termine";
@@ -133,6 +141,9 @@
 "Rafraîchir" = "Rafraîchir";
 "Rechercher une session" = "Rechercher une session";
 "Rechercher une session, un projet…" = "Rechercher une session, un projet…";
+"Réinitialiser" = "Réinitialiser";
+"Réinitialiser l'application" = "Réinitialiser l'application";
+"Réinitialiser l'application ?" = "Réinitialiser l'application ?";
 "Rien à coller : le presse-papier est vide. Copiez le texte affiché sous le QR code du panneau « Appairer un appareil »." = "Rien à coller : le presse-papier est vide. Copiez le texte affiché sous le QR code du panneau « Appairer un appareil ».";
 "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet." = "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet.";
 "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas." = "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas.";
@@ -159,6 +170,7 @@
 "tour en cours" = "tour en cours";
 "tout de suite (interrompt le tour en cours)" = "tout de suite (interrompt le tour en cours)";
 "Tout de suite (interrompt)" = "Tout de suite (interrompt)";
+"Tout effacer" = "Tout effacer";
 "Un nouvel événement — aller à la fin du journal" = "Un nouvel événement — aller à la fin du journal";
 "Un tour vient de se terminer" = "Un tour vient de se terminer";
 "Une alerte part quand une session se met à ATTENDRE une réponse, ou quand un tour se termine — jamais pour ce que vous êtes en train de regarder. Elle n'est envoyée que tant que l'application tourne : iOS la suspend en arrière-plan, et la réveiller demanderait un serveur de notification, que ce projet n'a pas." = "Une alerte part quand une session se met à ATTENDRE une réponse, ou quand un tour se termine — jamais pour ce que vous êtes en train de regarder. Elle n'est envoyée que tant que l'application tourne : iOS la suspend en arrière-plan, et la réveiller demanderait un serveur de notification, que ce projet n'a pas.";

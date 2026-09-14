@@ -42,6 +42,15 @@ public struct FeuilleReglages: View {
   let modele: ModeleApp
   @Environment(\.dismiss) private var fermer
 
+  /// LA CONFIRMATION ET LE COMPTE RENDU — deux états LOCAUX à cette feuille.
+  ///
+  /// POURQUOI LOCAUX. Ils ne concernent que ce qu'on vient de faire ici : ni le
+  /// modèle, ni une autre vue n'ont besoin de savoir qu'une confirmation est
+  /// ouverte. Le compte rendu, lui, est gardé pour que l'utilisateur puisse le
+  /// RELIRE — un message qui disparaît au premier rendu ne sert à rien.
+  @State private var confirmationOuverte = false
+  @State private var rapport: String?
+
   /// L'ENTRÉE PUBLIQUE EXISTE POUR LA SCÈNE `Settings` DE macOS.
   ///
   /// L'initialiseur membre à membre d'une structure publique est interne : sans
@@ -57,6 +66,7 @@ public struct FeuilleReglages: View {
         appareil
         alertes
         diagnostic
+        reinitialiser
         aPropos
       }
       .navigationTitle(T("Réglages"))
@@ -232,6 +242,66 @@ public struct FeuilleReglages: View {
     Persistance.documentsParDefaut?
       .appendingPathComponent(Persistance.nomDuDiagnostic)
       .path
+  }
+
+  // MARK: - Réinitialiser
+
+  /// LA RÉINITIALISATION — destructrice, donc DITE, CONFIRMÉE, et COMPTÉE.
+  ///
+  /// POURQUOI ELLE EST DANS LES RÉGLAGES. « Oublier le serveur » vivait dans le
+  /// menu contextuel d'une vignette, et il n'oubliait que l'adresse : les jetons du
+  /// trousseau, les préférences par machine et la session consultée restaient. Il
+  /// n'existait donc **aucun** geste pour repartir d'un appareil propre — et la
+  /// seule façon de le faire était de désinstaller l'application.
+  ///
+  /// TROIS PROPRIÉTÉS, ET CHACUNE RÉPOND À UN DÉFAUT CONNU DE CE GENRE D'ÉCRAN :
+  ///
+  ///   1. **elle dit ce qu'elle efface** — dans le pied, avant le geste, y compris
+  ///      ce qu'elle ne touche PAS (le jeton du harness, le fichier d'amorçage) ;
+  ///   2. **elle demande confirmation**, avec la conséquence nommée : un jeton
+  ///      effacé se retrouve en RÉAPPAIRANT, pas en annulant ;
+  ///   3. **elle rend compte** — le détail de ce qui a été effacé reste affiché
+  ///      sous le bouton. Un bouton qui ne dit pas ce qu'il a fait ne vaut pas
+  ///      mieux qu'un bouton sans effet.
+  @ViewBuilder
+  private var reinitialiser: some View {
+    Section {
+      Button(role: .destructive) {
+        confirmationOuverte = true
+      } label: {
+        Label {
+          T("Réinitialiser l'application")
+        } icon: {
+          Image(systemName: "arrow.counterclockwise")
+        }
+      }
+      if let rapport {
+        Text(rapport)
+          .font(.caption)
+          .foregroundStyle(EtatVisuel.attente.couleur)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    } header: {
+      T("Réinitialiser")
+    } footer: {
+      T("Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit.")
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .confirmationDialog(
+      T("Réinitialiser l'application ?"),
+      isPresented: $confirmationOuverte,
+      titleVisibility: .visible
+    ) {
+      Button(L("Tout effacer"), role: .destructive) {
+        Task { @MainActor in
+          let resultat = await modele.reinitialiser()
+          rapport = modele.texteDuRapport(resultat)
+        }
+      }
+      Button(L("Annuler"), role: .cancel) {}
+    } message: {
+      T("Les jetons gardés sur cet appareil seront effacés : il faudra réappairer pour retrouver l'accès. Cette action ne se défait pas.")
+    }
   }
 
   // MARK: - À propos
