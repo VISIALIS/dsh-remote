@@ -207,6 +207,7 @@ const ECHANGES_MAX = 30
 // tests de portée les lisent d'ici) : une seule définition, deux lecteurs.
 export { PORTEE_ECRITURE, PORTEE_LECTURE } from './auth.js'
 import { creerAuthentification, PORTEE_ECRITURE, PORTEE_LECTURE } from './auth.js'
+import { creerRegistreDAppareils } from './appareils.js'
 
 /**
  * La portée d'un enregistrement de jeton.
@@ -325,35 +326,31 @@ export function apply(ctx, config) {
   }
 
   // ── Jetons, appareils, codes ───────────────────────────────────────────────
-  let jeton = null
-  // Ce que le jeton HISTORIQUE autorise. Voir `PORTEE_LECTURE` / `PORTEE_ECRITURE` :
-  // la valeur de départ est celle d'un jeton d'avant la portée.
-  let portee = PORTEE_ECRITURE
-  // LES APPAREILS APPAIRÉS, dans l'ordre de lecture : l'historique d'abord (s'il
-  // existe), puis le registre. Chaque entrée porte SON jeton et SA portée — c'est
-  // ce qui permet de révoquer un appareil sans toucher aux autres.
-  let appareils = []
-  // LES CODES VIVANTS : `code -> { creeLe, expireLe }`. En mémoire SEULEMENT, et
-  // c'est délibéré : un code qui survit à un redémarrage serait un code qu'on
-  // aurait oublié, alors qu'il donne un jeton.
+  // ── Le registre des appareils ──────────────────────────────────────────────
+  //
+  // LE JETON HISTORIQUE, SA PORTÉE ET LA LISTE DES APPAREILS vivaient ICI, avec
+  // quatorze fonctions qui les manipulaient. Ils vivent désormais dans
+  // `appareils.js`, qui est le seul dépositaire de cet état et dont les règles
+  // (comparaison à temps constant sans sortie anticipée, entrée mal formée
+  // ignorée, écriture relue sous verrou, jeton historique supprimé et non filtré)
+  // s'éprouvent sans monter un serveur.
+  // ── Les codes d'appairage et les plafonds glissants ───────────────────────
+  //
+  // CES TROIS ÉTATS RESTENT ICI, avec les routes du panneau : les codes vivent en
+  // MÉMOIRE SEULEMENT, et c'est délibéré — un code qui survit à un redémarrage
+  // serait un code qu'on aurait oublié, alors qu'il donne un jeton.
   const codes = new Map()
   // Horodatages des frappes et des échanges, pour les plafonds glissants.
   let frappes = []
   let echanges = []
 
   /**
-   * La marque de l'appareil authentifié SUR LA RÉPONSE, et pourquoi pas une
-   * variable de module.
+   * LE COFFRE DU HARNESS, ou `null` — et `null` est un état NORMAL, pas une panne.
    *
-   * POURQUOI. La portée était UNE variable globale : il n'y avait qu'un jeton,
-   * donc une seule portée. Avec un jeton par appareil, elle dépend de QUI appelle.
-   * Une variable de module écrasée à chaque requête serait juste « en pratique »
-   * (Node est mono-thread, et le gestionnaire lit la portée dans le même tour) —
-   * mais elle deviendrait fausse le jour où une route attend entre l'authentification
-   * et la lecture. La réponse, elle, appartient à SA requête par construction.
+   * Il est lu À CHAQUE APPEL, et pas retenu au chargement : le service
+   * `credentials` peut être monté après ce plugin, et le garder d'une lecture
+   * unique le rendrait définitivement absent.
    */
-  const APPAREIL = Symbol('dsh-remote/appareil')
-
   const coffre = () => {
     const credentials = ctx.get('credentials') ?? ctx.credentials
     if (credentials === undefined || credentials === null) return null
@@ -361,164 +358,13 @@ export function apply(ctx, config) {
     return credentials
   }
 
-  const chargerJeton = async () => {
-    const credentials = coffre()
-    if (credentials === null) {
-      console.log('[dsh-remote] coffre d identifiants indisponible: le plugin ne peut pas gerer de jeton')
-      return null
-    }
-    const existant = await credentials.readRecord(CLE_JETON)
-    if (existant !== undefined && existant !== null && existant.kind === 'grant') {
-      const valeur = existant.payload?.token
-      if (typeof valeur === 'string' && valeur.length >= 32) {
-        portee = porteeEnregistree(existant.payload)
-        return valeur
-      }
-    }
-    const nouveau = randomBytes(32).toString('base64url')
-    portee = porteeDemandee(process.env.DSH_REMOTE_PORTEE)
-    await credentials.modifyRecord(CLE_JETON, async () => ({ kind: 'grant', payload: { token: nouveau, creeLe: Date.now(), portee } }))
-    // Affichage UNIQUE, dans le terminal de l'utilisateur, a la creation.
-    // Jamais reecrit ensuite, jamais journalise, JAMAIS RENVOYE PAR UNE ROUTE —
-    // c'est la regle que l'appairage par code a permis de retablir (l'etape A la
-    // transgressait en publiant ce jeton dans un QR).
-    // LA PORTEE EST DITE ICI, et c'est le seul endroit ou l'utilisateur apprend
-    // ce que ce jeton autorise — sans quoi il decouvrirait en lisant le code
-    // pourquoi son application n'ecrit pas.
-    console.log('[dsh-remote] NOUVEAU JETON D APPAREIL, PORTEE ' + portee.toUpperCase() + ' (a saisir une fois dans l application, puis oublier) :')
-    console.log('[dsh-remote] ' + nouveau)
-    if (portee === PORTEE_LECTURE) {
-      console.log('[dsh-remote] ce jeton LIT sans pouvoir ecrire. Pour autoriser l ecriture, relancer avec DSH_REMOTE_PORTEE=ecriture et un jeton neuf (supprimer l enregistrement ' + CLE_JETON + ' du coffre).')
-    }
-    return nouveau
-  }
-
-  /** L'entrée du registre correspondant à un enregistrement de coffre, ou `null`. */
-  const entreeDeRegistre = (brut) => {
-    if (brut === null || typeof brut !== 'object') return null
-    const valeur = brut.token
-    if (typeof valeur !== 'string' || valeur.length < 32) return null
-    return {
-      token: valeur,
-      portee: porteeEnregistree(brut),
-      creeLe: Number.isFinite(brut.creeLe) ? brut.creeLe : null,
-      nom: nomDAppareil(brut.nom),
-      historique: false,
-    }
-  }
-
-  /**
-   * Charge le registre des jetons par appareil.
-   *
-   * UNE ENTRÉE MAL FORMÉE EST IGNORÉE, PAS FATALE : le registre est écrit par ce
-   * plugin, mais il vit dans un fichier que l'utilisateur peut éditer. Une entrée
-   * cassée ne doit pas rendre les AUTRES inutilisables — sinon une faute de frappe
-   * dans un nom déconnecterait tous les appareils.
-   */
-  const chargerAppareils = async () => {
-    const credentials = coffre()
-    const entrees = []
-    if (jeton !== null) {
-      // LE NOM DIT CE QUE C'EST, ET À QUI ÇA SERT. « jeton historique » faisait
-      // lire un vestige là où il y a la connexion de l'application SUR CE MAC à
-      // elle-même (et celle de dsh-remote-ctl) : le propriétaire a demandé à quoi
-      // il correspondait, ce qui est exactement le défaut d'un nom qui n'explique
-      // rien. Il n'est pas appairé, il n'a pas de date, et le révoquer le remplace
-      // au prochain démarrage — le panneau le dit à côté.
-      entrees.push({
-        token: jeton,
-        portee,
-        creeLe: null,
-        nom: 'Jeton du terminal (ce Mac, dsh-remote-ctl)',
-        historique: true,
-      })
-    }
-    if (credentials === null) return entrees
-    const registre = await credentials.readRecord(CLE_JETONS)
-    const liste = registre?.kind === 'grant' && Array.isArray(registre.payload?.jetons) ? registre.payload.jetons : []
-    for (const brut of liste) {
-      const entree = entreeDeRegistre(brut)
-      if (entree !== null) entrees.push(entree)
-    }
-    return entrees
-  }
-
-  /**
-   * Comparaison à temps constant, longueurs égalisées.
-   *
-   * POURQUOI ELLE RESTE ÉCRITE ICI, alors qu'il n'y a plus UN secret mais N. Le
-   * nombre d'appareils est public (il est affiché), la taille d'un jeton aussi :
-   * ce qui ne doit pas fuiter, c'est la VALEUR. Chaque comparaison est donc à
-   * temps constant, et la boucle les fait TOUTES — sans sortie anticipée, pour que
-   * la durée ne dise pas à quelle position le jeton a été trouvé.
-   */
-  const egalConstant = (attendu, recu) => {
-    const gauche = Buffer.from(attendu, 'utf8')
-    const droite = Buffer.from(recu, 'utf8')
-    const taille = Math.max(gauche.length, droite.length, 1)
-    const tamponGauche = Buffer.alloc(taille)
-    const tamponDroite = Buffer.alloc(taille)
-    gauche.copy(tamponGauche)
-    droite.copy(tamponDroite)
-    const egaux = timingSafeEqual(tamponGauche, tamponDroite)
-    return egaux && gauche.length === droite.length
-  }
-
-  /** L'appareil dont le jeton est celui présenté, ou `null`. */
-  const appareilDe = (presente) => {
-    if (typeof presente !== 'string' || presente.length === 0) return null
-    let trouve = null
-    for (const entree of appareils) {
-      if (egalConstant(entree.token, presente)) trouve = trouve === null ? entree : trouve
-    }
-    return trouve
-  }
-
-  /**
-   * L'EMPREINTE d'un jeton — ce qu'on montre pour désigner un appareil.
-   *
-   * POURQUOI UNE EMPREINTE ET JAMAIS LE JETON. La liste des appareils sert à en
-   * révoquer un : l'utilisateur doit pouvoir le DÉSIGNER sans qu'on lui réaffiche
-   * un secret. Douze caractères hexadécimaux suffisent à distinguer deux appareils
-   * et ne permettent pas de remonter au jeton (c'est un SHA-256 tronqué d'une
-   * valeur de 256 bits d'aléa).
-   */
-  const empreinteDe = (valeur) => createHash('sha256').update(String(valeur)).digest('hex').slice(0, 12)
-
-  /**
-   * Écrire dans le registre À PARTIR DE LA LISTE RELUE, jamais de la mémoire.
-   *
-   * POURQUOI LA LISTE EST RELUE ICI, ET PAS REPRISE DE `appareils`. Deux écritures
-   * rapprochées — deux appareils qui s'appairent dans la même minute, une
-   * révocation pendant un échange — écriraient chacune la liste qu'elles avaient
-   * en mémoire, et la seconde EFFACERAIT l'entrée de la première. Le service de
-   * coffre sérialise et relit sous verrou : `modifyRecord` reçoit l'enregistrement
-   * COURANT, et c'est ce qu'on modifie. La liste en mémoire, elle, sert à
-   * AUTHENTIFIER, pas à écrire.
-   *
-   * (La conséquence d'un écrasement ne serait pas une faille mais une perte : un
-   * appareil appairé disparaîtrait du registre, et son jeton cesserait de valoir au
-   * redémarrage suivant — sans que rien ne le dise.)
-   */
-  const modifierRegistre = async (transformer) => {
-    const credentials = coffre()
-    if (credentials === null) return false
-    await credentials.modifyRecord(CLE_JETONS, async (courant) => {
-      const brut = Array.isArray(courant?.payload?.jetons) ? courant.payload.jetons : []
-      return { kind: 'grant', payload: { jetons: transformer(brut) } }
-    })
-    return true
-  }
-
-  const ajouterAuRegistre = (entree) =>
-    modifierRegistre((liste) => [
-      ...liste,
-      { token: entree.token, portee: entree.portee, creeLe: entree.creeLe, nom: entree.nom },
-    ])
-
-  const retirerDuRegistre = (jeton) => modifierRegistre((liste) => liste.filter((entree) => entree?.token !== jeton))
-
-  const jetonValide = (presente) => appareilDe(presente) !== null
+  const registre = creerRegistreDAppareils({
+    coffre,
+    cles: { jeton: CLE_JETON, jetons: CLE_JETONS },
+    porteeDemandee,
+    porteeEnregistree,
+  })
+  const { appareilDe, jetonValide, empreinteDe, ajouter, retirer } = registre
 
   // ── Cache des journaux ─────────────────────────────────────────────────────
   // LA POLITIQUE VIT DANS `cache-faits.js` (validité par les marqueurs du fichier,
@@ -953,7 +799,7 @@ export function apply(ctx, config) {
         // SECOND LECTEUR du coffre — un lecteur qui se trompe afficherait un
         // jeton. Ce champ donne au terminal ce qu'il peut honnêtement savoir :
         // combien. Le nom du champ est au pluriel, comme celui des appareils.
-        appareils: appareils.length,
+        appareils: registre.nombre(),
         capacites: {
           sessions: true,
           journal: true,
@@ -1322,12 +1168,14 @@ export function apply(ctx, config) {
       nom: nomDAppareil(corps?.nom),
     }
     try {
-      await ajouterAuRegistre(entree)
+      // L'ECRITURE DANS LE COFFRE PUIS LA MEMOIRE : c'est le registre qui fait les
+      // deux, dans cet ordre, et qui refuse si le coffre n'a pas ecrit (un appareil
+      // garde en memoire mais absent du coffre disparaitrait au redemarrage).
+      await ajouter(entree)
     } catch (erreur) {
       envoyer(res, 500, { erreur: 'ecriture du registre impossible', detail: String(erreur?.message ?? erreur) })
       return tracer(req, 500)
     }
-    appareils = [...appareils, { ...entree, historique: false }]
     // Le nom de l'appareil est TRACE (il sert a designer l'appareil qu'on vient
     // d'appairer) ; le jeton ne l'est jamais, et le code non plus.
     tracer(req, 200, 'echange ' + entree.nom)
@@ -1350,7 +1198,7 @@ export function apply(ctx, config) {
   const repondreAppareils = (req, res) => {
     envoyer(res, 200, {
       protocole: VERSION_PROTOCOLE,
-      appareils: appareils.map((entree) => ({
+      appareils: registre.liste().map((entree) => ({
         nom: entree.nom,
         portee: entree.portee,
         creeLe: entree.creeLe,
@@ -1358,7 +1206,7 @@ export function apply(ctx, config) {
         historique: entree.historique === true,
       })),
     })
-    tracer(req, 200, appareils.length + ' appareils')
+    tracer(req, 200, registre.nombre() + ' appareils')
   }
 
   /**
@@ -1378,42 +1226,25 @@ export function apply(ctx, config) {
    */
   const repondreRevocation = async (req, res, corps) => {
     const empreinte = typeof corps?.empreinte === 'string' ? corps.empreinte.trim().toLowerCase() : ''
-    if (!/^[0-9a-f]{12}$/.test(empreinte)) {
-      envoyer(res, 400, { erreur: 'empreinte absente ou malformee' })
-      return tracer(req, 400)
+    // TOUTE LA DÉCISION — empreinte mal formée, appareil inconnu, jeton historique
+    // qui se SUPPRIME au lieu de se filtrer, coffre sans `deleteRecord` — vit dans
+    // le registre, où elle est éprouvée seule. La route ne fait que traduire un
+    // résultat en statut HTTP : c'est ce qui garantit que les deux moitiés de
+    // cette règle ne peuvent pas diverger.
+    const resultat = await retirer(empreinte)
+    if (resultat.ok !== true) {
+      envoyer(res, resultat.code, resultat.corps)
+      return tracer(req, resultat.code)
     }
-    const cible = appareils.find((entree) => empreinteDe(entree.token) === empreinte)
-    if (cible === undefined) {
-      envoyer(res, 404, { erreur: 'appareil inconnu', detail: 'cet appareil n est plus dans la liste : rechargez le panneau' })
-      return tracer(req, 404)
-    }
-    const credentials = coffre()
-    try {
-      if (cible.historique === true) {
-        // LE JETON HISTORIQUE SE SUPPRIME, IL NE SE FILTRE PAS : il vit dans son
-        // propre enregistrement. Un jeton neuf sera tire au prochain demarrage —
-        // c'est ce que « tourner le jeton » veut dire, et le README le dit.
-        if (credentials === null || typeof credentials.deleteRecord !== 'function') {
-          envoyer(res, 503, { erreur: 'coffre incapable de supprimer', detail: 'le service credentials n expose pas deleteRecord' })
-          return tracer(req, 503)
-        }
-        await credentials.deleteRecord(CLE_JETON)
-        jeton = null
-        appareils = appareils.filter((entree) => entree !== cible)
-      } else {
-        if (credentials === null) {
-          envoyer(res, 503, { erreur: 'coffre indisponible' })
-          return tracer(req, 503)
-        }
-        await retirerDuRegistre(cible.token)
-        appareils = appareils.filter((entree) => entree !== cible)
-      }
-    } catch (erreur) {
-      envoyer(res, 500, { erreur: 'revocation impossible', detail: String(erreur?.message ?? erreur) })
-      return tracer(req, 500)
-    }
-    envoyer(res, 200, { protocole: VERSION_PROTOCOLE, revoque: true, nom: cible.nom, restants: appareils.length })
-    tracer(req, 200, 'revoque ' + cible.nom)
+    envoyer(res, 200, {
+      protocole: VERSION_PROTOCOLE,
+      revoque: true,
+      nom: resultat.nom,
+      restants: resultat.restants,
+    })
+    // Le nom de l'appareil est trace — il sert a designer ce qu'on vient de
+    // revoquer ; le jeton ne l'est jamais.
+    tracer(req, 200, 'revoque ' + resultat.nom)
   }
 
   enregistrer({
@@ -2237,18 +2068,15 @@ export function apply(ctx, config) {
     console.log('[dsh-remote] routes retirees')
   }
 
-  chargerJeton()
-    .then(async (valeur) => {
-      jeton = valeur
-      // LE REGISTRE EST CHARGE APRES LE JETON, dans le meme enchainenement : la
-      // liste des appareils contient l'historique EN PREMIER, donc `jeton` doit
-      // deja etre connu. Un registre illisible ne doit pas rendre le jeton
-      // historique inutilisable : on journalise, et on continue avec lui seul.
-      try {
-        appareils = await chargerAppareils()
-      } catch (erreur) {
-        appareils = jeton === null ? [] : [{ token: jeton, portee, creeLe: null, nom: 'jeton historique (terminal)', historique: true }]
-        console.log('[dsh-remote] registre des appareils illisible: ' + String(erreur?.message ?? erreur))
+  // UN SEUL APPEL CHARGE LE JETON PUIS LE REGISTRE, ET DANS CET ORDRE : la liste
+  // des appareils contient l'historique EN PREMIER, donc le jeton doit deja etre
+  // connu. Un registre illisible ne fait pas perdre le jeton du terminal — le
+  // registre rend alors l'historique seul, avec la raison, et on la journalise.
+  registre
+    .charger()
+    .then(({ jeton: valeur, appareils, illisible }) => {
+      if (illisible !== null) {
+        console.log('[dsh-remote] registre des appareils illisible: ' + illisible)
       }
       if (valeur === null) {
         console.log('[dsh-remote] aucune authentification possible: routes inutilisables (401)')
