@@ -48,9 +48,15 @@ public struct ServeurMac: Sendable, Identifiable, Hashable, Decodable {
     self.estLocal = try conteneur.decodeIfPresent(Bool.self, forKey: .estLocal) ?? false
   }
 
-  /// Adresse à donner au `RemoteClient`. `tailscale serve` publie sur le
-  /// port 80 du nom MagicDNS, donc sans port explicite.
-  public var adresse: String { "http://\(nomDNS)" }
+  /// Adresse à donner au `RemoteClient` : `https` quand ce paquet REFUSE le clair
+  /// vers un nom qualifié, `http` sinon (voir `AdresseMachine`).
+  ///
+  /// LA RÈGLE ÉTAIT `"http://\(nomDNS)"` EN DUR, et c'était le plus gros obstacle
+  /// à la distribution : un clone du dépôt — donc un paquet SANS exception ATS —
+  /// proposait une adresse que le système refusait (`-1022`) pour chaque machine
+  /// du tailnet. Le port suit le transport : 443 pour `https`, 80 pour `http`,
+  /// les deux conventions que `tailscale serve` publie.
+  public var adresse: String { AdresseMachine.pour(hote: nomDNS) }
 
   /// Premier mot du nom, pour la légende d'une icône de serveur.
   ///

@@ -48,16 +48,26 @@ public struct Sonde: Sendable {
 
   /// Interroge chaque machine, EN PARALLÈLE, et rassemble le verdict.
   ///
+  /// AUCUN PORTEUR N'EST PRÉSENTÉ, ET C'EST UNE RÈGLE DE SÉCURITÉ. La sonde
+  /// interroge les machines d'un tailnet qui NE SONT PAS la cible : leur envoyer
+  /// le jeton de la cible ferait voyager un secret vers des hôtes qui n'en ont
+  /// aucun besoin, et chacun d'eux pourrait le rejouer. Or ce jeton n'apporte rien
+  /// ici : la question est « y a-t-il un DSH en face ? », et un `401` y répond
+  /// aussi bien qu'un `200` — le service a répondu, seul le porteur manquait.
+  /// C'est la même règle que celle du modèle, où chaque hôte a SON jeton.
+  ///
   /// Les sondes partent ENSEMBLE : une machine éteinte ne doit pas retarder les
   /// autres. Le verdict est rendu même si la tâche est annulée en route — c'est
   /// au modèle de décider s'il a encore le droit de le publier, car lui seul sait
   /// si la cible a changé depuis.
-  public func interroger(_ candidats: [ServeurMac], jeton: String) async -> Verdict {
+  public func interroger(_ candidats: [ServeurMac]) async -> Verdict {
     let fabrique = self.fabrique
     return await withTaskGroup(of: (String, Bool, CauseSansDsh?).self) { groupe in
       for serveur in candidats {
         groupe.addTask {
-          guard let client = try? fabrique(serveur.adresse, jeton, Sonde.delai) else {
+          // Le porteur VIDE est ce qui fait que `RemoteClient` ne pose aucun
+          // en-tête `Authorization` (voir sa méthode `requete`).
+          guard let client = try? fabrique(serveur.adresse, "", Sonde.delai) else {
             return (serveur.id, false, nil)
           }
           // `verifierSante` ne rend aucune donnée de session : c'est la poignée

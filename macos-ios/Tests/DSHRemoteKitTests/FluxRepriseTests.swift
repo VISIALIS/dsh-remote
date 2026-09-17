@@ -211,4 +211,179 @@ struct FluxRepriseTests {
     #expect(erreur, "une adresse morte doit remonter une erreur")
     #expect(await session.sequenceConnue == nil, "aucun contenu recu : aucun curseur a reprendre")
   }
+
+  @Test("Un serveur SOURD est vu mort en vingt secondes, pas en quinze minutes")
+  func leBattementDetecteUneSocketMorte() async throws {
+    // LE DÉFAUT QUE CE TEST FIXE. Une connexion TCP peut mourir SANS LE DIRE : la
+    // radio perd les paquets, et ni la fermeture ni l'erreur n'arrivent. `receive()`
+    // reste alors suspendu — des minutes, mesurées sur iOS — pendant que l'écran
+    // affiche « En direct ». Rien, ni côté client ni côté serveur, ne vérifiait que
+    // les pings revenaient : le serveur en envoie un toutes les trente secondes, et
+    // la plateforme y répond toute seule, mais PERSONNE ne lisait la réponse.
+    //
+    // Ici le serveur d'essai répond au `demarrer` puis se tait sur les pings. Le
+    // client doit donc conclure de lui-même, et VITE : c'est ce que la cadence
+    // courte du battement rend observable en quelques dixièmes de seconde au lieu
+    // de quinze secondes d'attente dans la suite.
+    let serveurEssai = try #require(cheminDuServeur(), "serveur d'essai introuvable : battement NON éprouvé")
+    try #require(nodeDisponible(), "node introuvable : battement NON éprouvé")
+
+    let port = try portLibre()
+    let note = FileManager.default.temporaryDirectory
+      .appendingPathComponent("dsh-remote-sourd-\(UUID().uuidString).txt")
+    let serveur = Process()
+    serveur.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    // `0` coupure — la socket doit VIVRE, c'est tout l'intérêt : on éprouve une
+    // socket ouverte sur laquelle plus rien ne revient, pas une socket fermée.
+    // Puis `sourd` : aucun pong.
+    serveur.arguments = ["node", serveurEssai, String(port), note.path, "0", "sourd"]
+    try serveur.run()
+    defer { serveur.terminate() }
+    try #require(await attendre("ecoute=", dans: note) != nil, "le serveur d'essai n'a pas démarré")
+
+    let session = try #require(
+      FluxSession(
+        adresse: "http://127.0.0.1:\(port)", jeton: "JETONFICTIF-0000000000000000000000000000000000",
+        identifiant: "session-essai",
+        battement: FluxSession.Battement(intervalle: 0.3, delaiPong: 0.2)))
+    // TROIS SECONDES D'OBSERVATION POUR UNE DÉTECTION ATTENDUE EN UNE DEMI-SECONDE
+    // (battement de 0,3 s, pong exigé en 0,2 s) : la marge absorbe une machine
+    // chargée, sans faire payer six secondes à la suite.
+    let (vuBase, erreur) = await observer(session, pendant: 3)
+    await session.fermer()
+
+    // LA BASE EST ARRIVÉE : la socket était donc VIVANTE, et le silence qui suit
+    // n'est pas un échec de connexion — c'est bien le mutisme qu'on veut voir
+    // détecté.
+    #expect(vuBase, "la socket doit avoir vécu avant de devenir sourde")
+    #expect(
+      erreur != nil,
+      "une socket sourde doit être déclarée morte, pas attendue — c'est le sens même du battement")
+    let journal = (try? String(contentsOf: note, encoding: .utf8)) ?? ""
+    #expect(journal.contains("ping=1"), "le client doit avoir envoyé un ping — journal :\n\(journal)")
+  }
+
+  @Test("Un serveur qui répond aux pings garde le flux : le battement ne coupe rien")
+  func leBattementNeCoupePasUnFluxVivant() async throws {
+    // LA CONTREPARTIE, ET ELLE EST INDISPENSABLE : un battement qui coupe un flux
+    // sain serait pire que pas de battement du tout — il transformerait un direct
+    // en reconnexions périodiques. Le serveur répond ici à chaque ping, et le flux
+    // doit survivre à PLUSIEURS battements.
+    let serveurEssai = try #require(cheminDuServeur(), "serveur d'essai introuvable : battement NON éprouvé")
+    try #require(nodeDisponible(), "node introuvable : battement NON éprouvé")
+
+    let port = try portLibre()
+    let note = FileManager.default.temporaryDirectory
+      .appendingPathComponent("dsh-remote-vivant-\(UUID().uuidString).txt")
+    let serveur = Process()
+    serveur.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    serveur.arguments = ["node", serveurEssai, String(port), note.path, "0"]
+    try serveur.run()
+    defer { serveur.terminate() }
+    try #require(await attendre("ecoute=", dans: note) != nil, "le serveur d'essai n'a pas démarré")
+
+    let session = try #require(
+      FluxSession(
+        adresse: "http://127.0.0.1:\(port)", jeton: "JETONFICTIF-0000000000000000000000000000000000",
+        identifiant: "session-essai",
+        battement: FluxSession.Battement(intervalle: 0.1, delaiPong: 1)))
+    // UNE SECONDE PLEINE D'OBSERVATION, à dix battements par seconde : le flux doit
+    // être encore là après.
+    let (vuBase, erreur) = await observer(session, pendant: 1.5)
+    await session.fermer()
+
+    #expect(vuBase, "la base doit arriver")
+    #expect(erreur == nil, "un flux qui répond ne doit PAS être coupé — erreur : \(erreur ?? "aucune")")
+    // PLUSIEURS PINGS : la preuve que le battement a bien tourné pendant
+    // l'observation, et que le flux y a survécu.
+    let journal = (try? String(contentsOf: note, encoding: .utf8)) ?? ""
+    #expect(journal.contains("ping=5"), "le battement doit avoir tourné plusieurs fois — journal :\n\(journal)")
+  }
+
+  @Test("Un statut poussé par l'hôte est DÉCODÉ, et ne compte pas comme un évènement")
+  func leStatutPousseEstDecode() async throws {
+    // POURQUOI CE TEST. Le statut arrive par un message d'un type NOUVEAU, écrit
+    // par l'hôte (`{ "type": "statut", "statut": "en_cours" }`). Le client ignore
+    // silencieusement les types qu'il ne connaît pas — c'est ce qui rend le
+    // protocole extensible, et c'est aussi ce qui rendrait un statut mal décodé
+    // INVISIBLE : la pastille resterait simplement en retard, sans erreur nulle
+    // part. On vérifie donc qu'il est bien reçu, et qu'il ne pousse pas le curseur
+    // de reprise (un statut ne porte aucun `seq`).
+    let serveurEssai = try #require(cheminDuServeur(), "serveur d'essai introuvable : statut NON éprouvé")
+    try #require(nodeDisponible(), "node introuvable : statut NON éprouvé")
+
+    let port = try portLibre()
+    let note = FileManager.default.temporaryDirectory
+      .appendingPathComponent("dsh-remote-statut-\(UUID().uuidString).txt")
+    let serveur = Process()
+    serveur.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    serveur.arguments = ["node", serveurEssai, String(port), note.path, "0"]
+    try serveur.run()
+    defer { serveur.terminate() }
+    try #require(await attendre("ecoute=", dans: note) != nil, "le serveur d'essai n'a pas démarré")
+
+    let session = try #require(
+      FluxSession(
+        adresse: "http://127.0.0.1:\(port)", jeton: "JETONFICTIF-0000000000000000000000000000000000",
+        identifiant: "session-essai"))
+    let (statut, sequence) = await avecEcheance(session, pendant: 2) { message in
+      if case let .statut(valeur) = message { return valeur }
+      return nil
+    }
+    await session.fermer()
+
+    #expect(statut == "en_cours", "le statut poussé doit être décodé tel quel")
+    // LE CURSEUR RESTE CELUI DES ENREGISTREMENTS (2), pas celui d'un statut : un
+    // statut pris pour un évènement ferait sauter la reprise.
+    #expect(sequence == 2, "le statut ne doit pas faire avancer le curseur de reprise")
+  }
+
+  /// Cherche UNE valeur dans le flux pendant une durée fixe, puis rend aussi le
+  /// curseur de reprise observé.
+  ///
+  /// Même raison que `observer` ci-dessous : une boucle `for await` avec échéance
+  /// ne vérifie sa montre qu'en recevant un message, et un flux vivant et
+  /// silencieux n'en reçoit aucun — le test pendrait au lieu de mesurer.
+  private func avecEcheance(
+    _ session: FluxSession, pendant secondes: Double,
+    _ extraire: @escaping @Sendable (MessageFlux) -> String?
+  ) async -> (String?, Int?) {
+    let lecture = Task { () -> (String?, Int?) in
+      var trouve: String?
+      for await message in await session.messages() {
+        if trouve == nil, let valeur = extraire(message) { trouve = valeur }
+        if trouve != nil { break }
+      }
+      return (trouve, await session.sequenceConnue)
+    }
+    try? await Task.sleep(nanoseconds: UInt64(secondes * 1_000_000_000))
+    lecture.cancel()
+    return await lecture.value
+  }
+
+  /// Lit un flux PENDANT UNE DURÉE FIXE, puis s'arrête — quoi qu'il reçoive.
+  /// POURQUOI PAS UNE BOUCLE `for await` AVEC ÉCHÉANCE, comme le test de reprise
+  /// ci-dessus : cette boucle-là ne vérifie sa montre qu'en recevant un message.
+  /// Sur un flux VIVANT et SILENCIEUX — précisément ce qu'on veut éprouver —, elle
+  /// n'en reçoit aucun, donc elle attend indéfiniment, et le test pend au lieu de
+  /// mesurer. Ici l'attente est bornée par une horloge, et l'annulation termine
+  /// l'itérateur (`AsyncStream` répond à l'annulation de la tâche).
+  private func observer(_ session: FluxSession, pendant secondes: Double) async -> (Bool, String?) {
+    let lecture = Task { () -> (Bool, String?) in
+      var vuBase = false
+      var erreur: String?
+      for await message in await session.messages() {
+        switch message {
+        case .base: vuBase = true
+        case let .erreur(detail): erreur = detail
+        default: break
+        }
+        if erreur != nil { break }
+      }
+      return (vuBase, erreur)
+    }
+    try? await Task.sleep(nanoseconds: UInt64(secondes * 1_000_000_000))
+    lecture.cancel()
+    return await lecture.value
+  }
 }

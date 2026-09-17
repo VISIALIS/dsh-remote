@@ -91,7 +91,7 @@ func adresseUtilisable() throws {
   #expect(mac.nomDNS == "bureau-mini.exemple.ts.net")
   #expect(!mac.nomDNS.hasSuffix("."))
   // `tailscale serve` publie sur le port 80 du nom MagicDNS : pas de port.
-  #expect(mac.adresse == "http://bureau-mini.exemple.ts.net")
+  #expect(mac.adresse == "https://bureau-mini.exemple.ts.net")
 }
 
 @Test("L'icône suit le nom de la machine")
@@ -208,7 +208,7 @@ func memorisationAdresse() {
   modele.definirAdresse(adresseTemoin)
 
   let relu = ModeleApp(persistance: persistance)
-  #expect(relu.adresse == adresseTemoin, "l'adresse écrite doit être relue au lancement suivant")
+  #expect(relu.adresse == ModeleApp.adresseEffective(adresseTemoin), "l adresse ecrite doit etre relue au lancement suivant")
 
   // Et l'oubli efface VRAIMENT ce qui était mémorisé.
   //

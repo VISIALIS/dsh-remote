@@ -90,11 +90,28 @@ public struct Connexion: Sendable {
   /// est muette. Le registre ne change donc AUCUN délai : il évite seulement de
   /// reconstruire ce qui existe déjà.
   ///
-  /// LA CLÉ PORTE AUSSI L'ADRESSE : un client vise une machine et un jeton. Le
-  /// jeton n'y est pas — un jeton change en se ré-appairant, et cela passe par un
-  /// changement de cible, donc par de nouveaux appels. Le registre est BORNÉ :
-  /// au-delà de trois entrées, la plus ancienne est oubliée, sinon un usage long
-  /// accumulerait des sessions ouvertes pour des adresses qu'on ne vise plus.
+  /// LA CLÉ PORTE AUSSI L'ADRESSE ET LE JETON — et le jeton y est sous forme
+  /// d'EMPREINTE, jamais en clair.
+  ///
+  /// POURQUOI LE JETON Y EST, ALORS QU'UN COMMENTAIRE AFFIRMAIT LE CONTRAIRE. Il
+  /// était écrit ici qu'un jeton ne change qu'en se ré-appairant, « et cela passe
+  /// par un changement de cible ». C'est FAUX pour le cas le plus courant : on se
+  /// ré-appaire sur la MÊME machine — jeton révoqué, réinstallation, second scan
+  /// du même QR. L'adresse ne bouge pas, donc la clé non plus, donc le client
+  /// gardé rendait l'ANCIEN porteur : `401` sur toutes les routes jusqu'à
+  /// éviction du registre ou redémarrage de l'application, sans qu'aucun écran ne
+  /// dise pourquoi. La clé doit donc distinguer deux jetons pour une même adresse.
+  ///
+  /// L'EMPREINTE SUFFIT, ET LE JETON EN CLAIR SERAIT UN DÉFAUT : la clé d'un
+  /// registre se retrouve dans une trace, un vidage mémoire ou un test qui
+  /// échoue. `Empreinte.de` est déjà là pour ça — comparer deux jetons sans
+  /// jamais les écrire — et une collision ne donnerait pas accès à un secret :
+  /// elle réutiliserait un client dont le porteur est refusé, donc un `401`
+  /// visible, jamais un accès.
+  ///
+  /// Le registre est BORNÉ : au-delà de trois entrées, la plus ancienne est
+  /// oubliée, sinon un usage long accumulerait des sessions ouvertes pour des
+  /// adresses qu'on ne vise plus.
   private let registre = RegistreDeClients()
 
   public init(fabrique: @escaping Fabrique = Connexion.fabriqueParDefaut) {
@@ -103,9 +120,11 @@ public struct Connexion: Sendable {
 
   /// Fabrique un client, ou rend celui qui existe déjà pour ce couple.
   private func client(_ adresse: String, _ jeton: String, delai: TimeInterval) throws -> any ClientDSH {
-    if let connu = registre.client(adresse: adresse, delai: delai) { return connu }
+    if let connu = registre.client(adresse: adresse, empreinteDuJeton: Empreinte.de(jeton), delai: delai) {
+      return connu
+    }
     let neuf = try fabrique(adresse, jeton, delai)
-    registre.poser(neuf, adresse: adresse, delai: delai)
+    registre.poser(neuf, adresse: adresse, empreinteDuJeton: Empreinte.de(jeton), delai: delai)
     return neuf
   }
 
@@ -185,7 +204,7 @@ public struct Connexion: Sendable {
   }
 }
 
-/// LES CLIENTS RÉUTILISABLES, PAR `(adresse, délai)`.
+/// LES CLIENTS RÉUTILISABLES, PAR `(adresse, empreinte du jeton, délai)`.
 ///
 /// POURQUOI UNE CLASSE, ET POURQUOI ELLE EST VERROUILLÉE. `Connexion` est une
 /// valeur `Sendable` : elle n'a pas de place pour un état modifiable, et lui en
@@ -203,6 +222,8 @@ public struct Connexion: Sendable {
 private final class RegistreDeClients: @unchecked Sendable {
   private struct Cle: Hashable {
     let adresse: String
+    /// L'EMPREINTE du porteur, jamais le porteur — voir la note de `Connexion`.
+    let empreinteDuJeton: String
     let delai: TimeInterval
   }
 
@@ -214,16 +235,16 @@ private final class RegistreDeClients: @unchecked Sendable {
   private var ordre: [Cle] = []
   private let maximum = 3
 
-  func client(adresse: String, delai: TimeInterval) -> (any ClientDSH)? {
+  func client(adresse: String, empreinteDuJeton: String, delai: TimeInterval) -> (any ClientDSH)? {
     verrou.lock()
     defer { verrou.unlock() }
-    return clients[Cle(adresse: adresse, delai: delai)]
+    return clients[Cle(adresse: adresse, empreinteDuJeton: empreinteDuJeton, delai: delai)]
   }
 
-  func poser(_ client: any ClientDSH, adresse: String, delai: TimeInterval) {
+  func poser(_ client: any ClientDSH, adresse: String, empreinteDuJeton: String, delai: TimeInterval) {
     verrou.lock()
     defer { verrou.unlock() }
-    let cle = Cle(adresse: adresse, delai: delai)
+    let cle = Cle(adresse: adresse, empreinteDuJeton: empreinteDuJeton, delai: delai)
     if clients[cle] == nil { ordre.append(cle) }
     clients[cle] = client
     while ordre.count > maximum {

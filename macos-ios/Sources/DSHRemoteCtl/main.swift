@@ -258,6 +258,11 @@ do {
       case let .delta(dernierSeq):
         deltas += 1
         print("  delta, dernierSeq=\(dernierSeq.map(String.init) ?? "—")")
+      case let .statut(statut):
+        // Un statut n'est PAS un enregistrement : il ne compte ni dans les
+        // évènements ni dans les deltas, et il ne fait pas avancer le curseur de
+        // reprise. L'outil le montre pour ce qu'il est.
+        print("  statut : \(statut)")
       case let .tronque(message):
         print("  TRONQUÉ : \(message)")
       case let .erreur(message):

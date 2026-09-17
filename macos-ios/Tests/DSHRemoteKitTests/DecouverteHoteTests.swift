@@ -41,7 +41,7 @@ func listeDeLHote() throws {
   #expect(liste.serveurs.filter(\.estLocal).map(\.nom) == ["Portable Un"])
 
   // L'adresse se déduit du nom DNS, et reste utilisable telle quelle.
-  #expect(try #require(liste.serveurs.first).adresse == "http://portable-un.exemple.ts.net")
+  #expect(try #require(liste.serveurs.first).adresse == "https://portable-un.exemple.ts.net")
 }
 
 @Test("Une liste vide de l'hôte porte sa raison, et ce n'est pas une erreur")

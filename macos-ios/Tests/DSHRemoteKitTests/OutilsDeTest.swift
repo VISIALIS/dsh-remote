@@ -45,3 +45,26 @@ func persistanceDeTest(documents: URL? = nil) -> Persistance {
   defaults.removePersistentDomain(forName: nom)
   return Persistance(defaults: defaults, documents: documents)
 }
+
+/// Un Info.plist qui AUTORISE le clair vers un domaine et ses sous-domaines.
+///
+/// POURQUOI CE HELPER EST PARTAGÉ. La règle d'adresse (`AdresseMachine`) et le
+/// conseil affiché (`ConseilAdresse`) lisent tous deux l'Info.plist du paquet :
+/// leurs tests ont donc besoin du MÊME plist — et le paquet de test, lui, n'en a
+/// aucun, ce qui est précisément ce qui rend la règle observable dans les deux
+/// sens.
+///
+/// Il est écrit comme le produit le script d'exception
+/// (`Scripts/injecter-exception-ats.sh`) : le domaine, sous-domaines inclus.
+func plistAvecException(pour domaine: String) -> [String: Any] {
+  [
+    "NSAppTransportSecurity": [
+      "NSExceptionDomains": [
+        domaine: [
+          "NSExceptionAllowsInsecureHTTPLoads": true,
+          "NSIncludesSubdomains": true,
+        ]
+      ]
+    ]
+  ]
+}

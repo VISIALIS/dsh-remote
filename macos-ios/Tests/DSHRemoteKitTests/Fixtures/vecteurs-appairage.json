@@ -22,7 +22,9 @@
       "genre": "jeton",
       "version": "v1",
       "secret": "JETONFICTIF-a-remplacer-0000000000000000000",
-      "adresse": "http://mac-mini-essai.exemple.test"
+      "adresse": "http://mac-mini-essai.exemple.test",
+      "transport": null,
+      "pourquoi": "la forme a quatre segments : http implicite"
     },
     {
       "charge": "dshremote://mac-mini-essai.exemple.test/code/v1/CODEFICTIF000000000000",
@@ -30,7 +32,9 @@
       "genre": "code",
       "version": "v1",
       "secret": "CODEFICTIF000000000000",
-      "adresse": "http://mac-mini-essai.exemple.test"
+      "adresse": "http://mac-mini-essai.exemple.test",
+      "transport": null,
+      "pourquoi": "la forme a quatre segments : http implicite"
     },
     {
       "charge": "dshremote://mac-mini-2.exemple.test/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
@@ -38,7 +42,9 @@
       "genre": "jeton",
       "version": "v1",
       "secret": "JETONFICTIF-a-remplacer-0000000000000000000",
-      "adresse": "http://mac-mini-2.exemple.test"
+      "adresse": "http://mac-mini-2.exemple.test",
+      "transport": null,
+      "pourquoi": "la forme a quatre segments : http implicite"
     },
     {
       "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/JETONFICTIF000000000000000000000",
@@ -46,7 +52,19 @@
       "genre": "jeton",
       "version": "v1",
       "secret": "JETONFICTIF000000000000000000000",
-      "adresse": "http://mac-mini-essai.exemple.test"
+      "adresse": "http://mac-mini-essai.exemple.test",
+      "transport": null,
+      "pourquoi": "la forme a quatre segments : http implicite"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000/https",
+      "hote": "mac-mini-essai.exemple.test",
+      "genre": "jeton",
+      "version": "v1",
+      "secret": "JETONFICTIF-a-remplacer-0000000000000000000",
+      "transport": "https",
+      "pourquoi": "le cinquieme segment dit la publication en HTTPS : l'application vise 443 au lieu de 80",
+      "adresse": "https://mac-mini-essai.exemple.test"
     }
   ],
   "refuses": [
@@ -129,6 +147,16 @@
       "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/JETONFICTIF00000000000000000000",
       "motif": "secret",
       "pourquoi": "un caractere SOUS le plancher du jeton : le filet de troncature"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000/ftp",
+      "motif": "forme",
+      "pourquoi": "un transport hors de la liste blanche : il ne doit jamais servir a construire une adresse"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000/https/x",
+      "motif": "forme",
+      "pourquoi": "six segments : un secret ne contient pas de barre oblique, donc ce n est pas une charge utile"
     }
   ],
   "limites": [
@@ -151,6 +179,11 @@
       "charge": "dshremote://a/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000",
       "accepte": true,
       "pourquoi": "une seule etiquette suffit : rien n'exige un point"
+    },
+    {
+      "charge": "dshremote://mac-mini-essai.exemple.test/jeton/v1/JETONFICTIF-a-remplacer-0000000000000000000/HTTPS",
+      "accepte": true,
+      "pourquoi": "la casse du transport est normalisee : HTTPS et https designent le meme transport"
     }
   ]
 }

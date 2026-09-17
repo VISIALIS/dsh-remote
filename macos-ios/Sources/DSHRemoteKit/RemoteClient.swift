@@ -66,33 +66,11 @@ public actor RemoteClient {
     self.jeton = jeton
 
     // LA CONFIGURATION VIENT DU PARAMÈTRE QUAND ELLE EST FOURNIE (tests), sinon
-    // d'une session éphémère. Elle est nommée `config` et non `configuration` :
-    // le paramètre porte déjà ce nom, et une liaison homonyme ferait douter de
-    // LAQUELLE des deux on règle les drapeaux ci-dessous.
-    let config = configuration ?? URLSessionConfiguration.ephemeral
-    // Aucun cache : un journal de session n'a rien à faire sur disque, et une
-    // réponse périmée induirait l'utilisateur en erreur.
-    config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-    config.urlCache = nil
-    config.httpShouldSetCookies = false
-    config.httpCookieAcceptPolicy = .never
-    config.timeoutIntervalForRequest = delai
-    config.timeoutIntervalForResource = max(delai, 120)
-    // ATTENDRE QUE LE RÉSEAU REVIENNE, AU LIEU D'ÉCHOUER TOUT DE SUITE.
-    //
-    // POURQUOI. Mesuré sur l'iPhone branché : trois `ping` tailnet vers
-    // l'appareil donnent 6 ms, 412 ms, 6 ms. Le chemin est direct (aucun relais
-    // DERP), donc ces pics ne sont pas du réseau : c'est la radio Wi-Fi de
-    // l'iPhone qui s'endort entre deux échanges. La première requête qui suit le
-    // réveil échouait alors en `-1001` (délai dépassé), et l'utilisateur voyait
-    // une panne de serveur là où il fallait attendre quelques centaines de
-    // millisecondes.
-    //
-    // Ce drapeau fait patienter `URLSession` jusqu'au retour du chemin réseau,
-    // dans la limite des délais ci-dessus. Il ne desserre aucun contrôle de
-    // sécurité : l'en-tête `Authorization` et l'absence d'`Origin` ne changent
-    // pas, et le serveur reste seul juge du jeton.
-    config.waitsForConnectivity = true
+    // de la fabrique PARTAGÉE avec le flux (`ConfigurationReseau`) : le client
+    // HTTP et la socket temps réel doivent porter les mêmes règles de cache, de
+    // cookie et d'attente du réseau — elles ont divergé une fois, et le flux n'y
+    // avait pas gagné.
+    let config = configuration ?? ConfigurationReseau.pourRequetes(delai: delai)
     self.session = URLSession(configuration: config)
   }
 
@@ -122,7 +100,15 @@ public actor RemoteClient {
   private func requete(_ chemin: String, methode: String, corps: Data?) throws -> URLRequest {
     var requete = URLRequest(url: url(chemin))
     requete.httpMethod = methode
-    requete.setValue("Bearer \(jeton)", forHTTPHeaderField: "Authorization")
+    // UN PORTEUR VIDE N'EST PAS POSÉ, ET CE N'EST PAS UN DÉTAIL. La sonde de
+    // découverte interroge des machines qui ne sont PAS la cible : leur envoyer
+    // le jeton de la cible ferait voyager un secret vers des hôtes qui n'en ont
+    // aucun besoin — alors qu'un `401` prouve déjà que DSH y répond (voir
+    // `Sonde`). Un en-tête `Bearer ` vide, lui, serait un porteur MAL FORMÉ : on
+    // n'en pose donc aucun, et la route répond son `401` fixe sans rien lire.
+    if !jeton.isEmpty {
+      requete.setValue("Bearer \(jeton)", forHTTPHeaderField: "Authorization")
+    }
     requete.setValue("application/json", forHTTPHeaderField: "Accept")
     // Délibérément AUCUN en-tête `Origin` : le serveur refuse en 403 toute
     // requête qui en porte un, et c'est cette barrière qui bloque les

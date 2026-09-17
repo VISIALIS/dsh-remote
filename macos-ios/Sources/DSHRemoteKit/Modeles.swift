@@ -93,8 +93,49 @@ public struct SessionListee: Sendable, Decodable, Hashable {
   public let illisible: String?
   public let resume: ResumeSession
 
+  /// L'INITIALISEUR QUI MANQUAIT, et pourquoi il est écrit à la main.
+  ///
+  /// `SessionListee` déclare son propre `init(from:)` — il décode un JSON dont les
+  /// clés ne suivent pas la convention Swift —, et une déclaration explicite
+  /// SUPPRIME l'initialiseur mémoire que le compilateur aurait synthétisé. Or
+  /// `avecStatut` a besoin d'en construire une copie. Il est donc écrit ici, une
+  /// fois, `internal` : c'est un détail de construction du module, pas une porte
+  /// ouverte pour les appelants.
+  init(
+    projet: String?, cwdIndicatif: String?, dossier: String?, fichier: String?, octets: Int?,
+    modifieLe: Double?, vivante: Bool?, statut: String?, attendReponse: Bool?, illisible: String?,
+    resume: ResumeSession
+  ) {
+    self.projet = projet
+    self.cwdIndicatif = cwdIndicatif
+    self.dossier = dossier
+    self.fichier = fichier
+    self.octets = octets
+    self.modifieLe = modifieLe
+    self.vivante = vivante
+    self.statut = statut
+    self.attendReponse = attendReponse
+    self.illisible = illisible
+    self.resume = resume
+  }
+
   public var id: String { resume.id ?? "(inconnu)" }
   public var titreAffiche: String { resume.titre ?? "(sans titre)" }
+
+  /// La même session, avec un statut RAFRAÎCHI par le flux.
+  ///
+  /// POURQUOI UNE COPIE, ET PAS UNE MUTATION. `SessionListee` est un modèle de
+  /// DÉCODAGE : ses champs sont des `let`, et c'est ce qui garantit qu'on ne le
+  /// modifie pas à moitié depuis une vue. La liste n'a qu'un écrivain par question
+  /// — `appliquerSessions` pour une liste entière, `appliquerStatut` pour le seul
+  /// statut poussé par le flux —, et cette copie garde la discipline : on remplace
+  /// une entrée par une AUTRE entrée, jamais un champ.
+  public func avecStatut(_ nouveau: String?) -> SessionListee {
+    SessionListee(
+      projet: projet, cwdIndicatif: cwdIndicatif, dossier: dossier, fichier: fichier,
+      octets: octets, modifieLe: modifieLe, vivante: vivante, statut: nouveau,
+      attendReponse: attendReponse, illisible: illisible, resume: resume)
+  }
 
   /// L'identité d'une session est son identifiant, PAS le contenu de son résumé :
   /// un journal qui grandit change son résumé à chaque écriture, et une sélection

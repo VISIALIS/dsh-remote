@@ -146,7 +146,7 @@ func espacesEffacesAuChangement() {
 
   modele.choisir(ServeurMac(nom: "Second", nomDNS: "second.exemple.test", enLigne: true))
 
-  #expect(modele.adresse == "http://second.exemple.test")
+  #expect(modele.adresse == "https://second.exemple.test")
   #expect(modele.espacesHote.isEmpty, "les espaces de l'ancien serveur ne doivent pas survivre")
 }
 
@@ -180,7 +180,7 @@ func espacesIntactsSurUnePage() {
 
   modele.ouvrirPage(ServeurMac(nom: "Second", nomDNS: "second.exemple.test", enLigne: true))
 
-  #expect(modele.adresse == "http://premier.exemple.test", "la cible n'a pas bougé")
+  #expect(modele.adresse == "https://premier.exemple.test", "la cible n a pas bouge")
   #expect(modele.espacesHote.count == 1)
 }
 

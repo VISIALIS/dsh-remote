@@ -58,15 +58,17 @@ private func santeValide() -> Sante {
   return try! JSONDecoder().decode(Sante.self, from: Data(json.utf8))
 }
 
-/// Une fabrique qui répond selon l'ADRESSE, et retient les délais demandés.
+/// Une fabrique qui répond selon l'ADRESSE, et retient les délais ET les porteurs.
 private final class FabriqueParAdresse: @unchecked Sendable {
   private let verrou = NSLock()
   private(set) var delais: [TimeInterval] = []
+  private(set) var jetons: [String] = []
 
   func fabrique() -> Connexion.Fabrique {
-    { [self] adresse, _, delai in
+    { [self] adresse, jeton, delai in
       verrou.lock()
       delais.append(delai)
+      jetons.append(jeton)
       verrou.unlock()
       switch adresse {
       case servie.adresse: return ClientParAdresse(.success(santeValide()))
@@ -85,18 +87,38 @@ func jetonRefuseCompteCommeServi() async {
   let espion = FabriqueParAdresse()
   let sonde = Sonde(fabrique: espion.fabrique())
 
-  let verdict = await sonde.interroger([servie, refusante], jeton: String(repeating: "a", count: 43))
+  let verdict = await sonde.interroger([servie, refusante])
 
   #expect(verdict.serventDsh.contains(servie.id))
   #expect(verdict.serventDsh.contains(refusante.id), "un 401 prouve que DSH est installé")
   #expect(verdict.causes.isEmpty, "aucune cause : ces deux machines servent DSH")
 }
 
+@Test("La sonde n'apporte AUCUN porteur aux machines qu'elle interroge")
+func sondeSansPorteur() async {
+  // POURQUOI CE TEST EXISTE. La sonde interroge les machines d'un tailnet qui ne
+  // sont PAS la cible : leur présenter le jeton de la cible faisait voyager un
+  // secret vers des hôtes qui n'en ont aucun besoin, et chacun d'eux pouvait le
+  // rejouer. Le porteur est donc VIDE — ce que `RemoteClient` traduit par
+  // « aucun en-tête Authorization ». Un `401` suffit à la question posée : le
+  // service a répondu.
+  let espion = FabriqueParAdresse()
+  let sonde = Sonde(fabrique: espion.fabrique())
+
+  _ = await sonde.interroger([servie, muette, sansPlugin, refusante])
+
+  #expect(espion.jetons.count == 4)
+  // La valeur est calculée AVANT l'assertion : `allSatisfy` est `rethrows`, et la
+  // macro `#expect` ne peut pas l'appeler dans une expression qu'elle réécrit.
+  let tousVides = espion.jetons.allSatisfy(\.isEmpty)
+  #expect(tousVides, "un porteur a ete transmis a une machine qui n'est pas la cible")
+}
+
 @Test("Chaque échec laisse sa CAUSE, qui dit quoi réparer")
 func causesDesEchecs() async {
   let sonde = Sonde(fabrique: FabriqueParAdresse().fabrique())
 
-  let verdict = await sonde.interroger([sansPlugin, muette], jeton: String(repeating: "a", count: 43))
+  let verdict = await sonde.interroger([sansPlugin, muette])
 
   #expect(verdict.serventDsh.isEmpty)
   // 404 : la machine répond, mais pas DSH Remote → le plugin n'y est pas chargé.
@@ -110,8 +132,7 @@ func delaiCourtEtParallele() async {
   let espion = FabriqueParAdresse()
   let sonde = Sonde(fabrique: espion.fabrique())
 
-  _ = await sonde.interroger([servie, muette, sansPlugin, refusante],
-    jeton: String(repeating: "a", count: 43))
+  _ = await sonde.interroger([servie, muette, sansPlugin, refusante])
 
   // TOUTES les machines sont interrogées, et chacune avec le délai court : une
   // machine éteinte ne doit pas retarder les autres, et un Mac muet ne mérite
@@ -124,7 +145,7 @@ func delaiCourtEtParallele() async {
 @Test("Aucun candidat : la sonde ne ment pas, elle rend un verdict vide")
 func aucunCandidat() async {
   let sonde = Sonde(fabrique: FabriqueParAdresse().fabrique())
-  let verdict = await sonde.interroger([], jeton: String(repeating: "a", count: 43))
+  let verdict = await sonde.interroger([])
   #expect(verdict.serventDsh.isEmpty)
   #expect(verdict.causes.isEmpty)
 }

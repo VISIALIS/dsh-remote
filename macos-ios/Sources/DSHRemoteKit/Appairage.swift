@@ -19,14 +19,23 @@ import Foundation
 ///     dshremote://<hote>/<genre>/v1/<secret>
 ///
 /// Elle doit tenir dans un QR d'écran, donc dans peu d'octets : pas de
-/// pourcent-encodage, pas de port, pas de paramètre facultatif. L'adresse se
-/// déduit (`http://<hote>` — le port 80 que `tailscale serve` publie), le genre
-/// et la version sont des segments, et le secret est en base64url, donc sans
-/// `/` : le découpage n'est jamais ambigu.
+/// pourcent-encodage, pas de paramètre facultatif sauf UN — le schéma de
+/// publication, omis quand il vaut `http`. Le genre et la version sont des
+/// segments, et le secret est en base64url, donc sans `/` : le découpage n'est
+/// jamais ambigu.
 public enum Appairage {
 
   /// Le schéma de la charge utile. Un seul, jamais négocié.
   public static let schema = "dshremote"
+
+  /// Les transports qui peuvent être ANNONCÉS dans une charge utile.
+  ///
+  /// POURQUOI UNE LISTE BLANCHE. Le cinquième segment est écrit par une AUTRE
+  /// machine : `ftp://`, `file://` ou `javascript:` n'ont rien à y faire, et une
+  /// application qui ferait confiance à ce segment construirait une adresse
+  /// qu'elle n'a pas choisie. Le miroir JS porte la même liste (`SCHEMAS`), et le
+  /// fixture partagé rejoue les deux.
+  public static let transportsAnnoncables = ["http", "https"]
 
   /// Ce que le secret EST, selon le genre.
   ///
@@ -46,19 +55,37 @@ public enum Appairage {
     public let genre: Genre
     public let version: String
     public let secret: String
+    /// Le transport ANNONCÉ par la machine, s'il y en a un. `nil` veut dire
+    /// « http implicite » — la forme à quatre segments, et le cas le plus courant.
+    public let transport: String?
 
-    /// L'adresse que l'application doit viser.
+    /// L'adresse que l'application doit viser, POUR UN PAQUET DONNÉ.
     ///
-    /// Le port est implicite : 80, la convention que `tailscale serve` publie —
-    /// c'est déjà ce que fait `ServeurMac.adresse`, et deux règles d'adresse
-    /// différentes dans la même application seraient un défaut de plus.
-    public var adresse: String { "http://\(hote)" }
+    /// DEUX SOURCES, ET LA PLUS SÉVÈRE GAGNE. Le transport annoncé dit sous quel
+    /// schéma la machine se publie ; ce que le paquet autorise (`AdresseMachine`)
+    /// dit ce qui est seulement possible. Une adresse en clair annoncée par un
+    /// hôte n'est donc jamais suivie par un paquet qui refuse le clair vers un nom
+    /// qualifié : ATS la refuserait avant qu'elle ne parte, et le message parlerait
+    /// de transport au lieu du vrai problème.
+    ///
+    /// POURQUOI UNE FONCTION, ET PAS SEULEMENT LA PROPRIÉTÉ. C'est ce qui rend la
+    /// règle ÉPROUVABLE : un test donne l'Info.plist qu'il veut, au lieu de
+    /// dépendre de celui du paquet de test — qui n'a, lui, aucune exception.
+    public func adresse(pour plist: [String: Any]?) -> String {
+      AdresseMachine.pour(hote: hote, schemaAnnonce: transport ?? "http", plist: plist)
+    }
 
-    public init(hote: String, genre: Genre, version: String, secret: String) {
+    /// L'adresse visée par le paquet QUI EXÉCUTE CE CODE.
+    public var adresse: String {
+      AdresseMachine.pour(hote: hote, schemaAnnonce: transport ?? "http")
+    }
+
+    public init(hote: String, genre: Genre, version: String, secret: String, transport: String? = nil) {
       self.hote = hote
       self.genre = genre
       self.version = version
       self.secret = secret
+      self.transport = transport
     }
   }
 
@@ -172,10 +199,11 @@ public enum Appairage {
 
     let reste = String(valeur.dropFirst(prefixe.count))
     let morceaux = reste.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-    // Quatre segments exactement : hôte, genre, version, secret. Un secret ne
-    // contient pas de `/`, donc un segment de plus est une charge utile MAL
-    // FORMÉE — jamais un cas particulier à deviner.
-    guard morceaux.count == 4 else { return .failure(.forme) }
+    // QUATRE SEGMENTS — hôte, genre, version, secret — OU CINQ avec le transport
+    // annoncé. Aucun autre compte : un secret ne contient pas de `/`, donc un
+    // segment de plus est une charge utile MAL FORMÉE, jamais un cas particulier
+    // à deviner.
+    guard morceaux.count == 4 || morceaux.count == 5 else { return .failure(.forme) }
     let hote = morceaux[0]
     let genreBrut = morceaux[1]
     let versionBrute = morceaux[2]
@@ -188,7 +216,16 @@ public enum Appairage {
     guard let genre = Genre(rawValue: genreBrut) else { return .failure(.genre) }
     guard versionBrute == version(genre) else { return .failure(.version) }
     guard secretAcceptable(genre, secret) else { return .failure(.secret) }
+    // Un transport qui n'est pas dans la liste blanche est refusé AVANT d'être
+    // utilisé pour construire une adresse — c'est tout l'intérêt de la liste.
+    var transport: String?
+    if morceaux.count == 5 {
+      let annonce = morceaux[4].lowercased()
+      guard transportsAnnoncables.contains(annonce) else { return .failure(.forme) }
+      transport = annonce
+    }
 
-    return .success(Charge(hote: hote, genre: genre, version: versionBrute, secret: secret))
+    return .success(
+      Charge(hote: hote, genre: genre, version: versionBrute, secret: secret, transport: transport))
   }
 }

@@ -102,7 +102,7 @@ func adresseEcriteSansMachine() {
   modele.definirAdresse("http://ailleurs.exemple.ts.net")
   #expect(modele.serveurChoisi == nil)
   #expect(modele.nomServeur == nil)
-  #expect(modele.adresse == "http://ailleurs.exemple.ts.net")
+  #expect(modele.adresse == "https://ailleurs.exemple.ts.net")
 }
 
 @MainActor

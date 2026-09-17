@@ -1,6 +1,6 @@
 import Foundation
 
-/// L'IDENTITÉ D'UN HÔTE : son adresse, normalisée.
+/// L'IDENTITÉ D'UN HÔTE : son nom (et son port), JAMAIS son transport.
 ///
 /// POURQUOI UNE FONCTION NOMMÉE, ET UNE SEULE. Cette clé sert à deux choses qui
 /// ne doivent PAS diverger : ranger le jeton d'un hôte, et ranger ses
@@ -8,12 +8,23 @@ import Foundation
 /// d'une machine se retrouverait sous une clé et ses réglages sous une autre —
 /// et le symptôme serait « le jeton ne revient pas » sur une machine sur deux.
 ///
-/// L'adresse est normalisée : protocole supposé, barre finale retirée. Une
-/// machine nommée, saisie à la main, ou atteinte par son adresse de tailnet est
-/// donc LA MÊME.
+/// POURQUOI LE SCHÉMA N'EN FAIT PAS PARTIE — c'est une correction, et elle a une
+/// conséquence visible. La clé portait l'adresse complète (« http://mac… »), donc
+/// la MÊME machine publiée en `https` devenait une AUTRE machine : le jeton rangé
+/// pour la forme en clair était introuvable, la machine jointe n'était plus
+/// reconnue, et l'utilisateur devait se ré-appairer pour un simple changement de
+/// transport. Or le transport ne dépend pas de l'hôte : il dépend de ce que le
+/// paquet autorise et de ce que `tailscale serve` publie. L'identité s'arrête donc
+/// au nom — avec son port, qui distingue bien deux services d'une même machine.
+///
+/// L'ANCIENNE CLÉ RESTE LISIBLE : `ModeleApp.jetonGarde` essaie aussi
+/// « http://<clé> », réécrit le jeton sous la clé neuve et efface l'ancienne. Un
+/// secret rangé par une version antérieure n'est donc pas perdu.
 public enum IdentiteHote {
   public static func cle(_ adresse: String) -> String {
-    RemoteClient.normaliser(adresse).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    let normalisee = RemoteClient.normaliser(adresse).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    guard let separateur = normalisee.range(of: "://") else { return normalisee }
+    return String(normalisee[separateur.upperBound...])
   }
 }
 

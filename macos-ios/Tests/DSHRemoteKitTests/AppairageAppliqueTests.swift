@@ -116,7 +116,7 @@ func appairageParJeton() async {
   let (modele, gardien) = modeleEtGardien()
 
   #expect(await modele.appairer(chargeJeton))
-  #expect(modele.adresse == "http://mac-mini-essai.exemple.test")
+  #expect(modele.adresse == "https://mac-mini-essai.exemple.test")
   #expect(modele.jetonSaisi == jetonAttendu)
   // LE JETON EST GARDÉ POUR CET HÔTE, pas dans un champ global : c'est la règle
   // « chaque machine a le sien », et l'appairage ne doit pas y déroger.
@@ -134,7 +134,7 @@ func appairageParCode() async {
   // d'appareil, sans lequel la liste des appareils n'aurait que des empreintes.
   #expect(transport.demandes.count == 1)
   #expect(transport.demandes.first?.code == codeAttendu)
-  #expect(transport.demandes.first?.adresse == "http://mac-mini-essai.exemple.test")
+  #expect(transport.demandes.first?.adresse == "https://mac-mini-essai.exemple.test")
   #expect(transport.demandes.first?.nom.isEmpty == false)
 
   // CE QUI EST RANGÉ EST LE JETON RENDU, JAMAIS LE CODE.
@@ -185,7 +185,7 @@ func jetonParHoteConserve() async {
   #expect(await modele.appairer(chargeJeton))
   #expect(await modele.appairer(seconde))
 
-  #expect(modele.adresse == "http://mac-mini-2.exemple.test")
+  #expect(modele.adresse == "https://mac-mini-2.exemple.test")
   #expect(modele.jetonSaisi == "AUTREJETONFICTIF-b-remplacer-000000000000000")
   // LE PREMIER JETON RESTE CELUI DE LA PREMIÈRE MACHINE : l'appairage ne doit
   // pas écraser un secret par un autre. C'est `viser` qui recharge le bon.

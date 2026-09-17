@@ -35,6 +35,13 @@ public final class ModeleApp {
   /// là-bas ; le modèle garde l'état du verdict et les règles qui l'entourent.
   private let sondeur: Sonde
 
+  /// L'OBSERVATION DU CHEMIN RÉSEAU, quand elle est fournie.
+  ///
+  /// `nil` est un état NORMAL, pas une dégradation : les tests qui n'éprouvent pas
+  /// le chemin réseau n'ont rien à démarrer, et un modèle construit sans observateur
+  /// se comporte exactement comme avant (`NWPathMonitor` n'existait pas ici).
+  private let observateurDeChemin: ObservateurDeChemin?
+
   /// COMMENT on parle à une machine, et avec quelle patience. La politique vit
   /// là-bas (`Connexion`) ; le modèle garde l'état et les transitions.
   private let transport: Connexion
@@ -186,7 +193,27 @@ public final class ModeleApp {
     let cle = IdentiteHote.cle(cible.adresse)
     guard cle != cleJetonChargee else { return }
     cleJetonChargee = cle
-    jetonSaisi = gardien.lire(pour: cle) ?? ""
+    jetonSaisi = jetonGarde(pour: cible.adresse) ?? ""
+  }
+
+  /// Lit le jeton gardé pour un hôte, EN COMPTANT AVEC L'ANCIENNE CLÉ.
+  ///
+  /// POURQUOI CETTE SECONDE LECTURE EXISTE. Les clés d'hôte portaient autrefois le
+  /// schéma (« http://mac.tailnet.ts.net ») ; elles ne le portent plus, parce que
+  /// la même machine en `http` et en `https` est la MÊME machine — le transport
+  /// dépend du paquet, pas de l'hôte. Un jeton rangé par une version antérieure
+  /// serait donc introuvable, et l'utilisateur lirait « aucun jeton » pour un
+  /// appareil parfaitement appairé. On le retrouve ici, on le RÉÉCRIT sous la clé
+  /// neuve, et on efface l'ancienne : la migration se fait une fois, sans geste, et
+  /// aucun secret ne reste en double.
+  private func jetonGarde(pour adresse: String) -> String? {
+    let cle = IdentiteHote.cle(adresse)
+    if let trouve = gardien.lire(pour: cle), !trouve.isEmpty { return trouve }
+    let ancienne = "http://" + cle
+    guard let ancien = gardien.lire(pour: ancienne), !ancien.isEmpty else { return nil }
+    gardien.ecrire(ancien, pour: cle)
+    gardien.effacer(pour: ancienne)
+    return ancien
   }
 
   /// Le jeton À UTILISER pour la cible : celui gardé POUR ELLE, sinon — et
@@ -212,7 +239,7 @@ public final class ModeleApp {
       return jetonSaisi
     }
     let cle = IdentiteHote.cle(cible.adresse)
-    if let garde = gardien.lire(pour: cle), !garde.isEmpty {
+    if let garde = jetonGarde(pour: cible.adresse) {
       Trace.siActive(
         "[jeton] gardien de l'hote : longueur=\(garde.count) empreinte=\(Empreinte.de(garde).prefix(8))")
       return garde
@@ -546,6 +573,34 @@ public final class ModeleApp {
     observerLesFinsDeTour()
   }
 
+  /// UN STATUT POUSSÉ PAR LE FLUX — le seul écrivain qui ne vient pas d'une liste.
+  ///
+  /// POURQUOI IL EXISTE, ET POURQUOI IL EST NOMMÉ. Les pastilles de la liste
+  /// n'étaient rafraîchies que par la boucle HTTP (trois secondes) : un tour qui
+  /// démarre mettait donc jusqu'à trois secondes à s'allumer, et l'utilisateur
+  /// regardait un écran qui mentait sur ce qui travaillait. L'hôte pousse
+  /// maintenant `agent/status` sur le flux de la session concernée.
+  ///
+  /// CE QU'IL NE FAIT PAS : remplacer la liste. Il ne touche QUE le statut d'UNE
+  /// session connue — une session apparue entre-temps n'existe pas encore ici, et
+  /// c'est la liste qui l'apportera. Il ne touche pas non plus les rappels de fin
+  /// de tour (`observerLesFinsDeTour`) : un statut poussé n'est pas une observation
+  /// complète, et une pastille verte allumée sur un demi-fait serait pire que pas
+  /// de pastille.
+  ///
+  /// LA GÉNÉRATION EST VÉRIFIÉE, comme partout : un statut arrivé après un
+  /// changement de machine décrit une autre cible.
+  func appliquerStatut(_ statut: String, de identifiant: String, vu generationVue: Int) {
+    guard reponseEncoreValable(generationVue) else { return }
+    guard let index = sessions.firstIndex(where: { $0.id == identifiant }) else { return }
+    // On ne remplace QUE si le statut a changé : réécrire la liste pour un statut
+    // identique ferait redessiner la vue à chaque transition d'un autre agent.
+    guard sessions[index].statut != statut else { return }
+    var copie = sessions
+    copie[index] = sessions[index].avecStatut(statut)
+    sessions = copie
+  }
+
   /// Journal d'une session — même règle, ET la session en plus.
   ///
   /// POURQUOI LA SESSION EST VÉRIFIÉE ICI. La garde de génération protège d'un
@@ -733,7 +788,16 @@ public final class ModeleApp {
   /// publie DSH répond en quelques millisecondes sur le tailnet, et qu'un Mac
   /// muet ne mérite pas qu'on l'attende.
   public func sonderLesServeurs() async {
-    let jeton = jetonDeLaCible()
+    // ── ON SONDE SANS PORTEUR, ET C'EST UNE RÈGLE DE SÉCURITÉ ────────────────
+    //
+    // La sonde interroge les machines d'un tailnet qui NE SONT PAS la cible :
+    // leur présenter le jeton de la cible ferait voyager un secret vers des hôtes
+    // qui n'en ont aucun besoin, et chacun d'eux pourrait le rejouer. Or ce jeton
+    // n'apprend rien ici — la question est « y a-t-il un DSH en face ? », et un
+    // `401` y répond aussi bien qu'un `200`, puisque le service a répondu. C'est
+    // la règle du modèle (chaque hôte a SON jeton) poussée jusqu'au bout : un
+    // porteur ne se présente qu'à l'hôte dont il est le secret.
+    //
     // ON SONDE MÊME SANS JETON — ET C'EST UNE CORRECTION, PAS UN OUBLI.
     //
     // Il y avait ici une garde : `guard jeton.count == 43`, avec pour raison
@@ -781,7 +845,7 @@ public final class ModeleApp {
     let debutSonde = Date()
     Trace.siActive("[sonde] debut : \(candidats.count) candidat(s), deja annulee=\(Task.isCancelled)")
 
-    let verdict = await sondeur.interroger(candidats, jeton: jeton)
+    let verdict = await sondeur.interroger(candidats)
     // ── UNE SONDE ANNULÉE N'EST PAS UN VERDICT ──────────────────────────────
     //
     // MESURÉ, ET C'EST UN FAUX NÉGATIF. La sonde est relancée à chaque
@@ -850,10 +914,18 @@ public final class ModeleApp {
   }
 
   /// Version PURE — même normalisation que `serveurHorsLigne`, éprouvable seule.
+  ///
+  /// LA COMPARAISON PORTE SUR L'IDENTITÉ DE L'HÔTE (`IdentiteHote.cle`), donc sur
+  /// le nom et le port : le schéma n'en fait plus partie, parce que la même
+  /// machine en `http` et en `https` est LA MÊME. Comparer les adresses complètes
+  /// faisait qu'une adresse mémorisée en clair ne reconnaissait plus la machine
+  /// publiée en HTTPS — la vignette perdait son nom et son icône pour un simple
+  /// changement de transport.
   nonisolated static func serveurA(adresse: String, dans serveurs: [ServeurMac]) -> ServeurMac? {
-    let visee = RemoteClient.normaliser(adresse).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    let visee = IdentiteHote.cle(adresse)
+    guard !visee.isEmpty else { return nil }
     return serveurs.first { serveur in
-      RemoteClient.normaliser(serveur.adresse).trimmingCharacters(in: CharacterSet(charactersIn: "/")) == visee
+      IdentiteHote.cle(serveur.adresse) == visee
     }
   }
 
@@ -867,10 +939,9 @@ public final class ModeleApp {
   /// tailnet —, et redemande sinon le verdict de la sonde, sans risque de tester
   /// une AUTRE machine.
   nonisolated static func vise(_ adresse: String, _ serveur: ServeurMac) -> Bool {
-    let gauche = RemoteClient.normaliser(adresse).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    let droite = RemoteClient.normaliser(serveur.adresse).trimmingCharacters(
-      in: CharacterSet(charactersIn: "/"))
-    return gauche == droite
+    let gauche = IdentiteHote.cle(adresse)
+    guard !gauche.isEmpty else { return false }
+    return gauche == IdentiteHote.cle(serveur.adresse)
   }
 
   /// D'où vient la liste affichée.
@@ -922,13 +993,61 @@ public final class ModeleApp {
   /// celle réglée sur sa page.
   public var suiviAutomatique: Bool { preferences(pour: adresse).suivi }
 
+  // ── LA CADENCE DU SUIVI, ET POURQUOI ELLE N'EST PLUS FIXE ──────────────────
+  //
+  // Trois secondes, c'était la bonne réponse à UNE question — « qu'est-ce qui
+  // tourne ? » — posée en boucle, y compris quand la réponse ne pouvait pas
+  // changer. Sur un iPhone, chaque tour réveille la radio : c'est le poste de
+  // dépense le plus visible de cette application, et il ne sert à rien quand
+  // aucune session ne travaille et que l'utilisateur ne regarde rien.
+  //
+  // La règle est donc : RAPIDE quand quelque chose bouge ou quand une session est
+  // ouverte en direct, LENTE sinon. Ce qui bouge se lit dans la liste déjà reçue
+  // (`en_cours`, `attendReponse`) — c'est-à-dire sans requête supplémentaire.
+  /// Cadence quand quelque chose bouge, ou qu'une session est suivie en direct.
+  public static let cadenceRapide: TimeInterval = 3
+  /// Cadence de repos : rien ne tourne, aucune session n'est ouverte.
+  ///
+  /// Quinze secondes, et pas trente : c'est le temps qu'un tour lancé depuis un
+  /// AUTRE appareil mette à apparaître ici. Au-delà, la liste cesserait d'être un
+  /// tableau de bord pour devenir une photo ancienne.
+  public static let cadenceDeRepos: TimeInterval = 15
+
+  /// La cadence à appliquer MAINTENANT — une valeur pure, donc éprouvable seule.
+  ///
+  /// `enDirect` compte autant que l'état des sessions : c'est le cas « l'utilisateur
+  /// vient d'envoyer un prompt » — le flux est ouvert, et la liste doit suivre pour
+  /// que la pastille passe à « en cours » tout de suite.
+  public static func cadence(sessions: [SessionListee], enDirect: Bool) -> TimeInterval {
+    if enDirect { return cadenceRapide }
+    let bouge = sessions.contains { $0.statut == "en_cours" || $0.attendReponse == true }
+    return bouge ? cadenceRapide : cadenceDeRepos
+  }
+
+  /// La cadence courante, telle que la boucle la lira à chaque tour.
+  public var cadenceCourante: TimeInterval {
+    // LE CHEMIN RÉSEAU PEUT ESPACER, JAMAIS ACCÉLÉRER : sur un chemin coûteux ou en
+    // « données réduites », l'utilisateur a demandé à être ménagé — une application
+    // qui sonde toutes les trois secondes va contre sa décision. Le suivi n'est pas
+    // coupé pour autant : les pastilles deviendraient fausses.
+    CheminReseau.cadence(
+      chemin: chemin, voulue: ModeleApp.cadence(sessions: sessions, enDirect: enDirect))
+  }
+
   /// Démarre la boucle de rafraîchissement, si un serveur est joignable.
+  ///
+  /// LA CADENCE EST RELUE À CHAQUE TOUR, et non fixée au démarrage : une session
+  /// qui part en travail passe la boucle en cadence rapide au tour suivant, et une
+  /// session qui se termine la fait retomber en repos. Le prix est qu'un tour
+  /// lancé AILLEURS est vu au plus tard après un repos — quinze secondes —, ce qui
+  /// est le compromis assumé de cette règle.
   public func demarrerSuivi() {
     arreterSuivi()
     guard suiviAutomatique, client != nil else { return }
     tacheSuivi = Task { [weak self] in
       while !Task.isCancelled {
-        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        let attente = await self?.cadenceCourante ?? ModeleApp.cadenceRapide
+        try? await Task.sleep(nanoseconds: UInt64(attente * 1_000_000_000))
         guard !Task.isCancelled else { return }
         guard let self else { return }
         // On ne touche PAS au journal ouvert : seul l'état des sessions est
@@ -1068,13 +1187,18 @@ public final class ModeleApp {
     persistance: Persistance = Persistance(),
     alerteur: Alerteur = AlerteurSysteme(),
     transport: Connexion = Connexion(),
-    sondeur: Sonde = Sonde()
+    sondeur: Sonde = Sonde(),
+    observateurDeChemin: ObservateurDeChemin? = nil
   ) {
     self.gardien = gardien
     self.persistance = persistance
     self.alerteur = alerteur
     self.transport = transport
     self.sondeur = sondeur
+    // L'OBSERVATEUR EST FACULTATIF, ET `nil` VEUT DIRE « aucun ». Les tests qui
+    // n'éprouvent pas le chemin réseau n'ont pas à démarrer un moniteur système ;
+    // ceux qui l'éprouvent passent le leur.
+    self.observateurDeChemin = observateurDeChemin
     chargerConfiguration()
     chargerPreference()
     chargerPreferencesServeurs()
@@ -1095,11 +1219,42 @@ public final class ModeleApp {
     let (memorisee, nom) = persistance.lireAdresse()
     // Sans adresse mémorisée, on garde celle par défaut : le formulaire n'est
     // pas « vidé » au lancement.
-    viser(Cible(adresse: memorisee.isEmpty ? cible.adresse : memorisee, nom: nom))
+    //
+    // LA RÈGLE D'ADRESSE S'APPLIQUE AUSSI ICI, et c'est indispensable : une
+    // préférence écrite AVANT que ce paquet perde son exception ATS porte
+    // « http://… », et la restaurer telle quelle ferait échouer chaque connexion
+    // en `-1022` — un refus certain, annoncé comme une panne de réseau.
+    viser(
+      Cible(
+        adresse: memorisee.isEmpty ? cible.adresse : ModeleApp.adresseEffective(memorisee),
+        nom: nom))
   }
 
   private func memoriserPreference() {
     persistance.memoriserAdresse(adresse, nom: nomServeur)
+  }
+
+  /// L'ADRESSE EFFECTIVE D'UNE SAISIE — la règle du paquet, en un seul endroit.
+  ///
+  /// POURQUOI UNE FONCTION, ET POURQUOI ELLE EST ICI. Trois chemins écrivent
+  /// l'adresse visée : la saisie manuelle, l'appairage, et la préférence
+  /// mémorisée à la réouverture. Chacun appliquait — ou n'appliquait pas — la
+  /// règle du schéma. Une adresse en clair vers un nom qualifié, dans un paquet
+  /// sans exception ATS, est un refus CERTAIN : la viser quand même ferait
+  /// afficher une panne de réseau là où le remède est connu d'avance.
+  ///
+  /// CE QUI N'EST PAS RÉÉCRIT : `https` n'est jamais rétrogradé, une IP littérale
+  /// ou `localhost` reste en clair (ATS ne les concerne pas, et le PORT est
+  /// conservé — `http://100.x.y.z:3080` est une adresse qui marche), et une
+  /// adresse vide reste vide.
+  nonisolated static func adresseEffective(_ valeur: String) -> String {
+    let propre = valeur.trimmingCharacters(in: .whitespacesAndNewlines)
+    if propre.isEmpty { return propre }
+    if propre.lowercased().hasPrefix("https://") { return propre }
+    if propre.lowercased().hasPrefix("http://") {
+      return AdresseMachine.pour(hote: String(propre.dropFirst("http://".count)))
+    }
+    return AdresseMachine.pour(hote: propre)
   }
 
   /// Change l'adresse ET la mémorise immédiatement.
@@ -1113,11 +1268,12 @@ public final class ModeleApp {
   /// L'adresse n'est pas un secret : la mémoriser à la frappe ne coûte rien.
   /// Le jeton, lui, ne suit PAS ce chemin et reste confié au seul trousseau.
   public func definirAdresse(_ valeur: String) {
+    let effective = ModeleApp.adresseEffective(valeur)
     // Le nom et la machine suivent l'adresse : si elle correspond à une machine
     // découverte, on la reconnaît ; sinon on n'affirme RIEN (le nom reste vide,
     // et l'icône se déduit de l'adresse).
-    let machine = ModeleApp.serveurA(adresse: valeur, dans: serveurs)
-    viser(Cible(adresse: valeur, nom: machine?.nom, machine: machine))
+    let machine = ModeleApp.serveurA(adresse: effective, dans: serveurs)
+    viser(Cible(adresse: effective, nom: machine?.nom, machine: machine))
     memoriserPreference()
   }
 
@@ -1190,7 +1346,7 @@ public final class ModeleApp {
   /// coupe à huit : il couperait exactement ce que l'hôte s'autorise. On ne parle
   /// à l'hôte que si on l'a déjà joint — `client` en est la preuve.
   /// L'hôte ne se demande QUE si on l'a déjà joint — `client` en est la preuve.
-  private var hoteEstJoint: Bool { client != nil && !adresse.isEmpty }
+  public var hoteEstJoint: Bool { client != nil && !adresse.isEmpty }
 
   /// Demande la liste à l'hôte déjà joint — la voie qui fonctionne sur iPhone.
   ///
@@ -2342,6 +2498,10 @@ public final class ModeleApp {
     // l'utilisateur un secret qui n'était pas visé.
     if cle == IdentiteHote.cle(cible.adresse) { jetonSaisi = "" }
     gardien.effacer(pour: cle)
+    // L'ANCIENNE CLÉ AUSSI : un effacement qui laisserait derrière lui le secret
+    // rangé sous « http://<hôte> » serait un effacement qui ment — et c'est
+    // exactement ce qu'on vient lire dans une réinitialisation.
+    gardien.effacer(pour: "http://" + cle)
   }
 
   /// Enregistre le jeton saisi : au trousseau sur iOS, en mémoire sur macOS.
@@ -2710,6 +2870,114 @@ public final class ModeleApp {
     reconnexion = nil
   }
 
+  // MARK: - Le cycle de vie de l'application
+
+  /// Vrai tant que l'application est en arrière-plan.
+  ///
+  /// Public parce que c'est un FAIT observable, et que l'écran peut avoir à le
+  /// dire ; la boucle, elle, s'arrête simplement.
+  public private(set) var enArrierePlan = false
+
+  /// SUSPENDRE LE TRAVAIL DE FOND — sur `scenePhase == .background`.
+  ///
+  /// POURQUOI ÇA EXISTE. Trois boucles et une socket continuaient de « tourner »
+  /// pendant qu'iOS gèle le processus : entre le passage en arrière-plan et la
+  /// suspension, elles consommaient de la radio pour rien, et surtout la
+  /// temporisation de reconnexion reprenait au réveil avec un quota entamé — le
+  /// cas « l'application a dormi dix minutes et le flux affiche un échec ».
+  ///
+  /// CE QUI EST FERMÉ, ET CE QUI EST GARDÉ. On ferme la socket et la reconnexion
+  /// en vol (`fermerLeFluxCourant`), on arrête les deux boucles. On NE touche PAS
+  /// à `enDirect` : c'est l'INTENTION de l'utilisateur — « je suivais cette
+  /// session » — et c'est elle qui décide de la réouverture. L'éteindre ici
+  /// ferait disparaître le direct au retour, sans que personne ne l'ait demandé.
+  ///
+  /// `.inactive` N'ARRÊTE RIEN, ET C'EST DÉLIBÉRÉ : iOS passe par cet état pour
+  /// le sélecteur d'applications, une bannière ou le centre de contrôle. Y couper
+  /// le flux le romprait à chaque notification.
+  public func suspendreLeTravailDeFond() async {
+    guard !enArrierePlan else { return }
+    enArrierePlan = true
+    arreterSuivi()
+    arreterSuiviServeurs()
+    await fermerLeFluxCourant()
+    Trace.siActive("[cycle] arriere-plan : boucles arretees, flux ferme, quota intact")
+  }
+
+  /// REPRENDRE AU PREMIER PLAN — sur `scenePhase == .active`.
+  ///
+  /// TROIS CHOSES, DANS CET ORDRE, ET CHACUNE RÉPARE UN DÉFAUT CONSTATÉ :
+  ///
+  /// 1. **le quota de reconnexion repart à neuf.** Vingt tentatives, c'est la
+  ///    bonne politique pour un jeton révoqué ; c'est la mauvaise pour une
+  ///    application qui a dormi. Le compteur décrit une panne EN COURS, et le
+  ///    sommeil n'en est pas une ;
+  /// 2. **un rafraîchissement immédiat**, sans attendre le premier tic de la
+  ///    boucle : l'utilisateur qui rouvre l'application doit voir l'état de
+  ///    maintenant, pas celui d'il y a un quart d'heure ;
+  /// 3. **la réouverture du flux**, avec `depuisSeq` — donc sans doublon et sans
+  ///    perte. C'est exactement ce pour quoi la reprise a été conçue.
+  public func reprendreLeTravailDeFond() async {
+    guard enArrierePlan else { return }
+    enArrierePlan = false
+    await rafraichirSilencieusement()
+    await synchroniserServeurs()
+    demarrerSuivi()
+    demarrerSuiviServeurs()
+    // LE QUOTA EST REMIS À NEUF ICI, ET NON PLUS HAUT : un compteur de
+    // reconnexion ne décrit quelque chose que s'il y a un flux à rouvrir. Le
+    // remettre à neuf sans flux laisserait un « Reconnexion… » à l'écran pour un
+    // suivi qui n'existe pas — la barre d'outils lit `reconnexion` AVANT
+    // `enDirect`.
+    if enDirect, let identifiant = journalPour ?? sessionOuverte?.id {
+      reconnexion = Reconnexion()
+      await demarrerFlux(identifiant)
+    }
+    Trace.siActive("[cycle] premier plan : liste relue, boucles reprises, flux rouvert si demande")
+  }
+
+  // MARK: - Le chemin réseau
+
+  /// L'ÉTAT OBSERVÉ DU CHEMIN, quand un observateur est fourni.
+  public private(set) var chemin: CheminReseau.Etat = .inconnu
+
+  /// Observe le chemin réseau et réagit à ses changements, jusqu'à annulation.
+  ///
+  /// POURQUOI ELLE EXISTE. La détection du tailnet était une mesure ponctuelle
+  /// (`getifaddrs`) : juste, mais muette sur les CHANGEMENTS. Activer Tailscale,
+  /// couper le Wi-Fi, passer en 5G, sortir d'une zone blanche — l'application ne
+  /// l'apprenait qu'à l'échec de la requête suivante. `NWPathMonitor` notifie ces
+  /// changements, et cette boucle en fait trois choses : elle REMESURE le fait
+  /// « cet appareil est sur le tailnet », elle REPREND ce qui avait échoué quand le
+  /// chemin revient, et elle ralentit le suivi sur un chemin coûteux.
+  public func observerLeChemin() async {
+    guard let observateurDeChemin else { return }
+    observateurDeChemin.demarrer()
+    for await etat in observateurDeChemin.changements() {
+      if Task.isCancelled { return }
+      await appliquerChemin(etat)
+    }
+  }
+
+  /// Applique un état de chemin — la règle, éprouvable sans réseau.
+  func appliquerChemin(_ etat: CheminReseau.Etat) async {
+    chemin = etat
+    // LA MESURE PONCTUELLE EST REFAITE ICI : c'est elle qui sait si l'appareil est
+    // SUR le tailnet (une adresse 100.64.0.0/10) — `NWPathMonitor` ne publie pas
+    // l'état d'un tunnel VPN. L'observateur la DÉCLENCHE, il ne la remplace pas.
+    relireEtatTailscale()
+    guard etat.disponible else {
+      Trace.siActive("[chemin] indisponible : aucune reprise tentee")
+      return
+    }
+    guard CheminReseau.doitReprendre(chemin: etat, jointe: hoteEstJoint) else { return }
+    // LE CHEMIN REVIENT, ET LA CIBLE N'EST PAS JOINTE : on refait ce que le
+    // démarrage aurait fait. C'est le cas « fin de zone blanche », celui où
+    // l'utilisateur attend sans rien toucher.
+    Trace.siActive("[chemin] revenu sans cible jointe : reprise")
+    await connecter()
+  }
+
   /// Applique un message du flux au journal affiché.
   ///
   /// Un `seq` déjà présent est ignoré : une reprise peut recouvrir la page
@@ -2728,6 +2996,11 @@ public final class ModeleApp {
       reconnexion?.reussite()
     case let .delta(dernierSeq):
       if let dernierSeq { dernierSeqVu = dernierSeq }
+    case let .statut(statut):
+      // LE STATUT PASSE PAR L'ÉCRIVAIN NOMMÉ, avec la génération du départ : un
+      // statut poussé par une machine qu'on vient de quitter décrit une autre
+      // cible, et la garde le refuse comme les autres réponses.
+      appliquerStatut(statut, de: identifiant, vu: generationDuDepart())
     case let .tronque(detail):
       connexion = .echec(.transport("Flux incomplet : \(detail)"))
     case let .erreur(detail):

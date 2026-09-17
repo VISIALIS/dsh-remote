@@ -23,6 +23,12 @@ private struct Vecteurs: Decodable {
     let genre: String
     let version: String
     let secret: String
+    /// Le transport ANNONCÉ par la charge utile, ou `nil` quand le segment est
+    /// omis — c'est-à-dire `http` implicite.
+    let transport: String?
+    /// L'adresse TELLE QUE LA CHARGE UTILE LA DÉCRIT : `http` implicite ou le
+    /// transport annoncé. C'est une propriété du CONTRAT, pas du paquet qui
+    /// l'analyse — d'où les deux comparaisons du test (`adresse(pour:)`).
     let adresse: String
   }
 
@@ -62,6 +68,13 @@ func chargesValides() throws {
   let fixture = try vecteurs()
   #expect(fixture.valides.count >= 4)
 
+  // L'EXCEPTION ATS EST FOURNIE EXPLICITEMENT, et c'est indispensable : le paquet
+  // de TEST n'en a aucune, donc la règle d'adresse y répondrait `https` pour tout
+  // nom qualifié. Or le fixture décrit le CONTRAT — « la charge utile annonce
+  // http » ou « elle annonce https » —, pas ce que ce paquet-ci autorise. Les deux
+  // sources sont donc comparées séparément, et aucune ne peut masquer l'autre.
+  let avecException = plistAvecException(pour: "exemple.test")
+
   for attendu in fixture.valides {
     let resultat = Appairage.analyser(attendu.charge)
     guard case .success(let charge) = resultat else {
@@ -72,8 +85,16 @@ func chargesValides() throws {
     #expect(charge.genre.rawValue == attendu.genre)
     #expect(charge.version == attendu.version)
     #expect(charge.secret == attendu.secret)
-    // L'adresse n'est pas décorative : c'est elle que l'application visera.
-    #expect(charge.adresse == attendu.adresse)
+    #expect(charge.transport == attendu.transport, "transport mal lu : \(attendu.charge)")
+    // 1. CE QUE LA CHARGE UTILE DIT, dans un paquet qui autorise le clair.
+    #expect(charge.adresse(pour: avecException) == attendu.adresse)
+    // 2. CE QU'UN PAQUET SANS EXCEPTION PEUT FAIRE : jamais de clair vers un nom
+    //    qualifié. C'est la règle qui rend un clone du dépôt utilisable.
+    let sansException = charge.adresse(pour: nil)
+    #expect(
+      !sansException.hasPrefix("http://"),
+      "un paquet sans exception ne doit jamais viser le clair : \(sansException)")
+    #expect(sansException.hasPrefix("https://"))
   }
 }
 

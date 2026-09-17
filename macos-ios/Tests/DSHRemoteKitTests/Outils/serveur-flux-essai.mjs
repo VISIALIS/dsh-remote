@@ -25,7 +25,12 @@
 // (`dynamic/trames.js`), et le refaire ici est délibéré — un test qui partagerait
 // le code de ce qu'il éprouve ne prouverait rien.
 //
-// Usage : node serveur-flux-essai.mjs <port> <fichier-journal> [nb-coupures]
+// Usage : node serveur-flux-essai.mjs <port> <fichier-journal> [nb-coupures] [sourd]
+//
+// LE CINQUIEME ARGUMENT, `sourd`, SERT AU BATTEMENT DE COEUR : le serveur repond
+// alors au `demarrer` mais JAMAIS aux pings. C'est la seule facon d'eprouver ce
+// que le battement existe pour attraper — une socket qui reste ouverte sans que
+// rien ne revienne — sans dependre d'un vrai reseau qu'on coupe.
 
 import { createHash } from 'node:crypto'
 import { appendFileSync, writeFileSync } from 'node:fs'
@@ -41,6 +46,7 @@ const journal = process.argv[3]
 // plusieurs — c'est ce qui montre qu'on REESSAIE, et pas seulement qu'on sait
 // reprendre.
 const coupures = Number(process.argv[4] ?? '1')
+const sourd = process.argv[5] === 'sourd'
 writeFileSync(journal, '')
 
 const noter = (texte) => appendFileSync(journal, texte + '\n')
@@ -55,6 +61,39 @@ function trame(texte) {
   return Buffer.concat([entete, charge])
 }
 
+/** Un pong non masque (0x8A), qui renvoie la charge du ping. */
+function pong(charge) {
+  return Buffer.concat([Buffer.from([0x8a, charge.length]), charge])
+}
+
+/**
+ * La premiere trame cliente COMPLETE du tampon, ou `null` s'il en manque encore.
+ *
+ * Elle est MASQUEE (la RFC l'impose au client) : sans demasquage, le `demarrer`
+ * se lirait en charabia — et le test croirait que le client n'a rien demande.
+ */
+function trameCliente(tampon) {
+  if (tampon.length < 2) return null
+  const opcode = tampon[0] & 0x0f
+  let longueur = tampon[1] & 0x7f
+  let debut = 2
+  if (longueur === 126) {
+    if (tampon.length < 4) return null
+    longueur = tampon.readUInt16BE(2)
+    debut = 4
+  } else if (longueur === 127) {
+    if (tampon.length < 10) return null
+    longueur = Number(tampon.readBigUInt64BE(2))
+    debut = 10
+  }
+  if ((tampon[1] & 0x80) === 0) return null
+  if (tampon.length < debut + 4 + longueur) return null
+  const cle = tampon.subarray(debut, debut + 4)
+  const charge = Buffer.from(tampon.subarray(debut + 4, debut + 4 + longueur))
+  for (let i = 0; i < charge.length; i++) charge[i] ^= cle[i % 4]
+  return { opcode, charge, reste: tampon.subarray(debut + 4 + longueur) }
+}
+
 const enregistrement = (seq) => JSON.stringify({ type: 'assistant/message', seq, time: 1_700_000_000_000 + seq })
 
 let connexions = 0
@@ -67,6 +106,7 @@ const serveur = createServer((socket) => {
   // au mauvais journal.
   const rang = ++connexions
   let aRepondu = false
+  let pings = 0
 
   socket.on('data', (morceau) => {
     tampon = Buffer.concat([tampon, morceau])
@@ -90,56 +130,65 @@ const serveur = createServer((socket) => {
       noter('connexion=' + rang + ' upgrade=ok')
     }
 
-    // Le client n'envoie qu'un message : « demarrer ». Trame cliente, donc
-    // MASQUÉE (la RFC l'impose), et de longueur variable.
-    if (aRepondu || tampon.length < 6) return
-    const masque = tampon.readUInt8(1) & 0x80
-    let longueur = tampon.readUInt8(1) & 0x7f
-    let debut = 2
-    if (longueur === 126) {
-      if (tampon.length < 8) return
-      longueur = tampon.readUInt16BE(2)
-      debut = 4
-    }
-    if (!masque || tampon.length < debut + 4 + longueur) return
-    const cle = tampon.subarray(debut, debut + 4)
-    const charge = Buffer.from(tampon.subarray(debut + 4, debut + 4 + longueur))
-    for (let i = 0; i < charge.length; i++) charge[i] ^= cle[i % 4]
-    aRepondu = true
+    // LE CLIENT ENVOIE DEUX SORTES DE TRAMES : le « demarrer » (une fois), puis
+    // les pings de son battement de coeur. On les traite EN BOUCLE, parce qu'une
+    // seule lecture de socket peut en porter plusieurs — et parce qu'un serveur
+    // qui ne lirait que la premiere ne verrait jamais le battement, donc ne
+    // pourrait pas l'eprouver.
+    for (;;) {
+      const lue = trameCliente(tampon)
+      if (lue === null) return
+      tampon = lue.reste
 
-    let demande = {}
-    try {
-      demande = JSON.parse(charge.toString('utf8'))
-    } catch {
-      noter('connexion=' + rang + ' demarrer=illisible')
-    }
-    noter('connexion=' + rang + ' depuisSeq=' + (demande.depuisSeq === undefined ? 'absent' : demande.depuisSeq))
+      if (lue.opcode === 0x9) {
+        pings += 1
+        noter('connexion=' + rang + ' ping=' + pings)
+        // `sourd` : on ne repond PAS. C'est la panne qu'on veut rejouer — une
+        // socket ouverte sur laquelle plus rien ne revient.
+        if (!sourd) socket.write(pong(lue.charge))
+        continue
+      }
+      if (lue.opcode !== 0x1 || aRepondu) continue
+      aRepondu = true
 
-    // La base : le resume de la session, et le dernier enregistrement connu.
-    socket.write(
-      trame(
-        JSON.stringify({
-          type: 'base',
-          protocole: 1,
-          session: { id: 'session-essai', titre: 'Essai de reprise', dernierSeq: 1 },
-          enregistrements: [JSON.parse(enregistrement(1))],
-          dernierSeq: 1,
-        }),
-      ),
-    )
-    // Puis un evenement : c'est LUI qui prouve au client que le flux vit, donc
-    // celui qui remet le compteur de reconnexion a zero.
-    socket.write(trame(JSON.stringify({ type: 'evenement', enregistrement: JSON.parse(enregistrement(2)) })))
-    socket.write(trame(JSON.stringify({ type: 'delta', dernierSeq: 2 })))
+      let demande = {}
+      try {
+        demande = JSON.parse(lue.charge.toString('utf8'))
+      } catch {
+        noter('connexion=' + rang + ' demarrer=illisible')
+      }
+      noter('connexion=' + rang + ' depuisSeq=' + (demande.depuisSeq === undefined ? 'absent' : demande.depuisSeq))
 
-    // LES PREMIERES CONNEXIONS SONT COUPÉES, LA SUIVANTE VIT.
-    if (rang <= coupures) {
-      // LA COUPURE, BRUTALE : pas de trame de fermeture, pas de `FIN`. C'est ce
-      // que fait un Wi-Fi qui s'endort, et c'est ce que le client doit savoir
-      // rattraper.
-      noter('connexion=' + rang + ' coupure=brutale')
-      setTimeout(() => socket.destroy(), 60)
-    } else {
+      // La base : le resume de la session, et le dernier enregistrement connu.
+      socket.write(
+        trame(
+          JSON.stringify({
+            type: 'base',
+            protocole: 1,
+            session: { id: 'session-essai', titre: 'Essai de reprise', dernierSeq: 1 },
+            enregistrements: [JSON.parse(enregistrement(1))],
+            dernierSeq: 1,
+          }),
+        ),
+      )
+      // Puis un evenement : c'est LUI qui prouve au client que le flux vit, donc
+      // celui qui remet le compteur de reconnexion a zero.
+      socket.write(trame(JSON.stringify({ type: 'evenement', enregistrement: JSON.parse(enregistrement(2)) })))
+      socket.write(trame(JSON.stringify({ type: 'delta', dernierSeq: 2 })))
+      // UN STATUT, COMME L'HOTE EN POUSSE : ce n'est pas un enregistrement du
+      // journal, donc il ne porte aucun `seq` — et le client ne doit PAS le
+      // compter comme un evenement ni faire avancer son curseur de reprise.
+      socket.write(trame(JSON.stringify({ type: 'statut', statut: 'en_cours' })))
+
+      // LES PREMIERES CONNEXIONS SONT COUPÉES, LA SUIVANTE VIT.
+      if (rang <= coupures) {
+        // LA COUPURE, BRUTALE : pas de trame de fermeture, pas de `FIN`. C'est ce
+        // que fait un Wi-Fi qui s'endort, et c'est ce que le client doit savoir
+        // rattraper.
+        noter('connexion=' + rang + ' coupure=brutale')
+        setTimeout(() => socket.destroy(), 60)
+        return
+      }
       noter('connexion=' + rang + ' maintenue=oui')
     }
   })

@@ -99,18 +99,20 @@ private final class ClientFactice: ClientDSH, @unchecked Sendable {
   }
 }
 
-/// Une fabrique qui retient le délai demandé pour chaque client.
+/// Une fabrique qui retient le délai demandé pour chaque client, et le porteur.
 private final class FabriqueEspionne: @unchecked Sendable {
   private let verrou = NSLock()
   private(set) var delais: [TimeInterval] = []
+  private(set) var jetons: [String] = []
   let client: ClientFactice
 
   init(client: ClientFactice) { self.client = client }
 
   func fabrique() -> Connexion.Fabrique {
-    { [self] _, _, delai in
+    { [self] _, jeton, delai in
       verrou.lock()
       delais.append(delai)
+      jetons.append(jeton)
       verrou.unlock()
       return client
     }
@@ -217,4 +219,29 @@ func leRegistreDistingueLesAdresses() async throws {
   _ = try await connexion.serveursDeLhote(adresse: "http://bureau.exemple.ts.net", jeton: "x")
 
   #expect(espion.delais == [Connexion.delaiHote, Connexion.delaiHote], "une fabrication par machine")
+}
+
+@Test("Un jeton RENOUVELÉ refait un client, même adresse — sinon 401 jusqu'au redémarrage")
+func leRegistreDistingueLesJetons() async throws {
+  // LE DÉFAUT QUE CE TEST FIXE, ET IL ÉTAIT SILENCIEUX. La clé du registre ne
+  // portait que `(adresse, délai)`, avec ce raisonnement écrit dans le code :
+  // « un jeton change en se ré-appairant, et cela passe par un changement de
+  // cible ». C'est faux pour le cas le plus courant — on se ré-appaire sur la
+  // MÊME machine (jeton révoqué, réinstallation, second scan du même QR).
+  // L'adresse ne bouge pas, le client gardé rendait donc l'ANCIEN porteur :
+  // `401` sur toutes les routes, sans qu'aucun écran ne dise pourquoi, jusqu'à
+  // éviction du registre (trois entrées) ou redémarrage de l'application.
+  let client = ClientFactice()
+  let espion = FabriqueEspionne(client: client)
+  let connexion = Connexion(fabrique: espion.fabrique())
+  let adresse = "http://portable.exemple.ts.net"
+
+  _ = try await connexion.serveursDeLhote(adresse: adresse, jeton: "jeton-initial")
+  _ = try await connexion.serveursDeLhote(adresse: adresse, jeton: "jeton-initial")
+  #expect(espion.jetons == ["jeton-initial"], "le MÊME jeton doit réutiliser le client")
+
+  _ = try await connexion.serveursDeLhote(adresse: adresse, jeton: "jeton-renouvele")
+  #expect(
+    espion.jetons == ["jeton-initial", "jeton-renouvele"],
+    "un jeton renouvelé doit FABRIQUER un client neuf, pas rendre l'ancien")
 }

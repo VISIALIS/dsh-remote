@@ -17,6 +17,13 @@ public struct VuePrincipale: View {
   /// L'application macOS en crée donc un et le passe ; iOS et `swift run`
   /// gardent l'entrée sans argument, où la vue crée le sien comme avant.
   @State private var modele: ModeleApp
+  /// LA PHASE DE LA SCÈNE, lue ICI parce que c'est ici que vit le modèle.
+  ///
+  /// Elle sert à SUSPENDRE le travail de fond quand l'application passe en
+  /// arrière-plan, et à le reprendre — avec un quota de reconnexion neuf et une
+  /// relecture immédiate — quand elle revient. Voir `ModeleApp` : les trois
+  /// défauts réparés y sont décrits.
+  @Environment(\.scenePhase) private var phase
   @State private var sessionSelectionnee: SessionListee?
   /// La feuille de réglages. Elle est tenue ICI parce que trois endroits
   /// l'ouvrent : la barre d'outils, le panneau latéral, la page d'un serveur.
@@ -176,6 +183,29 @@ public struct VuePrincipale: View {
         contenu
       }
     }
+    // ── LE CYCLE DE VIE DE L'APPLICATION ────────────────────────────────────
+    //
+    // POURQUOI ICI, ET PAS DANS `AppDSHRemoteIOS` : c'est cette vue qui TIENT le
+    // modèle (elle le crée quand aucun ne lui est passé). Le point d'entrée iOS ne
+    // l'a pas sous la main, et le lui faire traverser demanderait de le remonter
+    // d'un étage pour une seule règle.
+    //
+    // `.inactive` NE COUPE RIEN, ET C'EST DÉLIBÉRÉ : iOS passe par cet état pour le
+    // sélecteur d'applications, une bannière ou le centre de contrôle. Y arrêter le
+    // flux le romprait à chaque notification — et la reprise, elle, coûte une
+    // socket et un `depuisSeq`.
+    .onChange(of: phase) { _, nouvelle in
+      switch nouvelle {
+      case .background:
+        Task { await modele.suspendreLeTravailDeFond() }
+      case .active:
+        Task { await modele.reprendreLeTravailDeFond() }
+      case .inactive:
+        break
+      @unknown default:
+        break
+      }
+    }
   }
 
   /// Ouvre la session demandée par `--session=<fragment>`, si elle est là.
@@ -289,6 +319,11 @@ public struct VuePrincipale: View {
         modele.enregistrerJeton(local)
       }
       modele.relireEtatTailscale()
+      // L'OBSERVATION DU CHEMIN DÉMARRE AVEC LE RESTE, et pour toute la vie de la
+      // vue : elle ne coûte rien tant que rien ne change, et c'est elle qui fait
+      // qu'un retour de réseau (fin de zone blanche, Tailscale réactivé) se voit
+      // TOUT DE SUITE au lieu d'attendre le prochain tic ou le prochain geste.
+      Task { await modele.observerLeChemin() }
       let debutDemarrage = Date()
       Trace.siActive("[demarrage] debut, adresse=\(modele.adresse)")
       // UN SEUL point d'entrée : il choisit une machine joignable AVANT de se
