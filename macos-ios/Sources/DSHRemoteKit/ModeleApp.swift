@@ -2751,15 +2751,23 @@ public final class ModeleApp {
       return
     }
     reconnexion = etat
-    // L'ADRESSE ET LA CIBLE SONT REVÉRIFIÉES APRÈS L'ATTENTE : pendant ces trois
-    // secondes, l'utilisateur a pu changer de machine ou de session. Rouvrir dans
-    // ce cas connecterait le flux à la mauvaise cible — le défaut que la
-    // « génération » corrige partout ailleurs.
+    // L'ADRESSE ET LA SESSION SONT REVÉRIFIÉES APRÈS L'ATTENTE : pendant ces
+    // quelques secondes, l'utilisateur a pu changer de machine ou de session.
+    // Rouvrir dans ce cas connecterait le flux à la mauvaise cible — le défaut que
+    // la « génération » corrige partout ailleurs.
+    //
+    // LA SESSION SE LIT DANS `journalPour`, ET PAS DANS `sessionOuverte` : c'est une
+    // correction, et un test l'a attrapée. `sessionOuverte` n'est renseigné qu'APRÈS
+    // une lecture de journal réussie — une session dont la lecture échoue (ou n'a
+    // pas encore abouti) n'aurait donc JAMAIS repris son flux, tout en affichant
+    // « En direct ». `journalPour` est la clé du journal affiché : posée dès
+    // l'ouverture, effacée au changement de cible. C'est exactement ce que le flux
+    // doit suivre.
     let cible = adresse
     tacheReconnexion = Task { [weak self] in
       try? await Task.sleep(nanoseconds: UInt64(delai * 1_000_000_000))
       guard !Task.isCancelled, let self else { return }
-      guard self.adresse == cible, self.sessionOuverte?.id == identifiant else { return }
+      guard self.adresse == cible, self.journalPour == identifiant else { return }
       await self.ouvrirLeFlux(identifiant, adresse: cible, jeton: jeton, depuisSeq: self.journal.last?.enregistrement.seq)
     }
   }

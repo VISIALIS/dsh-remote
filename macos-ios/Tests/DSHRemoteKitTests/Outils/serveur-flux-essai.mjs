@@ -25,7 +25,7 @@
 // (`dynamic/trames.js`), et le refaire ici est délibéré — un test qui partagerait
 // le code de ce qu'il éprouve ne prouverait rien.
 //
-// Usage : node serveur-flux-essai.mjs <port> <fichier-journal>
+// Usage : node serveur-flux-essai.mjs <port> <fichier-journal> [nb-coupures]
 
 import { createHash } from 'node:crypto'
 import { appendFileSync, writeFileSync } from 'node:fs'
@@ -33,6 +33,14 @@ import { createServer } from 'node:net'
 
 const port = Number(process.argv[2])
 const journal = process.argv[3]
+// COMBIEN DE CONNEXIONS COUPER AVANT D'EN LAISSER UNE VIVRE.
+//
+// Pourquoi un parametre, et pas « on coupe toujours la premiere » : deux
+// proprietes differentes se mesurent. Le TRANSPORT (`FluxSession`) se prouve avec
+// une seule coupure ; la BOUCLE DE RECONNEXION du modele se prouve en en voyant
+// plusieurs — c'est ce qui montre qu'on REESSAIE, et pas seulement qu'on sait
+// reprendre.
+const coupures = Number(process.argv[4] ?? '1')
 writeFileSync(journal, '')
 
 const noter = (texte) => appendFileSync(journal, texte + '\n')
@@ -124,11 +132,12 @@ const serveur = createServer((socket) => {
     socket.write(trame(JSON.stringify({ type: 'evenement', enregistrement: JSON.parse(enregistrement(2)) })))
     socket.write(trame(JSON.stringify({ type: 'delta', dernierSeq: 2 })))
 
-    if (rang === 1) {
+    // LES PREMIERES CONNEXIONS SONT COUPÉES, LA SUIVANTE VIT.
+    if (rang <= coupures) {
       // LA COUPURE, BRUTALE : pas de trame de fermeture, pas de `FIN`. C'est ce
       // que fait un Wi-Fi qui s'endort, et c'est ce que le client doit savoir
       // rattraper.
-      noter('connexion=1 coupure=brutale')
+      noter('connexion=' + rang + ' coupure=brutale')
       setTimeout(() => socket.destroy(), 60)
     } else {
       noter('connexion=' + rang + ' maintenue=oui')

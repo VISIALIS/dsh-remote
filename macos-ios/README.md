@@ -64,7 +64,7 @@ Vérifications : aperçu inspecté jusqu'à 40 px ; dimensions, alpha, bleu exac
 niveaux de gris contrôlés ; dix représentations ICNS réextraites de 16 à 1024 px ;
 paquet macOS reconstruit et signature vérifiée ; compilation du simulateur réussie,
 avec `AppIcon` présent pour les familles iPhone et iPad. Les vérifications du dépôt
-passent : secrets, syntaxe, 123 tests de plugins et 315 tests Swift. Ces commandes
+passent : secrets, syntaxe, 131 tests de plugins et 317 tests Swift. Ces commandes
 ne réinstallent pas les copies déjà présentes sur les appareils.
 
 ### Où vit quoi : cinq pièces, et une seule porte sur le disque
@@ -2773,6 +2773,37 @@ connexion=1 depuisSeq=absent     ← la première demande ne reprend rien
 connexion=1 coupure=brutale
 connexion=2 depuisSeq=2          ← la reprise porte le seq connu
 ```
+
+**ET LA BOUCLE DU MODÈLE EST ÉPROUVÉE À PART**, contre un faux hôte complet
+(`Outils/serveur-modele-essai.mjs`, HTTP **et** WebSocket) qui coupe les **deux
+premières** connexions puis laisse vivre la troisième. C'est nécessaire : le modèle
+refuse d'ouvrir un flux sans avoir joint l'hôte par HTTP, donc un serveur qui ne
+parle que WebSocket ne peut pas éprouver sa boucle. Le test lit la note :
+
+```
+connexion=1 depuisSeq=absent → coupure
+connexion=2 depuisSeq=3      → coupure      ← la reprise AVANCE
+connexion=3 depuisSeq=3      → maintenue    ← et ne recule jamais
+```
+
+…et, à l'écran, **aucun doublon** : le faux hôte renvoie exprès, dans la base de
+reprise, un enregistrement que le client connaît déjà.
+
+**CE TEST A ATTRAPÉ UN DÉFAUT RÉEL, APRÈS LE PREMIER COMMIT.** Ma garde de
+reconnexion exigeait `sessionOuverte?.id == identifiant` — or `sessionOuverte` n'est
+renseigné qu'**après** une lecture de journal réussie. Une session dont la lecture
+échoue (ou n'a pas encore abouti) n'aurait donc **jamais** repris son flux, tout en
+affichant « En direct » : le défaut exact que ce lot corrige, reproduit une fois de
+plus par une garde trop stricte. La garde lit maintenant `journalPour`, la clé du
+journal affiché, posée dès l'ouverture et effacée au changement de cible.
+
+**ET UN SECOND DÉFAUT, DANS LE TEST LUI-MÊME** : « Reconnexion… » n'existe
+qu'**entre deux tentatives** — la suivante l'efface dès qu'elle reçoit un contenu.
+La première version attendait le journal du serveur, PUIS relisait le libellé : elle
+échouait une fois sur deux, parce que la tentative suivante avait déjà abouti. Un
+état transitoire se **guette** (sondage serré sur la durée de la boucle), il ne se
+relit pas à un instant choisi. Trois exécutions consécutives de la suite le
+confirment, plutôt qu'une seule.
 
 **TROIS ÉTATS DANS LA BARRE D'OUTILS, PAS DEUX** : « En direct », « Suivi arrêté », et
 « Reconnexion… (n/20) ». Le troisième n'est pas un ornement : sans lui, une coupure de
