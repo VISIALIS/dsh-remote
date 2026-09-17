@@ -2802,6 +2802,7 @@ Sources/
 │   ├── ModeleApp+Parc.swift         # le parc : quelles machines, laquelle est visée, laquelle sert DSH
 │   ├── ModeleApp+Journal.swift      # ouvrir une session, la suivre : le journal ne se sépare jamais de SA session
 │   ├── ModeleApp+Alertes.swift      # ce qu'on signale, et à quelle condition (première observation, génération, réglage)
+│   ├── ModeleApp+Jetons.swift       # où on lit un jeton, où on le range, et ce qu'on n'écrit jamais
 │   ├── AdresseMachine.swift         # http ou https, décidé par ce que le paquet autorise
 │   ├── CheminReseau.swift           # NWPathMonitor : l'état du chemin, et la règle de reprise (pure)
 │   ├── ConfigurationReseau.swift    # la configuration PARTAGÉE des deux clients, et ses deux dissymétries mesurées

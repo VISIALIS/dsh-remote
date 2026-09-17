@@ -22,7 +22,7 @@ public final class ModeleApp {
   public var jetonSaisi: String = ""
 
   /// Où les jetons sont gardés — un par hôte.
-  private let gardien: GardienDeJetons
+  let gardien: GardienDeJetons
 
   /// Ce qui survit à l'application : adresse mémorisée, préférences par serveur,
   /// fichier d'amorçage, diagnostic. Injectée, donc éprouvable sans disque.
@@ -48,7 +48,7 @@ public final class ModeleApp {
 
   /// La clé du dernier jeton CHARGÉ, pour ne pas relire le trousseau à chaque
   /// frappe dans le champ d'adresse (une lecture par caractère, sinon).
-  private var cleJetonChargee: String?
+  var cleJetonChargee: String?
 
   public private(set) var sessions: [SessionListee] = []
   public internal(set) var journal: [EvenementAffiche] = []
@@ -165,79 +165,12 @@ public final class ModeleApp {
   // ── LE PARC, LA SONDE ET LA CIBLE VIVENT DANS `ModeleApp+Parc.swift` ─────────
 
 
-  /// Charge, depuis le gardien, le jeton gardé POUR CETTE machine.
-  ///
-  /// Ne relit que si la clé d'hôte a changé : le champ d'adresse déclenche une
-  /// transition par frappe, et une lecture de trousseau par caractère serait un
-  /// gaspillage — sans compter les invites système qu'elle peut provoquer.
-  func chargerJetonDeLaCible() {
-    let cle = IdentiteHote.cle(cible.adresse)
-    guard cle != cleJetonChargee else { return }
-    cleJetonChargee = cle
-    jetonSaisi = jetonGarde(pour: cible.adresse) ?? ""
-  }
+  // ── LES JETONS VIVENT DANS `ModeleApp+Jetons.swift` ──────────────────────────
 
-  /// Lit le jeton gardé pour un hôte, EN COMPTANT AVEC L'ANCIENNE CLÉ.
-  ///
-  /// POURQUOI CETTE SECONDE LECTURE EXISTE. Les clés d'hôte portaient autrefois le
-  /// schéma (« http://mac.tailnet.ts.net ») ; elles ne le portent plus, parce que
-  /// la même machine en `http` et en `https` est la MÊME machine — le transport
-  /// dépend du paquet, pas de l'hôte. Un jeton rangé par une version antérieure
-  /// serait donc introuvable, et l'utilisateur lirait « aucun jeton » pour un
-  /// appareil parfaitement appairé. On le retrouve ici, on le RÉÉCRIT sous la clé
-  /// neuve, et on efface l'ancienne : la migration se fait une fois, sans geste, et
-  /// aucun secret ne reste en double.
-  private func jetonGarde(pour adresse: String) -> String? {
-    let cle = IdentiteHote.cle(adresse)
-    if let trouve = gardien.lire(pour: cle), !trouve.isEmpty { return trouve }
-    let ancienne = "http://" + cle
-    guard let ancien = gardien.lire(pour: ancienne), !ancien.isEmpty else { return nil }
-    gardien.ecrire(ancien, pour: cle)
-    gardien.effacer(pour: ancienne)
-    return ancien
-  }
 
-  /// Le jeton À UTILISER pour la cible : celui gardé POUR ELLE, sinon — et
-  /// seulement si la cible EST cette machine — celui du coffre local.
-  ///
-  /// POURQUOI LE COFFRE N'EST CONSULTÉ QU'ICI. `~/.dsh/.credentials.yaml`
-  /// contient le jeton émis par l'hôte LOCAL, et rien d'autre. Le proposer pour
-  /// une autre machine, c'était lui envoyer le secret d'une autre — et un refus
-  /// qui ne dit pas son nom. Quand on ne sait pas, on ne devine pas : le champ
-  /// de jeton est sur la page, à portée.
-  public func jetonDeLaCible() -> String {
-    // ── LE CHAMP D'ABORD, ET C'EST UNE CORRECTION ──────────────────────────
-    //
-    // Régression que j'ai introduite en rendant le jeton « par hôte » : cette
-    // fonction ne consultait plus `jetonSaisi`, seulement le gardien et le
-    // coffre. Or `jetonSaisi` est la valeur la PLUS FRAÎCHE — celle qu'on vient
-    // de coller, ou celle qu'un fichier d'amorçage a posée — et elle est déjà
-    // rechargée par hôte à chaque changement de cible. Résultat mesuré : l'app
-    // démarrait en `0 ms` sans rien tenter, avec « aucun jeton » alors que le
-    // champ en contenait un.
-    if !jetonSaisi.isEmpty {
-      Trace.siActive("[jeton] champ en memoire : longueur=\(jetonSaisi.count) empreinte=\(empreinteJeton)")
-      return jetonSaisi
-    }
-    let cle = IdentiteHote.cle(cible.adresse)
-    if let garde = jetonGarde(pour: cible.adresse) {
-      Trace.siActive(
-        "[jeton] gardien de l'hote : longueur=\(garde.count) empreinte=\(Empreinte.de(garde).prefix(8))")
-      return garde
-    }
-    // LE JETON DU COFFRE NE VA QU'À CETTE MACHINE. Le test est `estHoteLocal`, et
-    // non `serveurVise?.estLocal` : le second lisait le marqueur d'une liste reçue,
-    // donc envoyait le secret local à l'hôte distant qui s'était marqué lui-même.
-    guard estHoteLocal(cible.adresse) else {
-      Trace.siActive("[jeton] AUCUN jeton pour \(cle)")
-      return ""
-    }
-    let duCoffre = CoffreDuHarness.jetonDeLaMachine() ?? ""
-    Trace.siActive(
-      "[jeton] coffre du harness : longueur=\(duCoffre.count) empreinte=\(duCoffre.isEmpty ? "aucun" : String(Empreinte.de(duCoffre).prefix(8)))"
-    )
-    return duCoffre
-  }
+
+
+
 
   // Les noms historiques restent : les vues les lisent, et rien n'oblige à les
   // renommer pour bénéficier d'une source unique.
@@ -1888,84 +1821,17 @@ public final class ModeleApp {
     persistance.oublierAdresse()
   }
 
-  /// Le jeton saisi pour l'hôte VISÉ, gardé DÈS LA FRAPPE.
-  ///
-  /// POURQUOI PAS SEULEMENT À LA CONNEXION : on colle un jeton, on change d'avis
-  /// ou de machine, et le secret serait perdu — alors qu'il vient d'être
-  /// laborieusement recopié. Même raisonnement que l'adresse, mémorisée dès la
-  /// frappe. Le jeton, lui, ne va JAMAIS dans les préférences : il va là où un
-  /// secret doit vivre (voir `enregistrerJeton`).
-  public func definirJeton(_ valeur: String) {
-    enregistrerJeton(valeur)
-  }
 
-  /// Le même geste, POUR UNE MACHINE NOMMÉE.
-  ///
-  /// POURQUOI L'ADRESSE EST UN PARAMÈTRE. La page d'une machine peut être celle
-  /// d'un AUTRE hôte que la cible — on ouvre la fiche d'un Mac sans s'y
-  /// connecter. Or la lecture, l'écriture et l'effacement du jeton visaient tous
-  /// `cible.adresse` : le champ annonçait « jeton de cet hôte » et agissait sur
-  /// un autre. Un jeton collé là partait vers la mauvaise machine, et celui
-  /// d'une autre s'affichait sous ce nom-là.
-  public func definirJeton(_ valeur: String, pour adresse: String) {
-    enregistrerJeton(valeur, pour: adresse)
-  }
 
-  /// Efface le jeton de L'HÔTE VISÉ : en mémoire, et là où il était gardé.
-  public func effacerJeton() {
-    effacerJeton(pour: cible.adresse)
-  }
 
-  /// Efface le jeton d'une machine nommée.
-  public func effacerJeton(pour adresse: String) {
-    let cle = IdentiteHote.cle(adresse)
-    // Le champ en mémoire ne décrit que la cible : l'effacer parce qu'on efface
-    // le jeton d'une AUTRE machine ferait disparaître sous les yeux de
-    // l'utilisateur un secret qui n'était pas visé.
-    if cle == IdentiteHote.cle(cible.adresse) { jetonSaisi = "" }
-    gardien.effacer(pour: cle)
-    // L'ANCIENNE CLÉ AUSSI : un effacement qui laisserait derrière lui le secret
-    // rangé sous « http://<hôte> » serait un effacement qui ment — et c'est
-    // exactement ce qu'on vient lire dans une réinitialisation.
-    gardien.effacer(pour: "http://" + cle)
-  }
 
-  /// Enregistre le jeton saisi : au trousseau sur iOS, en mémoire sur macOS.
-  ///
-  /// N'est appelé qu'à la SOUMISSION du formulaire, jamais à la frappe : un
-  /// enregistrement par caractère persistait un jeton tronqué, et faisait
-  /// croire à un jeton disponible alors que la saisie n'était pas terminée.
-  public func enregistrerJeton(_ valeur: String) {
-    enregistrerJeton(valeur, pour: cible.adresse)
-  }
 
-  /// Enregistre le jeton D'UNE MACHINE NOMMÉE.
-  public func enregistrerJeton(_ valeur: String, pour adresse: String) {
-    let propre = valeur.trimmingCharacters(in: .whitespacesAndNewlines)
-    let cle = IdentiteHote.cle(adresse)
-    // LE CHAMP EN MÉMOIRE NE DÉCRIT QUE LA CIBLE. Y écrire le jeton d'une autre
-    // machine ferait afficher ici le secret collé là-bas — et, pire, pourrait
-    // l'envoyer à la cible.
-    if cle == IdentiteHote.cle(cible.adresse) {
-      jetonSaisi = propre
-      cleJetonChargee = cle
-    }
 
-    // LE JETON DE L'HÔTE LOCAL N'EST PAS RECOPIÉ ICI. Il est dans le coffre du
-    // harness, qui est sa source ; en garder une seconde copie multiplierait les
-    // endroits où un secret peut fuir sans rien apporter.
-    guard !adresse.isEmpty, !estHoteLocal(adresse) else { return }
 
-    // C'est le GARDIEN qui sait s'il peut garder durablement — le modèle n'a pas
-    // à connaître la plateforme (il le faisait, et c'était une erreur de
-    // conception : deux `#if` dans la logique métier, pour une question de
-    // stockage).
-    if propre.isEmpty {
-      gardien.effacer(pour: cle)
-    } else {
-      gardien.ecrire(propre, pour: cle)
-    }
-  }
+
+
+
+
 
   /// LE JETON D'UNE MACHINE NOMMÉE — ce que son champ doit afficher.
   ///
