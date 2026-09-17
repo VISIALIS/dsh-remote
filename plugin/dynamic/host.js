@@ -202,8 +202,11 @@ const ECHANGES_MAX = 30
 //
 // ELLES SONT EXPORTÉES pour que les tests les emploient plutôt que de recopier
 // des chaînes : une faute de frappe dans un test ne prouverait plus rien.
-export const PORTEE_LECTURE = 'lecture'
-export const PORTEE_ECRITURE = 'ecriture'
+// LES DEUX PORTÉES VIENNENT DE `auth.js` — le module qui décide, et qui les éprouve.
+// Elles sont RÉEXPORTÉES ici parce que c'est la surface publique du plugin (les
+// tests de portée les lisent d'ici) : une seule définition, deux lecteurs.
+export { PORTEE_ECRITURE, PORTEE_LECTURE } from './auth.js'
+import { creerAuthentification, PORTEE_ECRITURE, PORTEE_LECTURE } from './auth.js'
 
 /**
  * La portée d'un enregistrement de jeton.
@@ -895,78 +898,23 @@ export function apply(ctx, config) {
   // l'en-tête de ce fichier pour ce qu'elles garantissent (pas de cache, longueur
   // toujours posée, corps borné à 1 Mio, corps illisible qui rend `null`).
 
-  const autoriser = (req, res) => {
-    // 1. Un client natif n'envoie jamais `Origin`. Un navigateur en envoie
-    //    toujours, y compris depuis une page hostile. On refuse donc tout
-    //    `Origin`, avant même de regarder le jeton.
-    if (req.headers.origin !== undefined) {
-      envoyer(res, 403, { erreur: 'origine refusee' })
-      return false
-    }
-    // 2. Secret partage, comparaison a temps constant — contre CHAQUE appareil.
-    const entete = req.headers.authorization
-    const presente = typeof entete === 'string' && entete.startsWith('Bearer ') ? entete.slice(7) : null
-    const appareil = appareilDe(presente)
-    if (appareil === null) {
-      res.writeHead(401, { 'content-type': 'application/json; charset=utf-8', 'www-authenticate': 'Bearer', 'cache-control': 'no-store' })
-      res.end('{"erreur":"jeton requis"}')
-      return false
-    }
-    // QUEL APPAREIL A PARLÉ, ET DONC QUELLE PORTÉE S'APPLIQUE. Marqué sur la
-    // réponse : voir `APPAREIL` pour pourquoi ce n'est pas une variable de module.
-    res[APPAREIL] = appareil
-    return true
-  }
-
-  /**
-   * La portée de l'appareil qui a parlé — lue SUR LA RÉPONSE, jamais devinée.
-   *
-   * Rend `null` quand la requête n'a pas été authentifiée : aucune route ne doit
-   * alors décider quoi que ce soit. Une valeur par défaut, ici, serait un droit
-   * accordé par omission.
-   */
-  const porteeDe = (res) => (res[APPAREIL] === undefined ? null : res[APPAREIL].portee)
-
-  /**
-   * La portée refuse-t-elle cette écriture ? Rend `true` si la requête est
-   * REFUSÉE (et la réponse envoyée).
-   *
-   * POURQUOI ELLE EST SÉPARÉE DE `autoriser`. Les routes d'écriture vivent dans
-   * le même gestionnaire que celles de lecture (`/v1/session/<id>/<action>`) :
-   * le jeton y est déjà vérifié une fois pour toutes, et le contrôle de portée
-   * doit donc pouvoir s'appliquer SEUL, dans la branche qui écrit.
-   *
-   * LE CORPS PORTE UNE RAISON DISTINCTE de `origine refusee` (même code 403) :
-   * le client lit ce champ, et deux causes différentes ne doivent pas produire
-   * le même message.
-   */
-  const refuserSiLectureSeule = (req, res) => {
-    const porteeRequete = porteeDe(res)
-    if (porteeRequete === PORTEE_ECRITURE) return false
-    envoyer(res, 403, {
-      erreur: 'jeton en lecture seule',
-      portee: porteeRequete,
-      detail:
-        "cet appareil a recu un jeton qui LIT sans ecrire. Pour lui donner l ecriture : supprimer son enregistrement dans " +
-        CLE_JETONS +
-        ' (ou le jeton historique ' +
-        CLE_JETON +
-        "), puis refaire l appairage avec DSH_REMOTE_PORTEE=ecriture.",
-    })
-    tracer(req, 403, 'portee ' + String(porteeRequete))
-    return true
-  }
-
-  /** Barrière complète d'une route qui écrit : jeton, puis portée. */
-  const autoriserEcriture = (req, res) => {
-    if (!autoriser(req, res)) return false
-    return !refuserSiLectureSeule(req, res)
-  }
-
   const tracer = (req, code, complement = '') => {
     if (options.journaliser === false) return
     console.log('[dsh-remote] ' + req.method + ' ' + String(req.url).split('?')[0] + ' -> ' + code + (complement.length > 0 ? ' ' + complement : ''))
   }
+
+  // ── La barrière d'accès ────────────────────────────────────────────────────
+  //
+  // ELLE VIENT DE `auth.js`, où ses quatre règles sont écrites et éprouvées sans
+  // harness (`tests/auth.test.js`) : aucun `Origin`, un porteur valide comparé à
+  // temps constant, une portée lue SUR LA RÉPONSE, et un jeton de lecture seule qui
+  // ne mute rien. Elle est construite ICI parce qu'elle reçoit deux choses de ce
+  // fichier : le registre des appareils, et le journal d'accès.
+  const { autoriser, porteeDe, refuserSiLectureSeule, autoriserEcriture } = creerAuthentification({
+    appareilDe,
+    tracer,
+    nomDeLaCle: (genre) => (genre === 'jetons' ? CLE_JETONS : CLE_JETON),
+  })
 
   const identite = (req) => {
     const valeur = req.headers['tailscale-user-login']
