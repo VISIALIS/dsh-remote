@@ -66,11 +66,17 @@ import { join } from 'node:path'
 // binaire local de Tailscale, et ses deux fonctions d'analyse sont PURES — donc
 // éprouvables sans lancer de processus (voir `tests/tailscale.test.js`).
 import { decouvrirMachines, lirePublication } from './tailscale.js'
+// LA PLOMBERIE DES RÉPONSES vit dans son propre fichier : elle ne décide rien de la
+// sécurité, et c'est ce qui la rendait pénible à traverser quand on cherchait où une
+// requête est REFUSÉE. Elle porte pourtant des règles (corps borné, longueur posée,
+// corps illisible qui rend `null`), et ses tests sont à côté d'elle.
+import { envoyer, envoyerNonModifie, lireCorps } from './reponse.js'
 
 // LE CACHE DE TEXTE DES JOURNAUX vit dans son propre fichier : il ne depend que
 // d'une fonction de lecture et d'une fonction de decodage, donc il s'eprouve seul
 // — un cache qu'on ne peut verifier qu'en montant un harness entier n'est pas
 // verifie. Le POURQUOI du texte plutot que des objets est mesure, et documente la.
+import { creerCacheDeFaits } from './cache-faits.js'
 import { creerCacheTexte } from './cache-texte.js'
 
 // LA LECTURE DU JOURNAL vit dans son propre fichier : décodage des trames zstd,
@@ -512,11 +518,10 @@ export function apply(ctx, config) {
   const jetonValide = (presente) => appareilDe(presente) !== null
 
   // ── Cache des journaux ─────────────────────────────────────────────────────
-  // Cle : chemin absolu. Valeur : faits resolus + etat du fichier au moment de
-  // la lecture. Un journal est append-only : tant que taille et mtime n'ont pas
-  // bouge, le resulat est reutilisable.
-  const cache = new Map()
-  let dernierNettoyage = 0
+  // LA POLITIQUE VIT DANS `cache-faits.js` (validité par les marqueurs du fichier,
+  // péremption, éviction LRU) : elle y est éprouvée seule. Ici, on ne fait que lui
+  // donner son horloge.
+  const cache = creerCacheDeFaits()
 
   // ── Le cache du TEXTE des journaux lus en entier ───────────────────────────
   // La regle (bornes, cle de validite, LRU) vit dans `cache-texte.js`, ou elle est
@@ -527,15 +532,8 @@ export function apply(ctx, config) {
   const decoderFichier = (fichier, information) => cacheTexte.lignes(fichier, information)
 
   const viderLesCaches = () => {
-    cache.clear()
+    cache.vider()
     cacheTexte.vider()
-  }
-
-  const nettoyerCache = () => {
-    const maintenant = Date.now()
-    if (maintenant - dernierNettoyage < 60000) return
-    dernierNettoyage = maintenant
-    for (const [cle, entree] of cache) if (maintenant - entree.vuLe > 300000) cache.delete(cle)
   }
 
   /**
@@ -543,7 +541,9 @@ export function apply(ctx, config) {
    * @param {{limite?: number}} [demande]
    */
   const listerSessions = async (demande = {}) => {
-    nettoyerCache()
+    // PLUS DE BALAYAGE ICI : il appartient au cache, qui le fait a ses propres
+    // lectures et a son propre rythme (voir `cache-faits.js`). L'appeler d'ici
+    // faisait dependre la memoire du harness de la cadence du CLIENT.
     const racine = racineSessions()
     const limite = Number.isInteger(demande.limite) && demande.limite > 0 ? Math.min(demande.limite, 500) : 200
     let projets
@@ -576,11 +576,12 @@ export function apply(ctx, config) {
           continue
         }
         const cle = fichier
-        const connu = cache.get(cle)
-        let faits
-        if (connu !== undefined && connu.taille === information.size && connu.mtime === information.mtimeMs) {
-          faits = connu.faits
-          connu.vuLe = Date.now()
+        // LA VALIDITÉ EST CELLE DU FICHIER, et c'est le cache qui la juge (taille
+        // ET mtime) : voir `cache-faits.js`, ou cette règle est éprouvée seule.
+        const marqueurs = { taille: information.size, mtime: information.mtimeMs }
+        let faits = cache.lire(cle, marqueurs)
+        if (faits !== undefined) {
+          // rien a refaire : le journal n'a pas bouge depuis la derniere lecture
         } else if (information.size > PLAFOND_FICHIER) {
           faits = { illisible: 'journal trop volumineux (' + information.size + ' octets)' }
         } else {
@@ -593,7 +594,7 @@ export function apply(ctx, config) {
             }
             faits = resumer(enregistrements)
             faits.tronque = tronque
-            cache.set(cle, { taille: information.size, mtime: information.mtimeMs, faits, vuLe: Date.now() })
+            cache.poser(cle, marqueurs, faits)
           } catch (erreur) {
             faits = { illisible: 'lecture impossible: ' + (erreur.code ?? erreur.message) }
           }
@@ -889,51 +890,11 @@ export function apply(ctx, config) {
   }
 
   // ── Réponses HTTP ──────────────────────────────────────────────────────────
+  //
+  // `envoyer`, `envoyerNonModifie` et `lireCorps` viennent de `reponse.js` : voir
+  // l'en-tête de ce fichier pour ce qu'elles garantissent (pas de cache, longueur
+  // toujours posée, corps borné à 1 Mio, corps illisible qui rend `null`).
 
-  const envoyer = (res, code, charge, etag = null) => {
-    const corps = JSON.stringify(charge)
-    const entetes = {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-store',
-      'content-length': Buffer.byteLength(corps),
-    }
-    // L'`ETag` est OPTIONNEL : seules les réponses dont l'empreinte est connue
-    // (la liste des sessions) en portent un. En poser un partout promettrait une
-    // validité qu'aucune autre route ne sait calculer.
-    if (typeof etag === 'string') entetes.etag = etag
-    res.writeHead(code, entetes)
-    res.end(corps)
-  }
-
-  const lireCorps = (req) =>
-    new Promise((resolve) => {
-      const morceaux = []
-      let taille = 0
-      req.on('data', (morceau) => {
-        taille += morceau.length
-        if (taille > 1024 * 1024) {
-          req.destroy()
-          resolve(null)
-          return
-        }
-        morceaux.push(morceau)
-      })
-      req.on('end', () => {
-        if (morceaux.length === 0) return resolve({})
-        try {
-          const valeur = JSON.parse(Buffer.concat(morceaux).toString('utf8'))
-          resolve(valeur !== null && typeof valeur === 'object' ? valeur : {})
-        } catch {
-          resolve(null)
-        }
-      })
-      req.on('error', () => resolve(null))
-    })
-
-  /**
-   * Barrière d'accès. Rend `true` si la requête peut continuer.
-   * L'ordre est délibéré : provenance, puis jeton. Aucune E/S avant.
-   */
   const autoriser = (req, res) => {
     // 1. Un client natif n'envoie jamais `Origin`. Un navigateur en envoie
     //    toujours, y compris depuis une page hostile. On refuse donc tout
@@ -1624,15 +1585,6 @@ export function apply(ctx, config) {
    * passer par `envoyer`, qui sérialise une charge. Les règles de cache valent
    * aussi pour elle (`no-store`), sans quoi un intermédiaire pourrait la garder.
    */
-  const envoyerNonModifie = (res, empreinte) => {
-    res.writeHead(304, {
-      etag: empreinte,
-      'cache-control': 'no-store',
-      'content-length': '0',
-    })
-    res.end()
-  }
-
   /**
    * La requête porte-t-elle DÉJÀ l'empreinte de la liste courante ?
    *

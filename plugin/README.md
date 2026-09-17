@@ -422,7 +422,7 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 
 | Fichier | Ce qu'il porte |
 |---|---|
-| `dynamic/host.js` | le plugin : les routes, le cache, le flux, les jetons, le registre des appareils, les codes d'appairage |
+| `dynamic/host.js` | le plugin : les routes, le flux, les jetons, le registre des appareils, les codes d'appairage — ce qui **décide** |
 | `dynamic/appairage.js` | le contrat d'appairage — fonctions **pures** (construction, analyse, nom d'appareil), éprouvées et partagées avec le Swift |
 | `dynamic/client.js` | le panneau : **bundle client durable écrit à la main** (encodeur QR, compte à rebours, appareils appairés **puis** jeton du terminal, révocation), servi tel quel par DSH |
 | `package.json` | ce qui rend `client.js` **découvrable** (`dsh.client`, `exports["./client"]`) — aucune installation promise (RÈGLE #5) |
@@ -430,6 +430,8 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 | `dynamic/journal.js` | la lecture d'un journal de session : trames zstd concaténées, lignes JSONL, résumé |
 | `dynamic/cache-texte.js` | le cache des journaux lus en entier : clé `(taille, mtime)`, LRU, deux bornes — éprouvé seul |
 | `dynamic/trames.js` | le protocole WebSocket écrit à la main (RFC 6455) : texte, ping, pong, fermeture |
+| `dynamic/reponse.js` | la plomberie des réponses : `envoyer`, `envoyerNonModifie`, `lireCorps` — corps borné à 1 Mio, longueur toujours posée, corps illisible qui rend `null` |
+| `dynamic/cache-faits.js` | le cache des faits d'une session : validité par `(taille, mtime)`, péremption, éviction **LRU** — éprouvé seul |
 | `tests/appairage.test.js` | le contrat d'appairage, rejoué contre le fixture **partagé avec le Swift** |
 | `tests/hote.test.js` | le module hôte chargé **hors harness** : routes et gardes, puis le flux complet frappe → échange → jeton → portée → révocation |
 | `tests/bundle.test.js` | le bundle RÉEL : `id`, slot, dégradation, copie de l'encodeur, et décodage par Vision |
@@ -440,6 +442,7 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 | `tests/cache-texte.test.js` | le cache de texte, éprouvé seul avec un **compteur de lectures disque** (8 tests) |
 | `tests/contrat.test.js` | le contrat avec le client : le plugin produit exactement les clés du fixture |
 | `tests/trames.test.js` | le protocole WebSocket, éprouvé octet par octet |
+| `tests/plomberie.test.js` | la plomberie de réponse et le cache des faits, éprouvés **sans harness** (9 tests : corps borné, 304, LRU, péremption) |
 
 ```bash
 node --test plugins/dsh-remote/tests/*.test.js     # 84 tests, aucune dépendance
@@ -1623,4 +1626,4 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 | 4 | Écriture : prompt, approbations, questions | **prompt, annulation et SIGNALEMENT d'une décision attendue livrés et prouvés** ; le « blocage » était une capture précoce du service, corrigée. Répondre aux questions et aux approbations reste hors d'atteinte : un seul répondeur terminal par déploiement, déjà occupé par l'interface web |
 | 5 | Installation et signature iOS | **livré** — app signée et installée sur l'iPhone du propriétaire, connectée au harness via Tailscale (106 sessions) |
 | 6 | Appairage par QR — **étape A** : contrat versionné, panneau durable, scanner iPhone, collage macOS | **livrée**, puis **remplacée par l'étape B** : la route qui publiait le jeton d'appareil a été retirée, et la règle « le jeton n'est jamais renvoyé par une route » est rétablie |
-| 6 | Appairage par QR — **étape B** : code à usage unique (2 min), échange contre un jeton **par appareil**, portée par appareil, liste et révocation dans le panneau | **écrite et éprouvée localement** (150 tests de plugins dont le flux complet, 341 tests Swift, construction iOS simulateur verte) ; l'épreuve du panneau exige un **redémarrage** du harness — procédure en **10 points** ci-dessus, **non encore exécutée** |
+| 6 | Appairage par QR — **étape B** : code à usage unique (2 min), échange contre un jeton **par appareil**, portée par appareil, liste et révocation dans le panneau | **écrite et éprouvée localement** (159 tests de plugins dont le flux complet, 341 tests Swift, construction iOS simulateur verte) ; l'épreuve du panneau exige un **redémarrage** du harness — procédure en **10 points** ci-dessus, **non encore exécutée** |
