@@ -458,6 +458,7 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 | `dynamic/journal.js` | la lecture d'un journal de session : trames zstd concaténées, lignes JSONL, résumé |
 | `dynamic/cache-texte.js` | le cache des journaux lus en entier : clé `(taille, mtime)`, LRU, deux bornes — éprouvé seul |
 | `dynamic/trames.js` | le protocole WebSocket écrit à la main (RFC 6455) : texte, ping, pong, fermeture |
+| `dynamic/routes-appairage.js` | les quatre gestes du panneau — les SEULS que ne garde pas le jeton d'appareil (session navigateur, ou code) ; l'échange est la seule route qui rend un jeton |
 | `dynamic/resolution-hote.js` | le nom à publier et le transport : machine locale préférée, hôte déclaré en relais, schéma **lu** (jamais deviné), deux caches partagés avec la route des serveurs |
 | `dynamic/codes-appairage.js` | la mémoire des codes d'appairage : un code sert **une fois**, un code périmé reste brûlé, les périmés sont retirés **avant** le plafond des vivants, les deux plafonds glissants |
 | `dynamic/appareils.js` | le registre des appareils : jeton historique, empreintes (jamais les jetons), comparaison à temps constant **sans sortie anticipée**, écriture relue sous verrou, révocation de l'historique par **suppression** |
