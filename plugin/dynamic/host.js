@@ -65,7 +65,7 @@ import { join } from 'node:path'
 // LA DÉCOUVERTE DU TAILNET vit dans son propre fichier : elle ne dépend que du
 // binaire local de Tailscale, et ses deux fonctions d'analyse sont PURES — donc
 // éprouvables sans lancer de processus (voir `tests/tailscale.test.js`).
-import { decouvrirMachines, lirePublication } from './tailscale.js'
+import { decouvrirMachines } from './tailscale.js'
 // LA PLOMBERIE DES RÉPONSES vit dans son propre fichier : elle ne décide rien de la
 // sécurité, et c'est ce qui la rendait pénible à traverser quand on cherchait où une
 // requête est REFUSÉE. Elle porte pourtant des règles (corps borné, longueur posée,
@@ -213,6 +213,11 @@ import {
   configurerTtlCode,
   creerMemoireDesCodes,
 } from './codes-appairage.js'
+// LA RESOLUTION DU NOM D'HOTE ET DU TRANSPORT vit dans son propre fichier : ce qu'elle
+// produit finit dans un QR code, donc deux regles y sont decisives (jamais la boucle
+// locale, le schema se LIT au lieu de se deviner), et ses deux caches couvrent deux
+// processus Tailscale.
+import { creerResolveurDHote, TTL_DECOUVERTE_MS } from './resolution-hote.js'
 
 /**
  * La portée d'un enregistrement de jeton.
@@ -262,7 +267,10 @@ export function porteeDemandee(valeur) {
 // shell). Aucun paquet n'est émis par le plugin : Tailscale fait son travail,
 // on lit son état.
 
-const TTL_DECOUVERTE_MS = 15000
+// ELLE VIENT DE `resolution-hote.js`, ou elle sert, et elle est REEXPORTEE : c'est la
+// surface publique du plugin, et deux definitions d'une meme duree de vie
+// divergeraient au premier ajustement.
+export { TTL_DECOUVERTE_MS } from './resolution-hote.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Plugin
@@ -915,21 +923,21 @@ export function apply(ctx, config) {
   // Le resultat est mis en cache quelques secondes : lancer un processus a
   // chaque requete serait un cout sans contrepartie, un tailnet ne changeant pas
   // d'une seconde a l'autre.
-  let cacheDecouverte = { vuLe: 0, valeur: null }
-  // LA PUBLICATION DE CETTE MACHINE (`tailscale serve status --json`), mise en
-  // cache pour la meme duree : elle coute un processus, et elle ne change pas
-  // d'une seconde a l'autre. `null` EST UN RESULTAT : « rien de publie, ou
-  // binaire muet » ne doit pas relancer le CLI a chaque frappe de code.
-  let cachePublication = { vuLe: 0, valeur: null }
+  // LES DEUX CACHES ET LES DEUX LECTURES VIVENT DANS `resolution-hote.js` : ils
+  // couvrent deux processus Tailscale, et ils sont partages par la route des
+  // serveurs et par la frappe d'un code — deux blocs separes ici, deux lectures
+  // lancees deux fois par cycle.
+  const resolveur = creerResolveurDHote({
+    hotesDeclares: () => {
+      const navigateur = serviceNavigateur()
+      const declares = navigateur === null ? [] : navigateur.connexion.trustedHosts
+      return Array.isArray(declares) ? declares : []
+    },
+  })
 
   const repondreServeurs = async (req, res) => {
     try {
-      const maintenant = Date.now()
-      if (cacheDecouverte.valeur === null || maintenant - cacheDecouverte.vuLe > TTL_DECOUVERTE_MS) {
-        const { machines, diagnostic } = await decouvrirMachines()
-        cacheDecouverte = { vuLe: maintenant, valeur: { machines, diagnostic } }
-      }
-      const { machines, diagnostic } = cacheDecouverte.valeur
+      const { machines, diagnostic } = await resolveur.machines()
       envoyer(res, 200, { protocole: VERSION_PROTOCOLE, serveurs: machines, diagnostic })
       tracer(req, 200, machines.length + ' machines')
     } catch (erreur) {
@@ -1002,57 +1010,14 @@ export function apply(ctx, config) {
    * `127.0.0.1` dans un QR produirait un appairage qui ne peut aboutir nulle
    * part, et l'utilisateur n'aurait aucun moyen de comprendre pourquoi.
    */
-  const nomDeLHote = async () => {
-    // LE SCHEMA DE PUBLICATION SE LIT, IL NE SE DEVINE PAS. `tailscale serve
-    // status --json` dit sous quel transport CETTE machine est publiee ; il est
-    // mis en cache avec la meme duree que la decouverte, parce qu'il coute un
-    // processus et qu'une publication ne change pas d'une seconde a l'autre.
-    // Sans binaire, sans publication, ou devant une sortie inattendue, on
-    // retombe sur le clair : le comportement d'avant, jamais une adresse inventee.
-    const schema = await schemaDePublication()
-    try {
-      const maintenant = Date.now()
-      if (cacheDecouverte.valeur === null || maintenant - cacheDecouverte.vuLe > TTL_DECOUVERTE_MS) {
-        const { machines, diagnostic } = await decouvrirMachines()
-        cacheDecouverte = { vuLe: maintenant, valeur: { machines, diagnostic } }
-      }
-      const machines = cacheDecouverte.valeur.machines ?? []
-      const locale = machines.find((machine) => machine.local === true)
-      if (locale !== undefined && typeof locale.nomDNS === 'string' && locale.nomDNS.length > 0) {
-        return { hote: locale.nomDNS, via: 'tailscale', schema }
-      }
-    } catch {
-      // Tailscale absent ou muet : l'hote declare reste une source valable.
-    }
-    const navigateur = serviceNavigateur()
-    const declares = navigateur === null ? [] : navigateur.connexion.trustedHosts
-    const premier = Array.isArray(declares) && declares.length > 0 ? String(declares[0]) : ''
-    // Le profil peut declarer un hote AVEC son port : on ne garde que le nom.
-    const nom = premier.split(':')[0]
-    return nom.length > 0 ? { hote: nom, via: 'hote declare', schema } : { hote: '', via: 'aucun', schema }
-  }
-
   /**
-   * Le schéma sous lequel cette machine est publiée : `http` par défaut.
+   * LE NOM A PUBLIER, LA SOURCE QUI L'A FOURNI, ET LE TRANSPORT.
    *
-   * LE DÉFAUT EST LE CLAIR, ET C'EST DÉLIBÉRÉ : c'est ce que le plugin publiait
-   * avant, et un `null` (binaire absent, aucune publication, sortie inattendue) ne
-   * doit pas transformer une installation qui marchait en installation qui ne
-   * répond plus. Le passage à HTTPS est un FAIT que la machine annonce.
+   * Delegation : la regle vit dans `resolution-hote.js`, ou elle s'eprouve sans
+   * Tailscale (machine locale preferee, hote declare en relais, schema qui se LIT au
+   * lieu de se deviner, deux caches partages avec la route des serveurs).
    */
-  const schemaDePublication = async () => {
-    const maintenant = Date.now()
-    if (maintenant - cachePublication.vuLe > TTL_DECOUVERTE_MS) {
-      let valeur = null
-      try {
-        valeur = await lirePublication()
-      } catch {
-        valeur = null
-      }
-      cachePublication = { vuLe: maintenant, valeur }
-    }
-    return cachePublication.valeur?.schema === 'https' ? 'https' : 'http'
-  }
+  const nomDeLHote = () => resolveur.resoudre()
 
   /**
    * FRAPPER UN CODE D'APPAIRAGE — la seule chose que le panneau fait désormais.

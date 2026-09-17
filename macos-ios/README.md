@@ -83,7 +83,7 @@ Vérifications : aperçu inspecté jusqu'à 40 px ; dimensions, alpha, bleu exac
 niveaux de gris contrôlés ; dix représentations ICNS réextraites de 16 à 1024 px ;
 paquet macOS reconstruit et signature vérifiée ; compilation du simulateur réussie,
 avec `AppIcon` présent pour les familles iPhone et iPad. Les vérifications du dépôt
-passent : secrets, syntaxe, 186 tests de plugins et 341 tests Swift. Ces commandes
+passent : secrets, syntaxe, 194 tests de plugins et 341 tests Swift. Ces commandes
 ne réinstallent pas les copies déjà présentes sur les appareils.
 
 ### Où vit quoi : cinq pièces, et une seule porte sur le disque
