@@ -26,10 +26,10 @@ public final class ModeleApp {
 
   /// Ce qui survit à l'application : adresse mémorisée, préférences par serveur,
   /// fichier d'amorçage, diagnostic. Injectée, donc éprouvable sans disque.
-  private let persistance: Persistance
+  let persistance: Persistance
   /// LE CANAL DES ALERTES, injectable : c'est ce qui permet d'éprouver « aucune
   /// alerte quand elles sont éteintes » au lieu de le supposer.
-  private let alerteur: Alerteur
+  let alerteur: Alerteur
 
   /// COMMENT on demande à une machine si elle sert DSH. La mécanique vit
   /// là-bas ; le modèle garde l'état du verdict et les règles qui l'entourent.
@@ -372,33 +372,20 @@ public final class ModeleApp {
   /// réclame le droit d'envoyer des notifications sans qu'on lui ait rien demandé
   /// apprend à être refusée. C'est l'utilisateur qui les allume, et
   /// l'autorisation système n'est demandée QU'À CE MOMENT-LÀ.
-  public private(set) var alertesActives = false
+  public internal(set) var alertesActives = false
 
   /// La dernière observation connue — `nil` tant qu'aucune liste n'est arrivée.
-  private var observationPrecedente:
+  var observationPrecedente:
     (generation: Int, attendent: Set<String>, terminees: Set<String>)?
 
   /// Allume ou éteint les alertes, en demandant l'autorisation au SYSTÈME quand on
   /// les allume. Rend l'état réellement obtenu : un refus système laisse
   /// l'interrupteur éteint, et l'écran doit le dire plutôt que de mentir.
   @discardableResult
-  public func definirAlertes(_ actives: Bool) async -> Bool {
-    guard actives else {
-      alertesActives = false
-      persistance.memoriserAlertes(false)
-      return false
-    }
-    let accordees = await alerteur.demanderAutorisation()
-    alertesActives = accordees
-    persistance.memoriserAlertes(accordees)
-    if !accordees {
-      signaler(
-        "Les alertes n'ont pas été autorisées. Autorisez-les dans les réglages du système, puis rallumez cet interrupteur.")
-    }
-    return accordees
-  }
+  // ── LES ALERTES VIVENT DANS `ModeleApp+Alertes.swift` ────────────────────────
 
-  private func chargerAlertes() {
+
+  func chargerAlertes() {
     alertesActives = persistance.lireAlertes()
   }
 
@@ -876,67 +863,17 @@ public final class ModeleApp {
   /// C'est ce qui allume la pastille verte de la liste. La règle complète — et
   /// ses limites — sont dans `RappelsDeFin` : ici on ne fait que lui donner
   /// l'observation et retenir le résultat.
-  public private(set) var terminees: Set<String> = []
-  private var rappelsDeFin = RappelsDeFin()
+  public internal(set) var terminees: Set<String> = []
+  var rappelsDeFin = RappelsDeFin()
 
   /// DÉRIVATION : la règle vit dans `ModeleApp+Derivations`.
 
 
-  /// Confronte la liste reçue à la précédente pour détecter les fins de tour.
-  ///
-  /// Appelé APRÈS chaque mise à jour de `sessions`, et jamais avant : la règle
-  /// compare deux observations successives, donc l'ordre compte.
-  private func observerLesFinsDeTour() {
-    let observations = sessions.map {
-      EtatObserve(identifiant: $0.id, enCours: $0.statut == "en_cours")
-    }
-    let termineesAvant = terminees
-    terminees = rappelsDeFin.observer(observations, regardee: sessionOuverte?.id)
-    prevenirSiNecessaire(termineesAvant: termineesAvant)
-  }
 
-  /// LES ALERTES PARTENT D'ICI, et d'ici seulement : c'est le seul endroit qui
-  /// voit DEUX observations successives, donc le seul qui puisse dire ce qui a
-  /// CHANGÉ.
-  ///
-  /// POURQUOI LA PREMIÈRE OBSERVATION N'ALERTE PAS. Au lancement, la liste arrive
-  /// complète : sans cette règle, trois sessions déjà bloquées produiraient trois
-  /// alertes pour un état que l'utilisateur voit à l'écran. `observationPrecedente`
-  /// vaut `nil` tant qu'aucune liste n'a été reçue, et c'est ce `nil` qui
-  /// distingue « tout est nouveau » de « rien n'a changé ».
-  func prevenirSiNecessaire(termineesAvant: Set<String>) {
-    let attendent = Set(sessions.filter { $0.attendReponse == true }.map(\.id))
-    let precedente = observationPrecedente
-    observationPrecedente = (generation: generation, attendent: attendent, terminees: terminees)
-    // LA GÉNÉRATION FAIT PARTIE DE LA COMPARAISON. Après un changement de
-    // machine, la première liste du nouvel hôte ne compare rien : elle retient.
-    // Sans cela, trois sessions déjà bloquées ailleurs produiraient trois alertes
-    // pour un état que personne n'a vu commencer.
-    guard alertesActives, let precedente, precedente.generation == generation else { return }
 
-    let alertes = Alerte.aEnvoyer(
-      attendent: attendent,
-      attendaientAvant: precedente.attendent,
-      terminees: terminees,
-      termineesAvant: termineesAvant,
-      regardee: sessionOuverte?.id)
-    guard !alertes.isEmpty else { return }
-    Task { [alerteur] in
-      for alerte in alertes { await alerteur.prevenir(alerte) }
-    }
-  }
 
-  /// Efface le rappel d'une session, parce que l'utilisateur l'a ouverte.
-  ///
-  /// PUBLIQUE DEPUIS LES GESTES DE LISTE, et pour une raison précise : le
-  /// rappel de fin se consommait uniquement en OUVRANT la session, ce qui était
-  /// le seul moyen de dire « j'ai vu ». Le glissement et le menu contextuel
-  /// offrent maintenant l'action sans quitter la liste — et sans elle, ils
-  /// n'auraient rien à proposer que du copier.
-  public func marquerCommeVue(_ identifiant: String) {
-    rappelsDeFin.oublier(identifiant)
-    terminees.remove(identifiant)
-  }
+
+
 
   /// L'utilisateur quitte le journal : la session n'est plus REGARDÉE.
   ///
