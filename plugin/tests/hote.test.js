@@ -18,10 +18,12 @@
 //   5. un code ne sert QU'UNE FOIS, et il expire ;
 //   6. l'échange rend un jeton PROPRE À L'APPAREIL, qui authentifie les routes
 //      natives avec SA portée ;
-//   7. la révocation par empreinte coupe UN appareil, sans toucher aux autres.
+//   7. la révocation par empreinte coupe UN appareil, sans toucher aux autres ;
+//   8. le flux REFUSE un second `demarrer` au lieu de melanger deux sessions.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -29,6 +31,7 @@ import zlib from 'node:zlib'
 
 import { analyser } from '../dynamic/appairage.js'
 import { apply, configurerTtlCode, inject, name, VERSION_PROTOCOLE } from '../dynamic/host.js'
+import { lireTrames } from '../dynamic/trames.js'
 
 /**
  * LE JETON HISTORIQUE DU FAUX COFFRE, ET POURQUOI IL EXISTE DÉJÀ.
@@ -79,9 +82,21 @@ function coffreFactice({ historique = JETON_HISTORIQUE, registre = null, avecSup
 /** Un `ctx` minimal : juste ce qu'`apply` exige pour enregistrer ses routes. */
 function contexteFactice({ coffre = coffreFactice(), avecNavigateur = true, authentifie = true, agents = null } = {}) {
   const routes = []
+  // LES ECOUTEURS SONT GARDES, ET C'EST LE POINT : le plugin s'abonne au bus du
+  // harness (`session/event`, `agent/status`) pour pousser les evenements sans
+  // attendre sa minuterie. Un `on` muet rendrait ce chemin INEPROUVABLE — on
+  // croirait le tester alors qu'on ne ferait que constater que rien ne leve.
+  const ecouteurs = new Map()
   const ctx = {
     routes,
     coffre,
+    ecouteurs,
+    /** Emet un evenement comme le ferait le harness, et rend le nombre d'ecouteurs. */
+    emettre(nom, ...arguments_) {
+      const pour = ecouteurs.get(nom) ?? []
+      for (const ecouteur of pour) ecouteur(...arguments_)
+      return pour.length
+    },
     get(service) {
       if (service === 'webServer') {
         return {
@@ -110,7 +125,9 @@ function contexteFactice({ coffre = coffreFactice(), avecNavigateur = true, auth
       }
       return undefined
     },
-    on: () => {},
+    on(nom, ecouteur) {
+      ecouteurs.set(nom, [...(ecouteurs.get(nom) ?? []), ecouteur])
+    },
     effect: () => {},
   }
   return ctx
@@ -772,6 +789,423 @@ test('un agent qui passe EN COURS change l empreinte sans qu aucun fichier ne bo
     assert.equal(apres.code, 200, 'un tour vient de demarrer : pas de 304')
     assert.notEqual(apres.entetes.etag, avant.entetes.etag)
     assert.equal(apres.json().sessions.find((session) => session.id === 'session-bbb').statut, 'en_cours')
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+// ── Le flux : un seul `demarrer` par connexion ────────────────────────────────
+//
+// POURQUOI CE TEST EXISTE. Le flux n'etait eprouve que par `trames.test.js`, qui
+// verifie l'ENCODAGE des octets, et par les tests Swift, qui verifient le CLIENT.
+// Personne ne tenait la regle du milieu : ce que le serveur accepte comme
+// suite de messages. Un second `demarrer` reecrivait `chemin`, `offset` et
+// `seuilReprise` — dans un ordre non deterministe, puisque la lecture disque qui
+// les precede est asynchrone — et le journal pouvait afficher un melange de deux
+// sessions sans qu'aucune erreur ne soit levee.
+
+/** Un socket d'Upgrade : ce qui lui est ecrit, et ses evenements. */
+function socketFactice() {
+  const socket = new EventEmitter()
+  socket.ecrit = []
+  socket.writableLength = 0
+  socket.write = (morceau) => {
+    socket.ecrit.push(Buffer.from(morceau))
+    return true
+  }
+  socket.end = () => {
+    socket.termine = true
+  }
+  return socket
+}
+
+/** Une trame de CLIENT, MASQUEE : la RFC 6455 l'exige, et `lireTrames` la lit. */
+function trameClient(opcode, texte) {
+  const donnees = Buffer.from(texte, 'utf8')
+  const cle = Buffer.from([0x11, 0x22, 0x33, 0x44])
+  const masque = Buffer.from(donnees.map((octet, index) => octet ^ cle[index & 3]))
+  return Buffer.concat([Buffer.from([0x80 | opcode, 0x80 | donnees.length]), cle, masque])
+}
+
+/**
+ * Une trame de client FRAGMENTÉE : le bit FIN est celui qu'on demande.
+ *
+ * Sert à rejouer ce qu'un proxy — ou un client qui découpe ses écritures — peut
+ * produire, et qui laissait le flux MUET avant le réassemblage.
+ */
+function trameClientFragment(opcode, texte, fin) {
+  const donnees = Buffer.from(texte, 'utf8')
+  const cle = Buffer.from([0x55, 0x66, 0x77, 0x88])
+  const masque = Buffer.from(donnees.map((octet, index) => octet ^ cle[index & 3]))
+  return Buffer.concat([Buffer.from([(fin ? 0x80 : 0x00) | opcode, 0x80 | donnees.length]), cle, masque])}
+
+/** Les messages JSON ecrits sur la socket, l'en-tete 101 mis a part. */
+function messagesDuFlux(socket) {
+  const { trames } = lireTrames(Buffer.concat(socket.ecrit.slice(1)))
+  return trames
+    .filter((trame) => trame.opcode === 0x1)
+    .map((trame) => JSON.parse(trame.charge.toString('utf8')))
+}
+
+/**
+ * Attend qu'un message du flux apparaisse — le serveur repond en ASYNCHRONE,
+ * parce qu'il lit un journal avant d'ecrire sa `base`.
+ *
+ * Rend `null` au bout des essais : un test qui attendrait indefiniment masquerait
+ * une regression derriere un blocage de la suite.
+ */
+async function attendreMessage(socket, predicat, essais = 200) {
+  for (let essai = 0; essai < essais; essai++) {
+    const trouve = messagesDuFlux(socket).find(predicat)
+    if (trouve !== undefined) return trouve
+    await new Promise((resoudre) => setTimeout(resoudre, 10))
+  }
+  return null
+}
+
+test('un flux REFUSE un second demarrer au lieu de melanger deux sessions', async () => {
+  const arbre = await arbreDeSessions({ sessions: ['session-aaa', 'session-bbb'] })
+  try {
+    const ctx = await demarrer()
+    const flux = route(ctx, '/dsh-remote/v1/flux')
+    const socket = socketFactice()
+    // LE FLUX EST FERME DANS TOUS LES CAS, y compris quand une assertion tombe :
+    // sans cela, le minuteur du flux survit a l'echec, garde la boucle d'evenements
+    // en vie, et le test se termine en BLOCAGE au lieu de dire ce qui a casse.
+    try {
+      flux.handler(
+        requete({
+          url: '/dsh-remote/v1/flux',
+          headers: { ...entete(JETON_HISTORIQUE), 'sec-websocket-key': 'Y2xlLWRlLXRlc3QtaXhpY2k=' },
+        }),
+        socket,
+      )
+      assert.match(socket.ecrit[0].toString('utf8'), /^HTTP\/1\.1 101 /, 'l upgrade doit etre accepte')
+
+      socket.emit('data', trameClient(0x1, JSON.stringify({ type: 'demarrer', session: 'session-aaa' })))
+      const base = await attendreMessage(socket, (message) => message.type === 'base')
+      assert.notEqual(base, null, 'le premier demarrer doit rendre une base')
+      assert.equal(base.session.id, 'session-aaa')
+
+      // LE SECOND `demarrer` VISE UNE AUTRE SESSION : c'est le cas qui melangerait
+      // les deux journaux, pas un cas d'ecole.
+      socket.emit('data', trameClient(0x1, JSON.stringify({ type: 'demarrer', session: 'session-bbb' })))
+      const refus = await attendreMessage(socket, (message) => message.type === 'erreur')
+      assert.notEqual(refus, null, 'un second demarrer doit etre REFUSE, pas ignore')
+      assert.match(refus.message, /deja/)
+      assert.equal(
+        messagesDuFlux(socket).filter((message) => message.type === 'base').length,
+        1,
+        'aucune base ne doit partir pour la seconde session',
+      )
+      // LA CONNEXION SURVIT AU REFUS : le direct en cours ne doit pas mourir pour
+      // une faute du client, et un refus explicite se lit.
+      assert.notEqual(socket.termine, true)
+    } finally {
+      socket.emit('data', trameClient(0x8, ''))
+    }
+    assert.equal(socket.termine, true, 'la trame de fermeture doit arreter le flux')
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+/** La trame de fermeture ecrite sur la socket, s'il y en a une. */
+function fermetureDuFlux(socket) {
+  const { trames } = lireTrames(Buffer.concat(socket.ecrit.slice(1)))
+  return trames.find((trame) => trame.opcode === 0x8)
+}
+
+/** Ouvre un flux sur la session demandee, et rend la socket. */
+function ouvrirLeFlux(ctx, session) {
+  const socket = socketFactice()
+  route(ctx, '/dsh-remote/v1/flux').handler(
+    requete({
+      url: '/dsh-remote/v1/flux',
+      headers: { ...entete(JETON_HISTORIQUE), 'sec-websocket-key': 'Y2xlLWRlLXRlc3QtaXhpY2k=' },
+    }),
+    socket,
+  )
+  socket.emit('data', trameClient(0x1, JSON.stringify({ type: 'demarrer', session })))
+  return socket
+}
+
+test('un client qui ne repond PLUS est ferme, au lieu de scruter le disque pour lui', async (t) => {
+  const arbre = await arbreDeSessions({ sessions: ['session-aaa'] })
+  try {
+    // HORLOGE SIMULEE, ET C'EST INDISPENSABLE ICI : le vrai delai se compte en
+    // minutes, et un test qui attendrait une minute ne serait pas lance. Seuls
+    // `setInterval` et `Date` sont simules — `setTimeout` reste reel, donc
+    // l'attente de la reponse ci-dessous fonctionne normalement.
+    t.mock.timers.enable({ apis: ['setInterval', 'Date'] })
+    const ctx = await demarrer()
+    const socket = ouvrirLeFlux(ctx, 'session-aaa')
+    try {
+      const base = await attendreMessage(socket, (message) => message.type === 'base')
+      assert.notEqual(base, null, 'la base doit arriver avant tout controle de vie')
+
+      // UN PING SANS PONG N'EST PAS ENCORE UNE PREUVE DE MORT : il peut se perdre,
+      // ou revenir apres l'echeance sur un reseau mobile.
+      t.mock.timers.tick(30000)
+      assert.notEqual(socket.termine, true, 'un seul ping sans pong ne doit pas fermer')
+      const premierPing = lireTrames(Buffer.concat(socket.ecrit.slice(1))).trames.some(
+        (trame) => trame.opcode === 0x9,
+      )
+      assert.equal(premierPing, true, 'le serveur doit avoir envoye son ping')
+
+      // DEUX PINGS SANS AUCUN PONG, SI : c'est une minute sans reponse.
+      t.mock.timers.tick(30000)
+      assert.equal(socket.termine, true, 'deux pings sans pong doivent fermer la socket')
+      const fermeture = fermetureDuFlux(socket)
+      assert.notEqual(fermeture, undefined, 'la fermeture doit porter une trame, pas un `end` muet')
+      assert.equal(fermeture.charge.readUInt16BE(0), 1008)
+    } finally {
+      socket.emit('data', trameClient(0x8, ''))
+    }
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+test('un client qui repond a ses pings garde son flux ouvert', async (t) => {
+  const arbre = await arbreDeSessions({ sessions: ['session-aaa'] })
+  try {
+    t.mock.timers.enable({ apis: ['setInterval', 'Date'] })
+    const ctx = await demarrer()
+    const socket = ouvrirLeFlux(ctx, 'session-aaa')
+    try {
+      const base = await attendreMessage(socket, (message) => message.type === 'base')
+      assert.notEqual(base, null, 'la base doit arriver')
+
+      // LA CONTREPARTIE, SANS LAQUELLE LE CONTROLE DE VIE SERAIT UN DEFAUT : trois
+      // pings, trois pongs, et le flux doit vivre. Un client qui repond ne doit
+      // JAMAIS etre ferme pour avoir « trop attendu ».
+      for (let tour = 0; tour < 3; tour++) {
+        t.mock.timers.tick(30000)
+        socket.emit('data', trameClient(0xa, ''))
+      }
+      assert.notEqual(socket.termine, true, 'un client qui repond garde son flux')
+      assert.equal(fermetureDuFlux(socket), undefined, 'aucune fermeture ne doit avoir ete ecrite')
+    } finally {
+      socket.emit('data', trameClient(0x8, ''))
+    }
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+// ── Le bus du harness : pousser au lieu d'attendre la minuterie ───────────────
+//
+// POURQUOI CES TESTS EXISTENT. Le flux n'etait alimente que par une scrutation
+// disque de 750 ms : chaque evenement payait jusqu'a trois quarts de seconde de
+// latence, plus un `stat` et une relecture de 64 Kio. Le harness emet pourtant
+// chaque enregistrement EN MEMOIRE au moment ou il le valide
+// (`session/event`). Ce chemin se prouve en EMETTANT l'evenement soi-meme : sans
+// cela, on ne verifierait que l'absence d'exception.
+
+test('un evenement du bus est pousse TOUT DE SUITE, sans attendre la scrutation', async () => {
+  const arbre = await arbreDeSessions({ sessions: ['session-aaa'] })
+  try {
+    const ctx = await demarrer()
+    const socket = ouvrirLeFlux(ctx, 'session-aaa')
+    try {
+      const base = await attendreMessage(socket, (message) => message.type === 'base')
+      assert.notEqual(base, null, 'la base doit arriver avant tout evenement')
+      const avant = messagesDuFlux(socket).filter((message) => message.type === 'evenement').length
+
+      // L'EVENEMENT EST EMIS COMME LE FAIT LE HARNESS : la session pour portee, et
+      // l'enregistrement gele. Aucune ecriture disque n'a lieu — c'est le point :
+      // le fichier ne bouge pas, et pourtant le client doit recevoir le `seq`.
+      const diffuses = ctx.emettre('session/event', { id: 'session-aaa' }, {
+        type: 'assistant/message',
+        seq: 4096,
+        time: 1_700_000_000_000,
+        data: { texte: 'pousse par le bus' },
+      })
+      assert.ok(diffuses >= 1, 'le plugin doit etre abonne au bus des sessions')
+
+      const pousse = await attendreMessage(
+        socket,
+        (message) => message.type === 'evenement' && message.enregistrement?.seq === 4096,
+      )
+      assert.notEqual(pousse, null, 'un evenement du bus doit partir immediatement')
+      const delta = messagesDuFlux(socket).find(
+        (message) => message.type === 'delta' && message.dernierSeq === 4096,
+      )
+      assert.notEqual(delta, undefined, 'le delta doit suivre l evenement')
+      assert.equal(
+        messagesDuFlux(socket).filter((message) => message.type === 'evenement').length,
+        avant + 1,
+        'un seul evenement pousse, sans doublon',
+      )
+    } finally {
+      socket.emit('data', trameClient(0x8, ''))
+    }
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+test('un evenement DEJA CONNU du client n est pas renvoye', async () => {
+  const arbre = await arbreDeSessions({ sessions: ['session-aaa'] })
+  try {
+    const ctx = await demarrer()
+    // LE CLIENT REPREND AU SEQ 7 : tout ce qui est <= 7 est deja chez lui. Un bus
+    // qui repousserait sans filtre ferait reapparaitre des doublons a l'ecran — le
+    // defaut exact que `depuisSeq` corrige, reintroduit par une seconde source.
+    const socket = socketFactice()
+    route(ctx, '/dsh-remote/v1/flux').handler(
+      requete({
+        url: '/dsh-remote/v1/flux',
+        headers: { ...entete(JETON_HISTORIQUE), 'sec-websocket-key': 'Y2xlLWRlLXRlc3QtaXhpY2k=' },
+      }),
+      socket,
+    )
+    socket.emit(
+      'data',
+      trameClient(0x1, JSON.stringify({ type: 'demarrer', session: 'session-aaa', depuisSeq: 7 })),
+    )
+    assert.notEqual(await attendreMessage(socket, (message) => message.type === 'base'), null)
+
+    ctx.emettre('session/event', { id: 'session-aaa' }, { type: 'assistant/message', seq: 7, time: 1, data: {} })
+    ctx.emettre('session/event', { id: 'session-aaa' }, { type: 'assistant/message', seq: 8, time: 1, data: {} })
+
+    const pousse = await attendreMessage(
+      socket,
+      (message) => message.type === 'evenement' && message.enregistrement?.seq === 8,
+    )
+    assert.notEqual(pousse, null, 'le seq 8 doit passer : il est nouveau')
+    const sept = messagesDuFlux(socket).filter(
+      (message) => message.type === 'evenement' && message.enregistrement?.seq === 7,
+    )
+    assert.equal(sept.length, 0, 'le seq 7 est deja chez le client : il ne doit pas repartir')
+    socket.emit('data', trameClient(0x8, ''))
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+test('un changement de statut d agent est pousse sur le flux de SA session', async () => {
+  const arbre = await arbreDeSessions({ sessions: ['session-aaa', 'session-bbb'] })
+  try {
+    const ctx = await demarrer()
+    const socket = ouvrirLeFlux(ctx, 'session-aaa')
+    try {
+      assert.notEqual(await attendreMessage(socket, (message) => message.type === 'base'), null)
+
+      // L'AUTRE SESSION D'ABORD : son statut ne doit PAS arriver ici. C'est la
+      // regle de portee — `agent/status` est emis avec l'agent pour portee, et un
+      // flux ne parle que d'UNE session.
+      ctx.emettre('agent/status', { agent: { id: 'session-bbb' }, status: 'running' })
+      // Puis la sienne.
+      const abonnes = ctx.emettre('agent/status', { agent: { id: 'session-aaa' }, status: 'running' })
+
+      assert.ok(abonnes >= 1, 'le plugin doit etre abonne au bus des agents')
+      const statut = await attendreMessage(socket, (message) => message.type === 'statut')
+      assert.notEqual(statut, null, 'le changement de statut doit etre pousse')
+      assert.equal(statut.statut, 'en_cours')
+      assert.equal(
+        messagesDuFlux(socket).filter((message) => message.type === 'statut').length,
+        1,
+        'un seul statut pousse : celui de la session suivie',
+      )
+
+      ctx.emettre('agent/status', { agent: { id: 'session-aaa' }, status: 'idle' })
+      const repos = await attendreMessage(
+        socket,
+        (message) => message.type === 'statut' && message.statut === 'inactif',
+      )
+      assert.notEqual(repos, null, 'le retour au repos doit etre pousse aussi')
+    } finally {
+      socket.emit('data', trameClient(0x8, ''))
+    }
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+test('un flux FERME ne recoit plus rien du bus', async () => {
+  const arbre = await arbreDeSessions({ sessions: ['session-aaa'] })
+  try {
+    const ctx = await demarrer()
+    const socket = ouvrirLeFlux(ctx, 'session-aaa')
+    assert.notEqual(await attendreMessage(socket, (message) => message.type === 'base'), null)
+    socket.emit('data', trameClient(0x8, ''))
+    assert.equal(socket.termine, true, 'la fermeture doit etre traitee')
+
+    const avant = messagesDuFlux(socket).length
+    ctx.emettre('session/event', { id: 'session-aaa' }, { type: 'assistant/message', seq: 99, time: 1, data: {} })
+    ctx.emettre('agent/status', { agent: { id: 'session-aaa' }, status: 'running' })
+    // RIEN NE PART, ET SURTOUT RIEN NE LEVE : une connexion morte doit etre
+    // RETIREE de la table du bus. Sans ce desabonnement, un serveur qui vit des
+    // jours accumulerait des sockets fermees et ecrirait dedans pour toujours.
+    assert.equal(messagesDuFlux(socket).length, avant, 'aucun message apres la fermeture')
+
+    // ET LA TABLE EST VIDE : un nouvel abonne sur la meme session ne recoit que
+    // ce qui le concerne.
+    const seconde = ouvrirLeFlux(ctx, 'session-aaa')
+    assert.notEqual(await attendreMessage(seconde, (message) => message.type === 'base'), null)
+    const avantSeconde = messagesDuFlux(seconde).length
+    ctx.emettre('session/event', { id: 'session-bbb' }, { type: 'assistant/message', seq: 5, time: 1, data: {} })
+    await new Promise((resoudre) => setTimeout(resoudre, 60))
+    assert.equal(messagesDuFlux(seconde).length, avantSeconde, 'une autre session ne parle pas ici')
+    seconde.emit('data', trameClient(0x8, ''))
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+test('un `demarrer` FRAGMENTÉ est servi, au lieu de laisser le flux muet', async () => {
+  const arbre = await arbreDeSessions({ sessions: ['session-aaa'] })
+  try {
+    const ctx = await demarrer()
+    const socket = socketFactice()
+    route(ctx, '/dsh-remote/v1/flux').handler(
+      requete({
+        url: '/dsh-remote/v1/flux',
+        headers: { ...entete(JETON_HISTORIQUE), 'sec-websocket-key': 'Y2xlLWRlLXRlc3QtaXhpY2k=' },
+      }),
+      socket,
+    )
+    try {
+      // LE MESSAGE EST COUPÉ EN DEUX, avec un PING INTERCALÉ — ce que la RFC 6455
+      // autorise et ce qu'un proxy peut faire. Avant le réassemblage, `host.js`
+      // ignorait tout ce qui n'était pas `0x1` : le client n'obtenait aucune
+      // réponse, sans erreur ni trace. C'est la panne qu'on rend impossible.
+      const texte = JSON.stringify({ type: 'demarrer', session: 'session-aaa' })
+      const coupe = Math.floor(texte.length / 2)
+      socket.emit('data', trameClientFragment(0x1, texte.slice(0, coupe), false))
+      socket.emit('data', trameClient(0x9, ''))
+      socket.emit('data', trameClientFragment(0x0, texte.slice(coupe), true))
+
+      const base = await attendreMessage(socket, (message) => message.type === 'base')
+      assert.notEqual(base, null, 'un demarrer fragmente doit etre reassemble et servi')
+      assert.equal(base.session.id, 'session-aaa')
+      // ET LE PING A RECU SON PONG, malgre la fragmentation en cours.
+      const pong = lireTrames(Buffer.concat(socket.ecrit.slice(1))).trames.some(
+        (trame) => trame.opcode === 0xa,
+      )
+      assert.equal(pong, true, 'le ping intercale doit recevoir son pong')
+    } finally {
+      socket.emit('data', trameClient(0x8, ''))
+    }
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+test('une continuation SANS début ferme la connexion en 1002', async () => {
+  const arbre = await arbreDeSessions({ sessions: ['session-aaa'] })
+  try {
+    const ctx = await demarrer()
+    const socket = ouvrirLeFlux(ctx, 'session-aaa')
+    // Une faute de protocole se DIT (1002) : l'ignorer laisserait le client
+    // attendre une reponse qui ne viendrait jamais.
+    socket.emit('data', trameClientFragment(0x0, 'orphelin', true))
+    assert.equal(socket.termine, true, 'la faute doit fermer la connexion')
+    const fermeture = fermetureDuFlux(socket)
+    assert.notEqual(fermeture, undefined)
+    assert.equal(fermeture.charge.readUInt16BE(0), 1002)
   } finally {
     await arbre.nettoyer()
   }

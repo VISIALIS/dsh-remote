@@ -19,7 +19,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { analyserTailnet, raisonCourte } from '../dynamic/tailscale.js'
+import { analyserTailnet, publicationDepuisServe, raisonCourte } from '../dynamic/tailscale.js'
 
 /** Une sortie de `tailscale status --json`, réduite à ce qui est lu. */
 function sortie(contenu) {
@@ -157,4 +157,73 @@ test('le diagnostic tient sur UNE ligne, sans saut ni débordement', () => {
   assert.equal(raisonCourte(long).length, 120, 'tronqué à 120 caractères')
   assert.equal(raisonCourte(null), '')
   assert.equal(raisonCourte(undefined), '')
+})
+
+// ── La publication de CETTE machine, lue dans `tailscale serve status` ────────
+//
+// POURQUOI CES VECTEURS. Le schéma de publication part dans le QR d'appairage :
+// c'est une ENTRÉE D'UN CARNET D'ADRESSES, écrite par une machine et lue par une
+// autre. Une lecture trop confiante — « il y a un port 443 quelque part, donc
+// c'est du HTTPS » — enverrait l'application sur une adresse qui n'existe pas.
+
+test('la publication en clair de cette machine est lue telle qu’elle est mesurée', () => {
+  // LA FORME EST CELLE DE CETTE INSTALLATION, relevée telle quelle :
+  // `tailscale serve status --json` sur un Mac publié en clair sur le port 80.
+  const mesure = JSON.stringify({
+    TCP: { 80: { HTTP: true } },
+    Web: { 'macmini.exemple.ts.net:80': { Handlers: { '/': { Proxy: 'http://127.0.0.1:3080' } } } },
+  })
+  assert.deepEqual(publicationDepuisServe(mesure), {
+    schema: 'http',
+    port: 80,
+    hote: 'macmini.exemple.ts.net',
+  })
+})
+
+test('la publication en HTTPS est lue sur le DRAPEAU de son port', () => {
+  // La branche HTTPS suit la même forme (documentation de Tailscale) ; elle n'a
+  // pas été mesurée ici — cette installation publie en clair — donc on lit le
+  // drapeau du port au lieu de le supposer.
+  const https = JSON.stringify({
+    TCP: { 443: { HTTPS: true } },
+    Web: { 'mac.exemple.ts.net:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:3080' } } } },
+  })
+  assert.deepEqual(publicationDepuisServe(https), {
+    schema: 'https',
+    port: 443,
+    hote: 'mac.exemple.ts.net',
+  })
+})
+
+test('HTTPS l’emporte quand les deux sont publiés', () => {
+  const deux = JSON.stringify({
+    TCP: { 80: { HTTP: true }, 443: { HTTPS: true } },
+    Web: {
+      'mac.exemple.ts.net:80': { Handlers: { '/': { Proxy: 'http://127.0.0.1:3080' } } },
+      'mac.exemple.ts.net:443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:3080' } } },
+    },
+  })
+  assert.equal(publicationDepuisServe(deux).schema, 'https')
+})
+
+test('une publication vers AILLEURS ne dit rien du schéma à donner au téléphone', () => {
+  // Une autre machine, un dossier statique, un port sans drapeau : trois cas qui
+  // ne désignent pas le harness de CETTE machine.
+  const ailleurs = JSON.stringify({
+    TCP: { 80: { HTTP: true }, 8080: {} },
+    Web: {
+      'mac.exemple.ts.net:80': { Handlers: { '/': { Proxy: 'http://192.168.1.5:8000' } } },
+      'mac.exemple.ts.net:8080': { Handlers: { '/': { Proxy: 'http://127.0.0.1:3080' } } },
+    },
+  })
+  assert.equal(publicationDepuisServe(ailleurs), null)
+})
+
+test('une sortie vide ou illisible rend `null`, jamais une supposition', () => {
+  assert.equal(publicationDepuisServe('{}'), null)
+  assert.equal(publicationDepuisServe('{"Web":{}}'), null)
+  assert.equal(publicationDepuisServe('No serve config'), null)
+  assert.equal(publicationDepuisServe('[]'), null)
+  assert.equal(publicationDepuisServe('null'), null)
+  assert.equal(publicationDepuisServe(''), null)
 })

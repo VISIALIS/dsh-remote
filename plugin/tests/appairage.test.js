@@ -58,6 +58,9 @@ test('les vecteurs valides sont analyses a l identique', () => {
     assert.equal(lu.version, attendu.version)
     assert.equal(lu.secret, attendu.secret)
     assert.equal(lu.adresse, attendu.adresse)
+    // LE TRANSPORT ANNONCÉ EST RENDU, ET `http` QUAND LE SEGMENT EST OMIS : c'est
+    // ce que le client Swift confronte ensuite à ce que SON paquet autorise.
+    assert.equal(lu.schema, attendu.transport ?? 'http', 'transport inattendu : ' + attendu.charge)
   }
 })
 
@@ -85,12 +88,18 @@ test('le fixture couvre tous les motifs declares', () => {
 
 test('ce que l hote construit, l appareil le relit', () => {
   for (const vecteur of vecteurs.valides) {
-    const construit = construire({ hote: vecteur.hote, genre: vecteur.genre, secret: vecteur.secret })
+    const construit = construire({
+      hote: vecteur.hote,
+      genre: vecteur.genre,
+      secret: vecteur.secret,
+      schema: vecteur.transport ?? undefined,
+    })
     assert.equal(construit.ok, true)
     assert.equal(construit.charge, vecteur.charge, 'la boucle construction/analyse a derive')
     const relu = analyser(construit.charge)
     assert.equal(relu.ok, true)
     assert.equal(relu.secret, vecteur.secret)
+    assert.equal(relu.schema, vecteur.transport ?? 'http')
   }
 })
 

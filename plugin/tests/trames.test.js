@@ -13,7 +13,14 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { accepterWebSocket, lireTrames, trameFermeture, tramePong, trameTexte } from '../dynamic/trames.js'
+import {
+  accepterWebSocket,
+  creerAssembleur,
+  lireTrames,
+  trameFermeture,
+  tramePong,
+  trameTexte,
+} from '../dynamic/trames.js'
 
 /** Une trame de CLIENT, masquée, comme le navigateur ou l'application l'envoie. */
 function trameClient(opcode, charge) {
@@ -108,4 +115,78 @@ test('l’acceptation du handshake est celle que la RFC impose', () => {
     accepterWebSocket('dGhlIHNhbXBsZSBub25jZQ=='),
     's3pPLMBiTxaQ9kYGzzhZRbK+xOo=',
   )
+})
+
+// ── Le réassemblage des trames fragmentées (RFC 6455, § 5.4) ──────────────────
+//
+// POURQUOI CES TESTS. `host.js` ignorait tout ce qui n'était pas `0x1` : un client
+// qui fragmentait un message n'obtenait AUCUNE réponse, sans erreur — le flux se
+// taisait. Ces quatre règles sont celles qui décident entre servir, refuser, et
+// laisser la mémoire enfler.
+
+/** Une trame de données, avec le bit FIN qu'on veut, et sa charge. */
+const donnees = (opcode, charge, fin = true) => ({
+  fin,
+  opcode,
+  charge: Buffer.from(charge),
+})
+
+test('un message fragmenté est réassemblé, et rendu UNE fois', () => {
+  const assembleur = creerAssembleur()
+  const debut = assembleur.ajouter(donnees(0x1, 'demar', false))
+  assert.deepEqual(debut.messages, [], 'un début sans FIN ne rend rien')
+  assert.equal(debut.erreur, null)
+  const milieu = assembleur.ajouter(donnees(0x0, 'er', false))
+  assert.deepEqual(milieu.messages, [])
+  const fin = assembleur.ajouter(donnees(0x0, '{"a":1}'))
+  assert.equal(fin.erreur, null)
+  assert.equal(fin.messages.length, 1)
+  assert.equal(fin.messages[0].opcode, 0x1)
+  assert.equal(fin.messages[0].charge.toString('utf8'), 'demarer{"a":1}')
+})
+
+test('une trame de contrôle s’intercale SANS participer au message', () => {
+  // Un proxy peut glisser un ping au milieu d'une fragmentation : le message doit
+  // survivre, et le ping doit être rendu à part — sinon on perdrait le pong.
+  const assembleur = creerAssembleur()
+  assembleur.ajouter(donnees(0x1, 'debut', false))
+  const ping = assembleur.ajouter(donnees(0x9, 'x'))
+  assert.equal(ping.controle.length, 1)
+  assert.equal(ping.controle[0].opcode, 0x9)
+  assert.deepEqual(ping.messages, [])
+  const fin = assembleur.ajouter(donnees(0x0, 'fin'))
+  assert.equal(fin.messages[0].charge.toString('utf8'), 'debutfin')
+})
+
+test('une continuation sans début, ou un message pendant un autre, est une FAUTE', () => {
+  // 1002 : « protocol error ». Refuser est le seul choix honnête — ignorer
+  // laisserait le client attendre une réponse qui ne viendrait jamais.
+  const sansDebut = creerAssembleur()
+  assert.equal(sansDebut.ajouter(donnees(0x0, 'orphelin')).erreur, 1002)
+
+  const pendant = creerAssembleur()
+  pendant.ajouter(donnees(0x1, 'debut', false))
+  assert.equal(pendant.ajouter(donnees(0x1, 'un autre')).erreur, 1002)
+
+  const inconnu = creerAssembleur()
+  assert.equal(inconnu.ajouter(donnees(0x3, 'réservé')).erreur, 1002)
+})
+
+test('un message fragmenté qui dépasse le plafond est REFUSÉ, pas accumulé', () => {
+  // POURQUOI CE PLAFOND EXISTE : sans lui, un client enverrait des fragments pour
+  // toujours et ferait enfler la mémoire du harness, qui n'a pas de bac à sable.
+  const assembleur = creerAssembleur(16)
+  assert.equal(assembleur.ajouter(donnees(0x1, 'x'.repeat(16), false)).erreur, null)
+  assert.equal(assembleur.ajouter(donnees(0x0, 'y')).erreur, 1009)
+
+  const enorme = creerAssembleur(4)
+  assert.equal(enorme.ajouter(donnees(0x1, 'xxxxx', false)).erreur, 1009)
+})
+
+test('un message NON fragmenté traverse l’assembleur tel quel', () => {
+  const assembleur = creerAssembleur()
+  const rendu = assembleur.ajouter(donnees(0x1, '{"type":"demarrer"}'))
+  assert.equal(rendu.erreur, null)
+  assert.equal(rendu.messages.length, 1)
+  assert.equal(rendu.messages[0].charge.toString('utf8'), '{"type":"demarrer"}')
 })

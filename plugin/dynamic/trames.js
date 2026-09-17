@@ -107,6 +107,80 @@ export function lireTrames(restant) {
 
 
 /**
+ * LE RÉASSEMBLAGE DES TRAMES FRAGMENTÉES — RFC 6455, § 5.4.
+ *
+ * POURQUOI CE FICHIER EN A BESOIN, ALORS QUE LE CLIENT ACTUEL N'EN ENVOIE PAS.
+ * Un message peut arriver en plusieurs trames : la première porte le texte (ou le
+ * binaire) sans le bit FIN, les suivantes ont l'opcode `0x0` (continuation) et
+ * reconstituent la charge. Notre client envoie un `demarrer` de soixante octets
+ * d'un seul tenant — mais la RFC n'oblige personne à faire comme lui, et un proxy
+ * intermédiaire peut fragmenter. Jusqu'ici, `host.js` ignorait tout ce qui n'était
+ * pas `0x1` : un client qui fragmentait n'obtenait AUCUNE réponse, sans erreur —
+ * le flux se taisait, ce qui est la pire des pannes.
+ *
+ * LES RÈGLES QUI COMPTENT, ET CELLES QU'ON REFUSE :
+ *   - une continuation SANS début est une faute de protocole (fermeture `1002`) ;
+ *   - un nouveau message de données PENDANT une fragmentation aussi ;
+ *   - les trames de CONTRÔLE (ping, pong, fermeture) peuvent s'intercaler : elles
+ *     ne participent pas au message et sont rendues à part, dans l'ordre ;
+ *   - l'accumulation est BORNÉE, comme une trame seule : sans cela, un client
+ *     pourrait envoyer des fragments pour toujours et faire enfler la mémoire du
+ *     harness, qui n'a pas de bac à sable (`1009`).
+ *
+ * @param {number} [plafond] taille maximale d'un message réassemblé, en octets.
+ */
+export function creerAssembleur(plafond = PLAFOND_TRAME) {
+  /** Les morceaux du message EN COURS, et son opcode d'origine. */
+  let morceaux = []
+  let opcode = null
+  let octets = 0
+
+  return {
+    /**
+     * @param {{fin: boolean, opcode: number, charge: Buffer}} trame
+     * @returns {{messages: Array<{opcode: number, charge: Buffer}>, controle: Array<{opcode: number, charge: Buffer}>, erreur: number | null}}
+     */
+    ajouter(trame) {
+      const messages = []
+      const controle = []
+      // Les trois opcodes de contrôle : ils traversent la fragmentation sans y
+      // participer, et l'ordre doit être conservé (un ping reçoit son pong).
+      if (trame.opcode === 0x8 || trame.opcode === 0x9 || trame.opcode === 0xa) {
+        controle.push({ opcode: trame.opcode, charge: trame.charge })
+        return { messages, controle, erreur: null }
+      }
+      if (trame.opcode === 0x0) {
+        if (opcode === null) return { messages, controle, erreur: 1002 }
+        octets += trame.charge.length
+        if (octets > plafond) return { messages, controle, erreur: 1009 }
+        morceaux.push(trame.charge)
+        if (!trame.fin) return { messages, controle, erreur: null }
+        messages.push({ opcode, charge: Buffer.concat(morceaux, octets) })
+        morceaux = []
+        opcode = null
+        octets = 0
+        return { messages, controle, erreur: null }
+      }
+      if (trame.opcode !== 0x1 && trame.opcode !== 0x2) {
+        // Un opcode de données inconnu (réservé) : on refuse au lieu d'ignorer,
+        // sinon la trame disparaît en silence.
+        return { messages, controle, erreur: 1002 }
+      }
+      if (opcode !== null) return { messages, controle, erreur: 1002 }
+      if (trame.fin) {
+        messages.push({ opcode: trame.opcode, charge: trame.charge })
+        return { messages, controle, erreur: null }
+      }
+      octets = trame.charge.length
+      if (octets > plafond) return { messages, controle, erreur: 1009 }
+      opcode = trame.opcode
+      morceaux = [trame.charge]
+      return { messages, controle, erreur: null }
+    },
+  }
+}
+
+/**
  * L'ACCEPTATION D'UN HANDSHAKE — RFC 6455, §4.2.2.
  *
  * `Sec-WebSocket-Accept` est le SHA-1, en base 64, de la clé du client suivie de

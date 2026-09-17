@@ -65,7 +65,7 @@ import { join } from 'node:path'
 // LA DÉCOUVERTE DU TAILNET vit dans son propre fichier : elle ne dépend que du
 // binaire local de Tailscale, et ses deux fonctions d'analyse sont PURES — donc
 // éprouvables sans lancer de processus (voir `tests/tailscale.test.js`).
-import { decouvrirMachines } from './tailscale.js'
+import { decouvrirMachines, lirePublication } from './tailscale.js'
 
 // LE CACHE DE TEXTE DES JOURNAUX vit dans son propre fichier : il ne depend que
 // d'une fonction de lecture et d'une fonction de decodage, donc il s'eprouve seul
@@ -85,6 +85,7 @@ import { creerCacheTexte } from './cache-texte.js'
 // rien ne l'éprouvait.
 import {
   accepterWebSocket,
+  creerAssembleur,
   lireTrames,
   trameFermeture,
   tramePong,
@@ -118,7 +119,13 @@ export const VERSION_PROTOCOLE = 1
 const PLAFOND_FICHIER = 512 * 1024 * 1024
 const TAILLE_PAGE_DEFAUT = 200
 const TAILLE_PAGE_MAX = 2000
-const TTL_CACHE_MS = 2000
+// PAS DE CACHE DE LISTE ICI, ET C'EST UNE MESURE, PAS UN OUBLI. Un
+// `TTL_CACHE_MS = 2000` a vécu à cette place sans jamais être lu — du code mort,
+// retiré ici. Le brancher n'aurait d'ailleurs rien rendu : la cadence du client
+// (3 s) DÉPASSE déjà ce TTL, donc chaque tour aurait redemandé un calcul déjà
+// périmé. Le coût chaud d'un listage complet est de 15 à 27 ms (mesure du README
+// du plugin, 200 sessions), et ce qui le réduit vraiment est la cadence du
+// client — pas une mémorisation plus courte que l'intervalle qui l'interroge.
 
 // Types d'enregistrements porteurs de contenu de modèle ou de requête : jamais
 // renvoyés par défaut. Le client doit les demander explicitement (`inclure`).
@@ -1154,6 +1161,11 @@ export function apply(ctx, config) {
   // chaque requete serait un cout sans contrepartie, un tailnet ne changeant pas
   // d'une seconde a l'autre.
   let cacheDecouverte = { vuLe: 0, valeur: null }
+  // LA PUBLICATION DE CETTE MACHINE (`tailscale serve status --json`), mise en
+  // cache pour la meme duree : elle coute un processus, et elle ne change pas
+  // d'une seconde a l'autre. `null` EST UN RESULTAT : « rien de publie, ou
+  // binaire muet » ne doit pas relancer le CLI a chaque frappe de code.
+  let cachePublication = { vuLe: 0, valeur: null }
 
   const repondreServeurs = async (req, res) => {
     try {
@@ -1236,6 +1248,13 @@ export function apply(ctx, config) {
    * part, et l'utilisateur n'aurait aucun moyen de comprendre pourquoi.
    */
   const nomDeLHote = async () => {
+    // LE SCHEMA DE PUBLICATION SE LIT, IL NE SE DEVINE PAS. `tailscale serve
+    // status --json` dit sous quel transport CETTE machine est publiee ; il est
+    // mis en cache avec la meme duree que la decouverte, parce qu'il coute un
+    // processus et qu'une publication ne change pas d'une seconde a l'autre.
+    // Sans binaire, sans publication, ou devant une sortie inattendue, on
+    // retombe sur le clair : le comportement d'avant, jamais une adresse inventee.
+    const schema = await schemaDePublication()
     try {
       const maintenant = Date.now()
       if (cacheDecouverte.valeur === null || maintenant - cacheDecouverte.vuLe > TTL_DECOUVERTE_MS) {
@@ -1245,7 +1264,7 @@ export function apply(ctx, config) {
       const machines = cacheDecouverte.valeur.machines ?? []
       const locale = machines.find((machine) => machine.local === true)
       if (locale !== undefined && typeof locale.nomDNS === 'string' && locale.nomDNS.length > 0) {
-        return { hote: locale.nomDNS, via: 'tailscale' }
+        return { hote: locale.nomDNS, via: 'tailscale', schema }
       }
     } catch {
       // Tailscale absent ou muet : l'hote declare reste une source valable.
@@ -1255,7 +1274,29 @@ export function apply(ctx, config) {
     const premier = Array.isArray(declares) && declares.length > 0 ? String(declares[0]) : ''
     // Le profil peut declarer un hote AVEC son port : on ne garde que le nom.
     const nom = premier.split(':')[0]
-    return nom.length > 0 ? { hote: nom, via: 'hote declare' } : { hote: '', via: 'aucun' }
+    return nom.length > 0 ? { hote: nom, via: 'hote declare', schema } : { hote: '', via: 'aucun', schema }
+  }
+
+  /**
+   * Le schéma sous lequel cette machine est publiée : `http` par défaut.
+   *
+   * LE DÉFAUT EST LE CLAIR, ET C'EST DÉLIBÉRÉ : c'est ce que le plugin publiait
+   * avant, et un `null` (binaire absent, aucune publication, sortie inattendue) ne
+   * doit pas transformer une installation qui marchait en installation qui ne
+   * répond plus. Le passage à HTTPS est un FAIT que la machine annonce.
+   */
+  const schemaDePublication = async () => {
+    const maintenant = Date.now()
+    if (maintenant - cachePublication.vuLe > TTL_DECOUVERTE_MS) {
+      let valeur = null
+      try {
+        valeur = await lirePublication()
+      } catch {
+        valeur = null
+      }
+      cachePublication = { vuLe: maintenant, valeur }
+    }
+    return cachePublication.valeur?.schema === 'https' ? 'https' : 'http'
   }
 
   /**
@@ -1281,9 +1322,9 @@ export function apply(ctx, config) {
       envoyer(res, 429, { erreur: 'trop de codes demandes', detail: 'patientez une minute avant de recommencer' })
       return tracer(req, 429)
     }
-    const { hote, via } = await nomDeLHote()
+    const { hote, via, schema } = await nomDeLHote()
     const code = randomBytes(16).toString('base64url')
-    const resultat = construire({ hote, genre: GENRE_CODE, secret: code })
+    const resultat = construire({ hote, genre: GENRE_CODE, secret: code, schema })
     if (resultat.ok !== true) {
       envoyer(res, 503, { erreur: 'adresse injoignable', motif: resultat.motif, detail: resultat.message })
       return tracer(req, 503, resultat.motif)
@@ -1300,7 +1341,10 @@ export function apply(ctx, config) {
       protocole: VERSION_PROTOCOLE,
       genre: GENRE_CODE,
       version: VERSIONS[GENRE_CODE],
-      adresse: 'http://' + hote,
+      // L'ADRESSE QUE LE PANNEAU AFFICHE SUIT LE SCHEMA PUBLIE : annoncer
+      // `http://…` a cote d'un QR qui porte `https` ferait douter de la seule
+      // ligne que l'utilisateur peut verifier a la main.
+      adresse: schema + '://' + hote,
       charge: resultat.charge,
       // La portee qu'aura le jeton issu de ce code : dite ICI, avant le scan.
       porteeFuture: porteeDemandee(process.env.DSH_REMOTE_PORTEE),
@@ -1846,13 +1890,21 @@ export function apply(ctx, config) {
 
   // ── WebSocket /dsh-remote/v1/flux — evenements d'une session, en direct ────
   //
-  // PROTOCOLE. Le client ouvre, puis envoie un message JSON :
+  // PROTOCOLE. Le client ouvre, puis envoie UN message JSON :
   //   { "type": "demarrer", "session": "<id>", "depuisSeq": <n|null> }
   // Le serveur repond :
   //   { "type": "base",  "session": {...}, "enregistrements": [...], "dernierSeq": n }
-  //   { "type": "delta", "enregistrements": [...], "dernierSeq": n }
-  //   { "type": "tronque" }   quand la fenetre de lecture n'a pas suffi
+  //   { "type": "evenement", "enregistrement": {...} }
+  //   { "type": "delta", "dernierSeq": n }
+  //   { "type": "tronque", "message": "..." }  quand la fenetre de lecture n'a pas suffi
   //   { "type": "erreur", "message": "..." }
+  //
+  // UN FLUX SUIT UNE SEULE SESSION. Un second `demarrer` sur la meme socket est
+  // REFUSE, et la connexion reste ouverte : deux `demarrer` qui se croisent
+  // reecriraient `chemin`, `offset` et `seuilReprise` dans un ordre non
+  // deterministe, et le journal afficherait un melange de deux sessions. Fermer
+  // la socket punirait le direct en cours pour une faute du client, alors qu'un
+  // refus explicite se lit et se corrige.
   //
   // REPRISE. `depuisSeq` evite de renvoyer ce que le client a deja : le serveur ne
   // transmet que les enregistrements dont `seq` depasse cette valeur. C'est ce qui
@@ -1864,7 +1916,28 @@ export function apply(ctx, config) {
   const FENETRE_FLUX_MAX = 8 * 1024 * 1024
   const INTERVALLE_FLUX_MS = 750
   const PING_FLUX_MS = 30000
+  // DEUX PINGS SANS PONG, ET LA SOCKET EST DECLAREE MORTE.
+  //
+  // POURQUOI CE DELAI EXISTE, ALORS QUE LE SERVEUR ENVOYAIT DEJA UN PING. Un ping
+  // sans lecteur ne prouve rien : la reponse arrivait — la plateforme du client y
+  // repond toute seule — et PERSONNE ne la regardait. Un telephone dont la radio
+  // s'eteint sans fermer la connexion laissait donc son minuteur vivant, et le
+  // serveur continuait de `stat` et de relire 64 Kio de journal toutes les 750 ms
+  // pour un appareil qui n'etait plus la. Le controle qui manquait n'est pas
+  // l'envoi, c'est L'ECHEANCE.
+  //
+  // DEUX PINGS, ET PAS UN : un ping peut se perdre, ou son pong arriver apres
+  // l'echeance sur un reseau mobile. Deux manques d'affilee, c'est une minute
+  // sans aucune reponse — un appareil qui n'est plus joignable, pas un a-coup.
+  // C'est une FILET DE SECURITE, pas le mecanisme principal : un client qui bat
+  // la mesure (l'application le fait toutes les 15 s) voit la coupure bien avant.
+  const DELAI_PONG_MS = 2 * PING_FLUX_MS
   const MAX_TAMPON_EN_ATTENTE = 4 * 1024 * 1024
+  // L'INTERVALLE DE SCRUTATION QUAND LE BUS REPOND : cinq secondes au lieu de
+  // 750 ms. Ce n'est PAS une suppression — le disque reste la seule source pour
+  // une session ecrite par un AUTRE processus —, c'est un filet qu'on espace
+  // puisque les evenements de CE processus arrivent par le bus.
+  const INTERVALLE_FLUX_RELAIS_MS = 5000
 
   /**
    * Lit ce qui a ete ecrit apres `offset`, en elargissant la fenetre si besoin.
@@ -1883,6 +1956,60 @@ export function apply(ctx, config) {
       fenetre *= 2
     }
   }
+
+  // ── LE BUS DU HARNESS, QUAND IL EST LÀ ──────────────────────────────────────
+  //
+  // POURQUOI UNE SEULE TABLE POUR TOUTES LES SESSIONS. `session/event` est emis a
+  // la RACINE, avec la session pour portee : un seul ecouteur suffit donc, et la
+  // diffusion se fait par identifiant. Poser un ecouteur par connexion ferait
+  // autant d'ecouteurs que de flux ouverts, pour le meme resultat.
+  //
+  // CE QU'ON LIT D'UN OBJET VIVANT : `session.id`, et rien d'autre. L'evenement,
+  // lui, est gele et deja JSON (`dsh-session` le valide et le fige a l'append) —
+  // c'est la seule forme sous laquelle il est transmis.
+  const abonnes = new Map()
+  let busDisponible = false
+  try {
+    ctx.on('session/event', (session, evenement) => {
+      const identifiant = typeof session?.id === 'string' ? session.id : null
+      if (identifiant === null) return
+      const pour = abonnes.get(identifiant)
+      if (pour === undefined) return
+      for (const abonne of pour) abonne.diffuser(evenement)
+    })
+    ctx.on('agent/status', (charge) => {
+      const identifiant = identifiantDeLagent(charge?.agent)
+      if (identifiant === null) return
+      const pour = abonnes.get(identifiant)
+      if (pour === undefined) return
+      const statut = charge?.status === 'running' ? 'en_cours' : 'inactif'
+      for (const abonne of pour) abonne.statut(statut)
+    })
+    busDisponible = true
+  } catch {
+    // Le harness a change de forme : on garde la scrutation disque, et rien
+    // d'autre ne change. C'est la meme degradation que pour les autres API.
+    busDisponible = false
+  }
+
+  /** L'inscription des connexions au bus — `null` quand il n'y a pas de bus. */
+  const diffusion = busDisponible
+    ? {
+        abonner(identifiant, diffuser, statut) {
+          const pour = abonnes.get(identifiant) ?? new Set()
+          pour.add({ diffuser, statut })
+          abonnes.set(identifiant, pour)
+        },
+        retirer(identifiant, diffuser, statut) {
+          const pour = abonnes.get(identifiant)
+          if (pour === undefined) return
+          for (const abonne of pour) {
+            if (abonne.diffuser === diffuser && abonne.statut === statut) pour.delete(abonne)
+          }
+          if (pour.size === 0) abonnes.delete(identifiant)
+        },
+      }
+    : null
 
   routes.push(
     webServer.registerUpgrade({
@@ -1950,6 +2077,21 @@ export function apply(ctx, config) {
         let offset = 0
         let seuilReprise = -1
         let enCours = false
+        // Pose SYNCHRONEMENT a l'acceptation du premier `demarrer`, et jamais
+        // remis a zero : c'est ce qui rend le refus du second possible avant que
+        // le premier ait fini sa lecture disque (qui est asynchrone).
+        let demarre = false
+        // L'INSTANT DU DERNIER PONG. Initialise a l'ouverture de la connexion :
+        // une socket qui vient de naitre n'est pas en retard, elle n'a simplement
+        // pas encore eu de ping a honorer.
+        let dernierPong = Date.now()
+        // L'IDENTIFIANT SUIVI, pour pouvoir SE DESABONNER du bus a la fermeture.
+        // Pose des que le premier `demarrer` est accepte, comme `demarre`.
+        let suivie = null
+        // L'ASSEMBLEUR DE TRAMES, PAR CONNEXION : une fragmentation est un etat de
+        // la CONNEXION, pas de la trame. Le partager entre connexions melangerait
+        // les morceaux de deux clients.
+        const assembleur = creerAssembleur()
 
         const interroger = async () => {
           if (ferme || enCours || chemin === null) return
@@ -1981,6 +2123,51 @@ export function apply(ctx, config) {
           } finally {
             enCours = false
           }
+        }
+
+        /**
+         * Diffuse un evenement ARRIVE PAR LE BUS, sans attendre le tour de minuterie.
+         *
+         * POURQUOI CE CHEMIN EXISTE. La scrutation disque coute ce qu'elle coute —
+         * un `stat` par tour, et une relecture de 64 Kio des que la taille bouge —
+         * et elle ajoute jusqu'a son intervalle de latence a ce que l'agent vient
+         * d'ecrire. Le harness EMET chaque enregistrement en memoire au moment ou
+         * il est valide (`session/event`, emis synchronement a l'append), donc le
+         * plugin peut le pousser tout de suite.
+         *
+         * CE QU'IL NE FAIT PAS : remplacer le disque. Le journal reste la source de
+         * la `base` et de la reprise, et la scrutation continue — ralentie — pour
+         * une session ecrite par un AUTRE processus, que le bus de celui-ci ne voit
+         * pas. On ajoute une source rapide, on ne retire pas la source sure.
+         *
+         * CE QU'IL NE FAIT PAS NON PLUS : serialiser un objet vivant du harness. Il
+         * ne lit QUE `seq` (un nombre) et transmet l'enregistrement, qui est gele et
+         * deja JSON par construction (`dsh-session` le valide et le fige a l'append).
+         *
+         * @param {object} enregistrement
+         */
+        const diffuser = (enregistrement) => {
+          if (ferme) return
+          const seq = enregistrement?.seq
+          if (typeof seq !== 'number' || seq <= seuilReprise) return
+          envoyer({ type: 'evenement', enregistrement })
+          seuilReprise = seq
+          envoyer({ type: 'delta', dernierSeq: seq })
+        }
+
+        /**
+         * Diffuse un CHANGEMENT DE STATUT — `en_cours` / `inactif`.
+         *
+         * POURQUOI CE MESSAGE EXISTE. Les pastilles de la liste sont ce que
+         * l'utilisateur regarde pour savoir si quelque chose travaille, et elles
+         * n'etaient rafraichies que par la boucle HTTP de trois secondes. Le
+         * harness, lui, emet `agent/status` a chaque transition : le pousser divise
+         * la latence percue, et evite a l'application de reveiller sa radio pour
+         * l'apprendre.
+         */
+        const diffuserStatut = (statut) => {
+          if (ferme || statut === null) return
+          envoyer({ type: 'statut', statut })
         }
 
         const demarrer = async (identifiant, depuisSeq) => {
@@ -2022,13 +2209,37 @@ export function apply(ctx, config) {
             dernierSeq: seuilReprise,
           })
 
+          // LE BUS PREND LE RELAIS QUAND IL EXISTE, ET LA SCRUTATION DEVIENT UN
+          // FILET. Tant que le harness emet ses evenements en memoire, les pousser
+          // est immediat ; le disque reste lu, mais cinq fois moins souvent, pour
+          // une session ecrite par un AUTRE processus. Sans bus (composition
+          // differente, API disparue), on garde exactement le comportement d'avant.
+          // LA CONNEXION A-T-ELLE ETE FERMEE PENDANT LA LECTURE DISQUE ? C'est un
+          // cas REEL, et il etait un vrai defaut : `demarrer` lit un journal (donc
+          // attend), et pendant cette attente le client peut fermer, ou une faute
+          // de protocole fermer a sa place. Les minuteurs crees ici l'etaient ALORS
+          // QUE PLUS RIEN NE LES ARRETERAIT — le gestionnaire de fermeture avait
+          // deja tourne —, et le serveur scrutait le disque pour une socket morte,
+          // pour toujours. Trouve par le test du reassemblage : une continuation
+          // orpheline ferme en 1002 pendant que le `demarrer` est encore en vol.
+          if (ferme) return
+          if (diffusion !== null) {
+            diffusion.abonner(identifiant, diffuser, diffuserStatut)
+            suivie = identifiant
+          }
+          const intervalle = diffusion === null ? INTERVALLE_FLUX_MS : INTERVALLE_FLUX_RELAIS_MS
           if (minuteur !== null) clearInterval(minuteur)
           minuteur = setInterval(() => {
             interroger()
-          }, INTERVALLE_FLUX_MS)
+          }, intervalle)
           if (minuteurPing === null) {
             minuteurPing = setInterval(() => {
               if (ferme) return
+              // L'ECHEANCE EST VERIFIEE AVANT D'ENVOYER : un client qui n'a plus
+              // repondu depuis deux pings est mort, et continuer a lui ecrire ne
+              // ferait que garder son minuteur de lecture en vie — donc le `stat`
+              // et la decompression toutes les 750 ms pour personne.
+              if (Date.now() - dernierPong >= DELAI_PONG_MS) return arreter(1008)
               try {
                 socket.write(Buffer.from([0x89, 0x00]))
               } catch {
@@ -2043,28 +2254,50 @@ export function apply(ctx, config) {
           restant = lecture.restant
           if (lecture.trop) return arreter(1009)
           for (const trame of lecture.trames) {
-            if (trame.opcode === 0x8) return arreter(1000)
-            if (trame.opcode === 0x9) {
-              socket.write(tramePong(trame.charge))
-              continue
+            // LE RÉASSEMBLAGE EST ICI, ET PAS DANS LA BOUCLE DE LECTURE : un
+            // message peut arriver en plusieurs trames (RFC 6455 § 5.4), et un
+            // client qui fragmente doit être SERVI, pas ignoré en silence.
+            const assemble = assembleur.ajouter(trame)
+            if (assemble.erreur !== null) return arreter(assemble.erreur)
+            for (const controle of assemble.controle) {
+              if (controle.opcode === 0x8) return arreter(1000)
+              if (controle.opcode === 0x9) {
+                socket.write(tramePong(controle.charge))
+                continue
+              }
+              // PONG : la reponse qui prouve que le client est vivant. Elle etait
+              // ignoree — `!== 0x1` — donc l'echeance ci-dessus n'aurait jamais
+              // pu avoir de sens.
+              dernierPong = Date.now()
             }
-            if (trame.opcode !== 0x1) continue
-            let message = null
-            try {
-              message = JSON.parse(trame.charge.toString('utf8'))
-            } catch {
-              message = null
+            for (const message of assemble.messages) {
+              // Seul le TEXTE porte une commande : du binaire n'a rien a faire
+              // ici, et l'ignorer vaut mieux que de le lire comme du JSON.
+              if (message.opcode !== 0x1) continue
+              let commande = null
+              try {
+                commande = JSON.parse(message.charge.toString('utf8'))
+              } catch {
+                commande = null
+              }
+              if (commande === null || commande.type !== 'demarrer') {
+                envoyer({ type: 'erreur', message: 'premier message attendu: demarrer' })
+                continue
+              }
+              if (demarre) {
+                // Le refus ne porte AUCUN identifiant de session : le client connait
+                // deja celui de son flux, et le repeter n'apprendrait rien.
+                envoyer({ type: 'erreur', message: 'un flux suit deja une session' })
+                continue
+              }
+              demarre = true
+              const identifiant = typeof commande.session === 'string' ? commande.session : ''
+              const depuisSeq = typeof commande.depuisSeq === 'number' ? commande.depuisSeq : null
+              demarrer(identifiant, depuisSeq).catch((erreur) => {
+                envoyer({ type: 'erreur', message: String(erreur?.message ?? erreur) })
+                arreter(1011)
+              })
             }
-            if (message === null || message.type !== 'demarrer') {
-              envoyer({ type: 'erreur', message: 'premier message attendu: demarrer' })
-              continue
-            }
-            const identifiant = typeof message.session === 'string' ? message.session : ''
-            const depuisSeq = typeof message.depuisSeq === 'number' ? message.depuisSeq : null
-            demarrer(identifiant, depuisSeq).catch((erreur) => {
-              envoyer({ type: 'erreur', message: String(erreur?.message ?? erreur) })
-              arreter(1011)
-            })
           }
         })
         socket.on('error', () => arreter(1011))
@@ -2072,6 +2305,11 @@ export function apply(ctx, config) {
           ferme = true
           if (minuteur !== null) clearInterval(minuteur)
           if (minuteurPing !== null) clearInterval(minuteurPing)
+          // SE DESABONNER EST AUSSI IMPORTANT QUE S'ABONNER : sans cela, une
+          // connexion morte resterait dans la table du bus, et chaque evenement
+          // d'une session regardee une fois serait diffuse a une socket fermee —
+          // pour toujours, sur un serveur qui vit des jours.
+          if (diffusion !== null && suivie !== null) diffusion.retirer(suivie, diffuser, diffuserStatut)
         })
       },
     }),

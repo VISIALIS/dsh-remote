@@ -11,11 +11,12 @@
 //
 // FORME (une seule ligne, ASCII, aucune transformation) :
 //
-//     dshremote://<hote>/<genre>/v1/<secret>
+//     dshremote://<hote>/<genre>/v1/<secret>[/<schema>]
 //
 //   - `<hote>`   : le nom MagicDNS SANS point final — jamais une adresse de
-//                  boucle locale, jamais un port (le port est implicite : 80,
-//                  la convention que `tailscale serve` publie) ;
+//                  boucle locale, jamais un port (le port est implicite : 80 pour
+//                  `http`, 443 pour `https`, la convention que `tailscale serve`
+//                  publie) ;
 //   - `<genre>`  : `jeton` (le secret EST le jeton d'appareil) ou `code` (le
 //                  secret est un code d'appairage à usage unique) ;
 //   - `v1`       : la version du contrat, PAR GENRE. Un client qui ne connaît
@@ -24,7 +25,11 @@
 //                  rien, alors que le vrai problème est une version d'accord
 //                  différente entre les deux moitiés ;
 //   - `<secret>` : base64url, donc sans `/` — le découpage du chemin n'est pas
-//                  ambigu.
+//                  ambigu ;
+//   - `<schema>` : FACULTATIF, `http` ou `https`, et OMIS quand il vaut `http`.
+//                  Il dit sous quel transport la machine se publie, ce que
+//                  l'application ne peut pas deviner (`tailscale serve --https`
+//                  change le port ET le transport). Voir `SCHEMAS`.
 //
 // CE QUI N'EST PAS FAIT ICI, ET POURQUOI :
 //   - aucun pourcent-encodage : les quatre champs sont déjà sans caractère
@@ -42,6 +47,16 @@ export const GENRE_CODE = 'code'
 
 /** La version du contrat, par genre. Écrite dans la charge utile, lue par l'appareil. */
 export const VERSIONS = { [GENRE_JETON]: 'v1', [GENRE_CODE]: 'v1' }
+
+/**
+ * LES TRANSPORTS QUI PEUVENT ÊTRE ANNONCÉS — et rien d'autre.
+ *
+ * POURQUOI UNE LISTE BLANCHE, ET PAS UNE CHAÎNE LIBRE. Le cinquième segment d'une
+ * charge utile est une entrée d'un carnet d'adresses ÉCRIT PAR UNE AUTRE MACHINE :
+ * `ftp://`, `file://` ou `javascript:` n'ont rien à y faire, et un client qui
+ * ferait confiance à ce segment construirait une adresse qu'il n'a pas choisie.
+ */
+export const SCHEMAS = ['http', 'https']
 
 /**
  * Longueur minimale d'un secret, PAR GENRE.
@@ -182,10 +197,17 @@ export function hoteJoignable(hote) {
 /**
  * Construire la charge utile.
  *
- * @param {{ hote: string, genre: string, secret: string }} champs
+ * LE SCHÉMA DE PUBLICATION EST FACULTATIF, ET OMIS QUAND IL VAUT `http` : c'est
+ * le cas de très loin le plus courant, et un segment de plus coûterait des octets
+ * sur une charge utile qui doit tenir dans un QR de version 6. Un client plus
+ * ancien REFUSE une charge utile à cinq segments (« forme inattendue ») — ce qui
+ * est le bon comportement : il ne saurait pas viser HTTPS, et lui donner une
+ * adresse en clair vers un hôte publié en HTTPS ne le mènerait nulle part.
+ *
+ * @param {{ hote: string, genre: string, secret: string, schema?: string }} champs
  * @returns {{ ok: true, charge: string } | { ok: false, motif: string, message: string }}
  */
-export function construire({ hote, genre, secret }) {
+export function construire({ hote, genre, secret, schema }) {
   if (!hoteJoignable(hote)) {
     const motif = HOTES_LOCAUX.has(String(hote).toLowerCase()) ? MOTIFS.HOTE_LOCAL : MOTIFS.HOTE
     return { ok: false, motif, message: messageRefus(motif) }
@@ -195,7 +217,12 @@ export function construire({ hote, genre, secret }) {
   if (!secretAcceptable(genre, secret)) {
     return { ok: false, motif: MOTIFS.SECRET, message: messageRefus(MOTIFS.SECRET) }
   }
-  return { ok: true, charge: SCHEMA + '://' + hote + '/' + genre + '/' + version + '/' + secret }
+  // Un schéma INCONNU n'est pas deviné : il est ignoré, et la charge utile reste
+  // celle du clair. Inventer `https://` sur une valeur douteuse ferait échouer un
+  // appairage qui marchait, ce qui serait un remède pire que le mal.
+  const transport = SCHEMAS.includes(String(schema).toLowerCase()) ? String(schema).toLowerCase() : 'http'
+  const suffixe = transport === 'https' ? '/' + transport : ''
+  return { ok: true, charge: SCHEMA + '://' + hote + '/' + genre + '/' + version + '/' + secret + suffixe }
 }
 
 /**
@@ -206,7 +233,7 @@ export function construire({ hote, genre, secret }) {
  * pour un texte encore incomplet serait un défaut d'ergonomie, pas une sécurité.
  *
  * @param {string} texte
- * @returns {{ ok: true, hote: string, genre: string, version: string, secret: string, adresse: string }
+ * @returns {{ ok: true, hote: string, genre: string, version: string, secret: string, schema: string, adresse: string }
  *          | { ok: false, motif: string, message: string }}
  */
 export function analyser(texte) {
@@ -224,10 +251,11 @@ export function analyser(texte) {
 
   const reste = valeur.slice(prefixe.length)
   const morceaux = reste.split('/')
-  // Quatre segments exactement : hôte, genre, version, secret. Aucun de plus —
-  // un secret ne contient pas de `/`, donc un segment supplémentaire est une
-  // charge utile mal formée, jamais un cas particulier à deviner.
-  if (morceaux.length !== 4) return refus(MOTIFS.FORME)
+  // QUATRE SEGMENTS — hôte, genre, version, secret — OU CINQ avec le schéma de
+  // publication en dernier. Aucun autre compte : un secret ne contient pas de
+  // `/`, donc un segment de plus est une charge utile mal formée, jamais un cas
+  // particulier à deviner.
+  if (morceaux.length !== 4 && morceaux.length !== 5) return refus(MOTIFS.FORME)
   const [hote, genre, version, secret] = morceaux
   if (hote.includes('?') || hote.includes('#')) return refus(MOTIFS.FORME)
 
@@ -237,6 +265,10 @@ export function analyser(texte) {
   if (VERSIONS[genre] === undefined) return refus(MOTIFS.GENRE, genre)
   if (VERSIONS[genre] !== version) return refus(MOTIFS.VERSION, genre + '/' + version)
   if (!secretAcceptable(genre, secret)) return refus(MOTIFS.SECRET)
+  // Le schéma annoncé est vérifié CONTRE LA LISTE BLANCHE, et le détail du refus
+  // le nomme : « forme inattendue » sans plus ne dirait pas quel segment corriger.
+  const schema = morceaux.length === 5 ? morceaux[4].toLowerCase() : 'http'
+  if (!SCHEMAS.includes(schema)) return refus(MOTIFS.FORME, morceaux[4])
 
   return {
     ok: true,
@@ -244,10 +276,13 @@ export function analyser(texte) {
     genre,
     version,
     secret,
-    // L'adresse que l'appareil doit viser. Le port est implicite : 80, la
-    // convention que `tailscale serve` publie — c'est ce que le client natif
-    // vise déjà aujourd'hui (`DecouverteServeurs` côté Swift).
-    adresse: 'http://' + hote,
+    schema,
+    // L'adresse que l'appareil doit viser. Sans cinquième segment, le port
+    // implicite est 80 — la convention que `tailscale serve` publie. Le client
+    // Swift ne fait pas confiance à ce segment pour autant : il le confronte à ce
+    // que SON paquet autorise (`AdresseMachine`), donc un paquet qui refuse le
+    // clair ne suit jamais un `http` annoncé.
+    adresse: schema + '://' + hote,
   }
 }
 

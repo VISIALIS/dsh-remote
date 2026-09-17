@@ -140,36 +140,6 @@ export function raisonCourte(texte) {
 }
 
 /**
- * Lance un candidat et rend `{machines, raison}` : `machines` vaut `null` en cas d'échec,
- * et `raison` porte alors une explication courte.
- * @param {string} binaire
- */
-export function lancerTailscale(binaire) {
-  return new Promise((resolve) => {
-    execFile(
-      binaire,
-      ['status', '--json'],
-      { timeout: DELAI_TAILSCALE_MS, maxBuffer: PLAFOND_SORTIE_TAILSCALE, windowsHide: true, encoding: 'utf8' },
-      (erreur, sortie, erreurs) => {
-        if (erreur !== null && erreur !== undefined) {
-          if (erreur.killed === true) return resolve({ machines: null, raison: 'delai depasse' })
-          if (erreur.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return resolve({ machines: null, raison: 'sortie trop volumineuse' })
-          return resolve({ machines: null, raison: raisonCourte(erreurs) || raisonCourte(erreur.message) })
-        }
-        let machines = null
-        try {
-          machines = analyserTailnet(sortie)
-        } catch {
-          return resolve({ machines: null, raison: 'sortie illisible' })
-        }
-        if (machines === null) return resolve({ machines: null, raison: 'sortie inattendue' })
-        resolve({ machines, raison: null })
-      },
-    )
-  })
-}
-
-/**
  * Liste les machines du tailnet qui POURRAIENT héberger DSH, vues depuis celle-ci.
  *
  * Ne lève jamais : une découverte impossible rend une liste vide AVEC sa raison,
@@ -180,41 +150,181 @@ export function lancerTailscale(binaire) {
  * @returns {Promise<{machines: MachineTrouvee[], diagnostic: string | null}>}
  */
 export async function decouvrirMachines() {
-  // `HOME` n'existe pas sur Windows : le lanceur de l'application y vit sous le
-  // profil utilisateur, que `homedir()` sait trouver sur les trois systèmes.
-  // `process.env.HOME` reste accepté en premier parce que c'est lui qui porte la
-  // valeur voulue quand l'utilisateur l'a posée lui-même.
-  const maison =
-    typeof process.env.HOME === 'string' && process.env.HOME.length > 0
-      ? process.env.HOME
-      : homedir()
-  const candidats = CHEMINS_TAILSCALE.slice()
-  if (typeof maison === 'string' && maison.length > 0) {
-    candidats.splice(1, 0, join(maison, '.local', 'bin', 'tailscale'))
-  }
-
   const raisons = []
-  for (const binaire of candidats) {
-    // UN NOM NU EST RÉSOLU PAR LE PATH, et `access()` ne saurait pas le faire :
-    // il résout relativement au dossier courant. On le laisse donc à `execFile`,
-    // qui cherche dans le PATH comme le ferait un terminal.
-    if (estUnChemin(binaire)) {
-      try {
-        await access(binaire, constantesFS.X_OK)
-      } catch {
-        continue
-      }
+  for (const binaire of await candidatsTailscale()) {
+    const { sortie, raison } = await lancerBinaire(binaire, ['status', '--json'])
+    if (sortie === null) {
+      raisons.push(raison)
+      continue
     }
-    const { machines, raison } = await lancerTailscale(binaire)
-    if (machines !== null) {
-      return {
-        machines,
-        diagnostic: machines.length === 0 ? 'aucune machine du tailnet' : null,
-      }
+    let machines = null
+    try {
+      machines = analyserTailnet(sortie)
+    } catch {
+      raisons.push('sortie illisible')
+      continue
     }
-    raisons.push(raison)
+    if (machines === null) {
+      raisons.push('sortie inattendue')
+      continue
+    }
+    return {
+      machines,
+      diagnostic: machines.length === 0 ? 'aucune machine du tailnet' : null,
+    }
   }
 
   if (raisons.length === 0) return { machines: [], diagnostic: 'binaire tailscale introuvable' }
   return { machines: [], diagnostic: 'tailscale muet: ' + raisons[0] }
+}
+
+// ── SOUS QUEL SCHÉMA CETTE MACHINE SE PUBLIE-T-ELLE ? ─────────────────────────
+//
+// POURQUOI CETTE SECONDE LECTURE, ET POURQUOI ELLE EST INDISPENSABLE. Le contrat
+// d'appairage écrivait `http://<hote>` en dur, et l'application visait donc le
+// port 80 — même quand le Mac est publié en HTTPS sur 443 par
+// `tailscale serve --https`. Passer le serveur en HTTPS ne suffisait alors à
+// rien : le QR continuait de donner l'adresse en clair, et ATS refusait la
+// connexion (`-1022`) ou le port ne répondait plus. Le schéma est un FAIT de
+// publication : il se LIT, il ne se devine pas.
+//
+// `tailscale serve status --json` le dit, et sa forme est MESURÉE sur cette
+// installation (publication en clair sur le port 80) :
+//
+//   { "TCP": { "80": { "HTTP": true } },
+//     "Web": { "macmini.<tailnet>.ts.net:80": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3080" } } } } }
+//
+// La branche HTTPS (`"443": { "HTTPS": true }` et une clé `…:443`) suit la même
+// forme — c'est la documentation de Tailscale — mais elle n'a PAS été mesurée
+// ici : cette installation publie en clair. Elle est donc écrite pour être
+// TOLÉRANTE (on lit le drapeau du port, on ne le suppose pas) plutôt que pour
+// décrire une sortie qu'on n'a pas vue.
+/**
+ * Analyse la sortie de `tailscale serve status --json`.
+ *
+ * @param {string} texte
+ * @returns {{schema: 'http'|'https', port: number, hote: string} | null} `null`
+ *   quand rien n'est publié, ou quand la sortie n'est pas celle attendue.
+ */
+export function publicationDepuisServe(texte) {
+  let racine = null
+  try {
+    racine = JSON.parse(texte)
+  } catch {
+    return null
+  }
+  if (racine === null || typeof racine !== 'object' || Array.isArray(racine)) return null
+  const web = racine.Web
+  if (web === null || typeof web !== 'object' || Array.isArray(web)) return null
+  const tcp = racine.TCP !== null && typeof racine.TCP === 'object' ? racine.TCP : {}
+
+  let enClair = null
+  for (const [cle, valeur] of Object.entries(web)) {
+    const correspondance = /^([^:]+):(\d{1,5})$/.exec(cle)
+    if (correspondance === null) continue
+    // ON NE RETIENT QUE CE QUI SERT DSH : une publication vers une AUTRE machine
+    // (ou vers un dossier statique) ne dit rien du schéma à donner au téléphone.
+    if (!proxifieVersLaBoucleLocale(valeur)) continue
+    const port = Number(correspondance[2])
+    const drapeaux = tcp[String(port)]
+    const schema =
+      drapeaux !== null && typeof drapeaux === 'object' && drapeaux.HTTPS === true
+        ? 'https'
+        : drapeaux !== null && typeof drapeaux === 'object' && drapeaux.HTTP === true
+          ? 'http'
+          : null
+    if (schema === null) continue
+    // HTTPS GAGNE, MÊME SI LE CLAIR EST AUSSI PUBLIÉ : c'est le schéma que le
+    // client doit préférer, et celui qui ne demande aucune exception ATS.
+    if (schema === 'https') return { schema, port, hote: correspondance[1] }
+    enClair = enClair ?? { schema, port, hote: correspondance[1] }
+  }
+  return enClair
+}
+
+/** La publication vise-t-elle la boucle locale — donc le harness de CETTE machine ? */
+function proxifieVersLaBoucleLocale(entree) {
+  const handlers = entree?.Handlers
+  if (handlers === null || typeof handlers !== 'object') return false
+  for (const handler of Object.values(handlers)) {
+    const cible = handler?.Proxy
+    if (typeof cible !== 'string') continue
+    if (/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?(\/|$)/.test(cible)) return true
+  }
+  return false
+}
+
+/**
+ * Lit la publication de CETTE machine, ou rend `null`.
+ *
+ * Ne lève jamais : sans binaire, sans publication, ou devant une sortie
+ * inattendue, l'appelant retombe sur le clair — c'est-à-dire sur le
+ * comportement d'avant, jamais sur une adresse inventée.
+ *
+ * @returns {Promise<{schema: 'http'|'https', port: number, hote: string} | null>}
+ */
+export async function lirePublication() {
+  for (const binaire of await candidatsTailscale()) {
+    const { sortie } = await lancerBinaire(binaire, ['serve', 'status', '--json'])
+    if (sortie === null) continue
+    const publication = publicationDepuisServe(sortie)
+    if (publication !== null) return publication
+  }
+  return null
+}
+
+/** Les candidats au lancement, dans l'ordre — le profil utilisateur compris. */
+async function candidatsTailscale() {
+  // `HOME` n'existe pas sur Windows : le lanceur de l'application y vit sous le
+  // profil utilisateur, que `homedir()` sait trouver sur les trois systèmes.
+  const maison =
+    typeof process.env.HOME === 'string' && process.env.HOME.length > 0 ? process.env.HOME : homedir()
+  const candidats = CHEMINS_TAILSCALE.slice()
+  if (typeof maison === 'string' && maison.length > 0) {
+    candidats.splice(1, 0, join(maison, '.local', 'bin', 'tailscale'))
+  }
+  // UN NOM NU EST RÉSOLU PAR LE PATH, et `access()` ne saurait pas le faire : il
+  // résout relativement au dossier courant. On l'écarte donc du test d'existence,
+  // et `execFile` cherchera dans le PATH comme le ferait un terminal.
+  const retenus = []
+  for (const binaire of candidats) {
+    if (!estUnChemin(binaire)) {
+      retenus.push(binaire)
+      continue
+    }
+    try {
+      await access(binaire, constantesFS.X_OK)
+      retenus.push(binaire)
+    } catch {
+      // absent : candidat suivant
+    }
+  }
+  return retenus
+}
+
+/**
+ * Lance un binaire avec des arguments DONNÉS, et rend sa sortie ou `null`.
+ *
+ * @param {string} binaire
+ * @param {string[]} arguments_
+ * @returns {Promise<{sortie: string | null, raison: string | null}>}
+ */
+function lancerBinaire(binaire, arguments_) {
+  return new Promise((resolve) => {
+    execFile(
+      binaire,
+      arguments_,
+      { timeout: DELAI_TAILSCALE_MS, maxBuffer: PLAFOND_SORTIE_TAILSCALE, windowsHide: true, encoding: 'utf8' },
+      (erreur, sortie, erreurs) => {
+        if (erreur !== null && erreur !== undefined) {
+          if (erreur.killed === true) return resolve({ sortie: null, raison: 'delai depasse' })
+          if (erreur.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+            return resolve({ sortie: null, raison: 'sortie trop volumineuse' })
+          }
+          return resolve({ sortie: null, raison: raisonCourte(erreurs) || raisonCourte(erreur.message) })
+        }
+        resolve({ sortie: typeof sortie === 'string' ? sortie : '', raison: null })
+      },
+    )
+  })
 }
