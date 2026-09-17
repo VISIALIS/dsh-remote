@@ -64,7 +64,7 @@ Vérifications : aperçu inspecté jusqu'à 40 px ; dimensions, alpha, bleu exac
 niveaux de gris contrôlés ; dix représentations ICNS réextraites de 16 à 1024 px ;
 paquet macOS reconstruit et signature vérifiée ; compilation du simulateur réussie,
 avec `AppIcon` présent pour les familles iPhone et iPad. Les vérifications du dépôt
-passent : secrets, syntaxe, 120 tests de plugins et 273 tests Swift. Ces commandes
+passent : secrets, syntaxe, 123 tests de plugins et 315 tests Swift. Ces commandes
 ne réinstallent pas les copies déjà présentes sur les appareils.
 
 ### Où vit quoi : cinq pièces, et une seule porte sur le disque
@@ -432,6 +432,35 @@ jamais conclure. Depuis, un verdict connu reste affiché.
 mais qui ne répond rien** (ni accord, ni refus) : la requête attend alors le délai de
 2,5 s, et le groupe attendant tous ses membres, le verdict des machines saines est
 retardé d'autant. C'est une attente bornée, et le prix de ne pas conclure trop vite.
+
+#### Ce qui ne repart plus toutes les quinze secondes : deux mesures
+
+Les trois boucles ci-dessus avaient un défaut commun, invisible à l'écran : **elles
+reposaient la même question à cadence fixe**, même quand la réponse ne pouvait pas
+avoir changé.
+
+| Ce qui partait | Cadence | Ce qui part maintenant |
+|---|---|---|
+| La liste des sessions **en entier** (~115 Kio mesurés sur l'installation : 172 sessions × ~685 o) | 20×/min | **rien** quand rien n'a bougé : `304`, 0 octet (voir le README du plugin, § « La liste est CONDITIONNELLE ») |
+| `GET /v1/sante` sur **chaque Mac en ligne** | toutes les 15 s | seulement quand **l'ensemble des machines en ligne** change — et le geste « Revérifier » reste, lui, inconditionnel |
+| `GET /v1/serveurs` et `GET /v1/espaces` | toutes les 15 s | les mêmes requêtes, mais sur **un client déjà construit** (une session, au lieu d'un handshake neuf par appel) |
+
+**L'EMPREINTE QUI DÉCIDE DE LA SONDE EST CELLE DE L'ENSEMBLE SONDÉ**, pas de la liste
+entière : une machine **hors ligne n'est jamais interrogée** (délibéré, mesuré plus
+haut), donc son apparition ou sa disparition ne change rien aux requêtes qui partent.
+Comparer la liste entière relançait un cycle complet pour un Mac éteint — précisément
+ce qu'on cherchait à éviter.
+
+**Trois tests le tiennent sans réseau** (`SondeConditionnelleTests.swift`) : une liste
+inchangée ne resonde pas, une machine en plus ou en moins resonde, et **changer de cible
+oublie ce qui a été sondé** — le constat appartenait aux machines que l'hôte précédent
+voyait.
+
+**CE QUI N'A PAS CHANGÉ** : la politique de délais (`delaiSante`, `delaiListe`,
+`delaiHote`) est intacte. Le registre de clients est **clé par `(adresse, délai)`** : deux
+appels qui n'ont pas la même patience ne partagent jamais le même objet — les fusionner
+rendrait la question courte aussi patiente que la lecture lourde, c'est-à-dire ferait
+attendre trente secondes pour apprendre qu'une machine est muette.
 
 #### Un port 80 occupé par autre chose n'est pas un port vide
 
@@ -2656,6 +2685,7 @@ Sources/
 │   ├── DecouverteServeurs.swift  # machines du tailnet : découverte par l'hôte, ou locale sur macOS
 │   ├── Tailscale.swift    # état de Tailscale sur cette machine
 │   ├── FluxSession.swift  # WebSocket temps réel
+│   ├── Reconnexion.swift  # la politique de reconnexion (valeur pure, éprouvée)
 │   ├── RemoteClient.swift
 │   ├── ModeleApp.swift    # état de l'application — la vue ne parle jamais au réseau
 │   ├── EtatMachine.swift  # l'état d'une machine : MÊMES MOTS au panneau latéral et sur sa page
@@ -2710,6 +2740,45 @@ base du flux recouvrirait la page affichée et le journal montrerait des doublon
 `seq` déjà présent est ignoré à l'application, et l'état du suivi est visible dans la
 barre d'outils : un flux qui s'arrête en silence laisserait croire que la session est
 inactive.
+
+### La reconnexion est AUTOMATIQUE — et la reprise, c'est ce qui la rend gratuite
+
+**Le défaut que ça corrige, et il était bête.** Le protocole a été conçu pour la
+reprise : `depuisSeq` évite de renvoyer au client ce qu'il possède déjà, et le serveur
+sonde le journal toutes les 750 ms précisément pour ça. Mais le client s'arrêtait à la
+première erreur de transport : `enDirect = false`, et **il fallait rappuyer sur le
+bouton**. Sur un iPhone, une bascule Wi-Fi ↔ cellulaire suffisait donc à figer le
+journal — c'est-à-dire à annuler tout le bénéfice de `depuisSeq`.
+
+| Règle | Valeur | Pourquoi |
+|---|---|---|
+| Premier délai | **1 s** | réessayer à zéro échoue presque toujours : le chemin réseau n'est pas encore revenu (mesuré ici : un `ping` tailnet passe de 6 ms à 412 ms au réveil de la radio) |
+| Croissance | ×2, puis plafond à **30 s** | au-delà, une coupure longue ressemblerait à un flux mort ; en deçà, une panne durable produirait 120 requêtes par heure pour rien |
+| Quota | **20 tentatives** (~6 min) | le cas d'échec définitif est un **jeton révoqué** (`401`) : il ne se répare pas en réessayant, et une boucle infinie ferait clignoter l'écran pour toujours |
+| Remise à zéro | sur un **contenu reçu**, jamais à l'ouverture | une socket qui s'ouvre puis se referme aussitôt (hôte qui refuse, session inconnue) ne prouve rien : réinitialiser à l'ouverture ferait boucler à une seconde indéfiniment |
+
+**LA POLITIQUE EST UNE VALEUR PURE** (`Reconnexion.swift`) : on lui donne un nombre
+d'échecs, elle rend un délai. C'est ce qui permet de l'éprouver sans couper un réseau
+ni attendre — 5 tests, dont le produit « délai × quota » (plus de cinq minutes de
+panne couvertes, moins d'un quart d'heure).
+
+**LA REPRISE ELLE-MÊME EST ÉPROUVÉE SUR LE FIL**, contre un vrai serveur WebSocket
+(Node, sans dépendance, dans `Tests/DSHRemoteKitTests/Outils/serveur-flux-essai.mjs`) :
+il accepte deux connexions, **coupe la première brutalement** — pas de trame de
+fermeture, comme un Wi-Fi qui s'endort — et **note ce que le second `demarrer` a
+porté**. Le test lit cette note :
+
+```
+connexion=1 depuisSeq=absent     ← la première demande ne reprend rien
+connexion=1 coupure=brutale
+connexion=2 depuisSeq=2          ← la reprise porte le seq connu
+```
+
+**TROIS ÉTATS DANS LA BARRE D'OUTILS, PAS DEUX** : « En direct », « Suivi arrêté », et
+« Reconnexion… (n/20) ». Le troisième n'est pas un ornement : sans lui, une coupure de
+dix secondes afficherait « En direct » sur un journal qui ne reçoit rien. Le geste de
+l'utilisateur, lui, arrête **aussi** la reconnexion — sinon « Suivi arrêté » se
+rallumerait tout seul une seconde plus tard.
 
 ---
 

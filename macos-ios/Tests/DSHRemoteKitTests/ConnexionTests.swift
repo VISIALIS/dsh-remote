@@ -183,3 +183,38 @@ func delaiDeLhote() async throws {
   #expect(Connexion.delaiHote > 8, "le client doit laisser à l'hôte plus que ses huit secondes")
   #expect(client.appels == ["serveurs"])
 }
+
+@Test("Deux appels à l'hôte RÉUTILISENT le client : une session, pas deux")
+func leClientDeLhoteEstReutilise() async throws {
+  // POURQUOI CETTE RÈGLE EXISTE. Chaque client porte SA `URLSession`, donc son
+  // pool de connexions. La boucle de synchronisation demande `/v1/serveurs` ET
+  // `/v1/espaces` toutes les quinze secondes : fabriquer un client par appel
+  // refaisait deux handshakes TCP par cycle, à côté d'une session de trois
+  // secondes déjà chaude.
+  let client = ClientFactice()
+  let espion = FabriqueEspionne(client: client)
+  let connexion = Connexion(fabrique: espion.fabrique())
+  let adresse = "http://portable.exemple.ts.net"
+
+  _ = try await connexion.serveursDeLhote(adresse: adresse, jeton: "x")
+  _ = try await connexion.espacesDeLhote(adresse: adresse, jeton: "x")
+  _ = try await connexion.serveursDeLhote(adresse: adresse, jeton: "x")
+
+  #expect(espion.delais == [Connexion.delaiHote], "un seul client pour les trois appels")
+  #expect(client.appels == ["serveurs", "espaces", "serveurs"])
+}
+
+@Test("Le registre de clients ne confond PAS deux machines")
+func leRegistreDistingueLesAdresses() async throws {
+  // Un client vise UNE machine. Réutiliser celui d'une autre serait le défaut le
+  // plus coûteux de cette famille : l'écran afficherait les sessions d'un serveur
+  // sous le nom d'un autre — le même que la « génération » a corrigé ailleurs.
+  let client = ClientFactice()
+  let espion = FabriqueEspionne(client: client)
+  let connexion = Connexion(fabrique: espion.fabrique())
+
+  _ = try await connexion.serveursDeLhote(adresse: "http://portable.exemple.ts.net", jeton: "x")
+  _ = try await connexion.serveursDeLhote(adresse: "http://bureau.exemple.ts.net", jeton: "x")
+
+  #expect(espion.delais == [Connexion.delaiHote, Connexion.delaiHote], "une fabrication par machine")
+}

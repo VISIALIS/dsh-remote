@@ -164,6 +164,16 @@ public final class ModeleApp {
     cible = nouvelle
     // La cible a changé : tout ce qui était en vol décrivait l'ancienne.
     generation += 1
+    // LE CONSTAT DE SONDE APPARTENAIT À L'ANCIENNE CIBLE, et il est oublié ICI —
+    // au seul endroit qui remplace la cible — parce que c'est un fait de
+    // L'ENSEMBLE QUE CET HÔTE VOIT : un autre hôte en voit d'autres. Le garder
+    // ferait sauter la sonde sur la nouvelle machine, et les vignettes
+    // resteraient sur le verdict de l'ancien réseau.
+    //
+    // POSÉ ICI, ET NON DANS `oublierLesDonneesDeLancienServeur` : une adresse
+    // saisie à la main passe par `viser` SANS passer par cette remise à zéro —
+    // c'est mesuré, le premier emplacement ne suffisait pas.
+    empreinteSondee = nil
     chargerJetonDeLaCible()
   }
 
@@ -783,11 +793,19 @@ public final class ModeleApp {
     //
     // On ne publie donc un résultat que si la sonde est allée au bout.
     let duree = Int(Date().timeIntervalSince(debutSonde) * 1000)
+    // ON NE PUBLIE RIEN POUR UNE SONDE QUI N'A PAS ÉTÉ JUSQU'AU BOUT, et on ne
+    // note pas non plus qu'elle a eu lieu : une sonde annulée doit pouvoir être
+    // redemandée par la boucle suivante, sinon le verdict resterait vide.
     guard !Task.isCancelled else {
       Trace.siActive("[sonde] ANNULEE apres \(duree) ms — verdict non publie")
       return
     }
     sonde = .connue(verdict)
+    // CE QUI SE RETIENT, C'EST CE QUI A ÉTÉ INTERROGÉ. L'empreinte est celle de
+    // `candidats` — l'ensemble réellement sondé —, et non celle de la liste
+    // entière : y mêler une machine hors ligne ferait croire qu'on a mesuré
+    // quelque chose sur elle, alors qu'elle n'a reçu aucune requête.
+    empreinteSondee = ModeleApp.empreinteDeSonde(candidats)
     Trace.siActive(
       "[sonde] fin : \(verdict.serventDsh.count) serveur(s) DSH sur \(candidats.count) en \(duree) ms, "
         + "\(verdict.causes.count) cause(s) connue(s)")
@@ -871,10 +889,23 @@ public final class ModeleApp {
   public private(set) var diagnosticServeurs: String?
   private var flux: FluxSession?
   private var tacheFlux: Task<Void, Never>?
+  /// La tentative de reconnexion en vol, s'il y en a une. Gardée pour pouvoir
+  /// l'ANNULER : un changement de session ou d'hôte pendant l'attente ne doit pas
+  /// rouvrir le flux de la cible qu'on vient de quitter.
+  private var tacheReconnexion: Task<Void, Never>?
   private var tacheSuivi: Task<Void, Never>?
   /// Boucle de synchronisation de la LISTE DES SERVEURS, distincte de celle des
   /// sessions : l'une relit des statuts, l'autre découvre des machines.
   private var tacheServeurs: Task<Void, Never>?
+
+  /// L'empreinte de la liste de machines qui a DÉJÀ été sondée.
+  ///
+  /// Sert à ne pas reposer la même question toutes les quinze secondes : la
+  /// sonde interroge `/v1/sante` sur chaque machine en ligne, et le verdict ne
+  /// peut pas changer tant que l'identité de la liste n'a pas changé. Un geste
+  /// explicite (« Revérifier ») appelle `sonderLesServeurs` directement et n'est
+  /// donc pas concerné.
+  private var empreinteSondee: String?
 
   /// Suivi automatique de la liste : rafraîchit les statuts en continu.
   ///
@@ -1020,6 +1051,15 @@ public final class ModeleApp {
 
   /// Vrai quand le suivi temps réel est actif sur la session ouverte.
   public private(set) var enDirect = false
+  /// LA RECONNEXION EN COURS, s'il y en a une : son état, et son libellé d'écran.
+  ///
+  /// POURQUOI CE N'EST PAS DANS `enDirect`. Un flux qui se rouvre est toujours un
+  /// suivi ACTIF — l'utilisateur n'a rien demandé, et l'écran ne doit pas dire
+  /// « Suivi arrêté » pendant une coupure de trois secondes. Mais il doit pouvoir
+  /// DIRE qu'il est en train de réessayer : sans cela, un journal immobile
+  /// ressemble à une session inactive, et c'est exactement le mensonge que le
+  /// bouton « En direct » a été ajouté pour éviter.
+  public private(set) var reconnexion: Reconnexion?
   /// Dernier `seq` reçu par le flux, à repasser en `depuisSeq` si l'on rouvre.
   public private(set) var dernierSeqVu: Int?
 
@@ -1156,6 +1196,18 @@ public final class ModeleApp {
   ///
   /// Sans bruit en cas d'échec : l'utilisateur n'a rien demandé, et une liste
   /// qui ne vient pas ne doit pas effacer celle qu'il a sous les yeux.
+  ///
+  /// LA SONDE NE REPART QUE SI LA LISTE A CHANGÉ, et c'est un correctif chiffré,
+  /// pas une coquetterie. Cette méthode est appelée par la boucle de
+  /// synchronisation toutes les quinze secondes ; la sonde, elle, interroge
+  /// `/v1/sante` sur CHAQUE machine en ligne — quatre requêtes en parallèle, sur
+  /// un iPhone, toutes les quinze secondes, pour un verdict qui ne peut pas
+  /// changer tant que la liste est la même. L'empreinte qui sert à ça existait
+  /// déjà (`empreinteServeurs`), et son commentaire annonçait exactement cette
+  /// économie : elle n'était vérifiée que par la vue, jamais par cette boucle.
+  ///
+  /// Le geste explicite garde son effet : « Revérifier » appelle la sonde
+  /// directement, sans passer par ici.
   private func chargerServeursDeLhote() async {
     guard hoteEstJoint else { return }
     guard let liste = try? await transport.serveursDeLhote(adresse: adresse, jeton: jetonDeLaCible())
@@ -1166,8 +1218,30 @@ public final class ModeleApp {
     Trace.siActive("[demarrage] liste des serveurs : \(liste.serveurs.count)")
     appliquerServeursDeLhote(liste, vu: generationDuDepart())
     relireEtatTailscale()
+    // L'EMPREINTE EST CELLE DE L'ENSEMBLE SONDÉ, pas de la liste entière. Une
+    // machine HORS LIGNE n'est jamais interrogée — c'est délibéré, et mesuré : on
+    // ne paie pas un délai pour un verdict déjà connu. Son entrée ou sa sortie de
+    // la liste ne change donc RIEN aux requêtes qui partent, et relancer la sonde
+    // pour elle ferait exactement ce qu'on veut éviter.
+    let empreinte = ModeleApp.empreinteDeSonde(serveurs.filter(\.enLigne))
+    guard empreinte != empreinteSondee else {
+      Trace.siActive("[sonde] liste inchangee (\(empreinte)) : aucune sonde envoyee")
+      return
+    }
     // On demande à chaque Mac s'il sert DSH, plutôt que de le supposer.
     await sonderLesServeurs()
+  }
+
+  /// L'EMPREINTE DE L'ENSEMBLE SONDÉ — l'identité des machines en ligne, triée.
+  ///
+  /// POURQUOI LES IDENTIFIANTS SEULS, ET PAS LES NOMS : deux ensembles qui
+  /// contiennent les mêmes machines ne déclenchent rien, même si un libellé a
+  /// changé — c'est la règle de `empreinteServeurs`, et elle vaut ici pour la même
+  /// raison : sonder à chaque rafraîchissement est précisément le défaut corrigé.
+  ///
+  /// Version PURE, donc éprouvable sans réseau ni modèle.
+  nonisolated static func empreinteDeSonde(_ machines: [ServeurMac]) -> String {
+    machines.map(\.id).sorted().joined(separator: "|")
   }
 
   /// Choisit un serveur et met l'adresse en conséquence.
@@ -2580,59 +2654,113 @@ public final class ModeleApp {
   ///
   /// La reprise n'est pas un confort : sans `depuisSeq`, le serveur renverrait
   /// tout ce que la page vient de charger, et le journal afficherait des doublons.
+  ///
+  /// LE MESSAGE D'ERREUR N'ARRÊTE PLUS LE SUIVI. Il enregistre un échec, et le
+  /// flux est rouvert après un délai qui double — voir `Reconnexion`. Ce qui
+  /// arrête pour de bon, c'est le quota de tentatives épuisé, ou le geste de
+  /// l'utilisateur.
   public func demarrerFlux(_ identifiant: String) async {
-    if let precedent = flux { await precedent.fermer() }
-    flux = nil
+    await fermerLeFluxCourant()
+    // UN SUIVI NEUF REPART D'UN COMPTEUR NEUF : les échecs de la session qu'on
+    // vient de quitter ne disent rien de celle-ci.
+    reconnexion = Reconnexion()
     enDirect = true
-    // Simple test d'existence : le client n'est pas utilisé ici, seulement
-    // l'adresse et le jeton, relus juste après. `guard let` liait une variable
-    // inutile, ce que le compilateur signalait à juste titre.
-    guard client != nil else { return }
     let jeton = jetonSaisi
     let adresse = self.adresse
+    // LE `seq` VIENT DU JOURNAL AFFICHÉ, pas d'un compteur : c'est ce qui rend la
+    // reprise non destructive, y compris après une reconnexion.
+    let depuis = journal.last?.enregistrement.seq
+    await ouvrirLeFlux(identifiant, adresse: adresse, jeton: jeton, depuisSeq: depuis)
+  }
+
+  /// Ouvre une socket de flux et l'écoute, en décidant quoi faire de sa fin.
+  private func ouvrirLeFlux(_ identifiant: String, adresse: String, jeton: String, depuisSeq: Int?) async {
+    guard client != nil else { return }
     guard
-      let session = FluxSession(
-        adresse: adresse, jeton: jeton, identifiant: identifiant,
-        depuisSeq: journal.last?.enregistrement.seq)
+      let session = FluxSession(adresse: adresse, jeton: jeton, identifiant: identifiant, depuisSeq: depuisSeq)
     else { return }
     flux = session
     let tache = Task { [weak self] in
       for await message in await session.messages() {
         guard let self else { return }
-        await self.appliquer(message)
+        await self.appliquer(message, pour: identifiant, adresse: adresse, jeton: jeton)
       }
     }
     tacheFlux = tache
   }
 
-  /// Arrête le suivi. Le journal déjà chargé reste affiché.
-  public func arreterFlux() {
+  /// Ferme le flux courant ET la reconnexion en vol, sans toucher à l'état visible.
+  private func fermerLeFluxCourant() async {
     tacheFlux?.cancel()
     tacheFlux = nil
-    Task { await flux?.fermer() }
+    tacheReconnexion?.cancel()
+    tacheReconnexion = nil
+    if let precedent = flux { await precedent.fermer() }
     flux = nil
+  }
+
+  /// Arrête le suivi. Le journal déjà chargé reste affiché.
+  ///
+  /// C'EST LE GESTE DE L'UTILISATEUR, donc il arrête AUSSI la reconnexion : sans
+  /// cela, « Suivi arrêté » se rallumerait tout seul une seconde plus tard, et le
+  /// bouton mentirait.
+  public func arreterFlux() {
+    Task { await fermerLeFluxCourant() }
     enDirect = false
+    reconnexion = nil
   }
 
   /// Applique un message du flux au journal affiché.
   ///
   /// Un `seq` déjà présent est ignoré : une reprise peut recouvrir la page
   /// chargée, et un doublon à l'écran serait un défaut visible.
-  private func appliquer(_ message: MessageFlux) async {
+  private func appliquer(_ message: MessageFlux, pour identifiant: String, adresse: String, jeton: String) async {
     switch message {
     case let .base(_, enregistrements, _):
       for enregistrement in enregistrements {
         ajouterSiNouveau(enregistrement)
       }
+      reconnexion?.reussite()
     case let .evenement(enregistrement):
       ajouterSiNouveau(enregistrement)
+      // UN CONTENU REÇU PROUVE QUE LE FLUX VIT — c'est le seul signal qui remette
+      // le compteur à zéro (voir `Reconnexion.reussite`).
+      reconnexion?.reussite()
     case let .delta(dernierSeq):
       if let dernierSeq { dernierSeqVu = dernierSeq }
     case let .tronque(detail):
       connexion = .echec(.transport("Flux incomplet : \(detail)"))
     case let .erreur(detail):
-      connexion = .echec(.transport(detail))
+      await prevenirEtReconnecter(detail, identifiant: identifiant, adresse: adresse, jeton: jeton)
+    }
+  }
+
+  /// Le flux est tombé : le dire, puis rouvrir — ou renoncer.
+  ///
+  /// L'ERREUR EST TOUJOURS MONTRÉE, même quand on va réessayer : l'utilisateur doit
+  /// savoir que le direct est interrompu, sinon il attendrait des nouvelles d'un
+  /// journal qui n'en recevra pas. La reconnexion, elle, efface ce message dès
+  /// qu'elle aboutit.
+  private func prevenirEtReconnecter(_ detail: String, identifiant: String, adresse: String, jeton: String) async {
+    connexion = .echec(.transport(detail))
+    guard var etat = reconnexion, let delai = etat.echec() else {
+      // QUOTA ÉPUISÉ : on s'arrête POUR DE BON, et on le dit une fois. Réessayer
+      // sans fin devant un `401` ferait clignoter l'écran pour toujours.
       enDirect = false
+      reconnexion = nil
+      return
+    }
+    reconnexion = etat
+    // L'ADRESSE ET LA CIBLE SONT REVÉRIFIÉES APRÈS L'ATTENTE : pendant ces trois
+    // secondes, l'utilisateur a pu changer de machine ou de session. Rouvrir dans
+    // ce cas connecterait le flux à la mauvaise cible — le défaut que la
+    // « génération » corrige partout ailleurs.
+    let cible = adresse
+    tacheReconnexion = Task { [weak self] in
+      try? await Task.sleep(nanoseconds: UInt64(delai * 1_000_000_000))
+      guard !Task.isCancelled, let self else { return }
+      guard self.adresse == cible, self.sessionOuverte?.id == identifiant else { return }
+      await self.ouvrirLeFlux(identifiant, adresse: cible, jeton: jeton, depuisSeq: self.journal.last?.enregistrement.seq)
     }
   }
 

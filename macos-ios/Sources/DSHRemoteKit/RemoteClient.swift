@@ -14,6 +14,31 @@ public actor RemoteClient {
   private let jeton: String
   private let session: URLSession
 
+  /// LA DERNIÈRE LISTE DES SESSIONS, ET L'EMPREINTE QUI LA DÉCRIT.
+  ///
+  /// POURQUOI CE CLIENT EN GARDE UNE COPIE. L'application relit la liste toutes
+  /// les trois secondes ; l'hôte, lui, retransmettait 172 sessions × ~685 octets,
+  /// soit environ **115 Kio par appel** — mesuré sur cette installation. Rien ne
+  /// justifie de faire voyager dix fois par minute un contenu qui n'a pas bougé,
+  /// surtout sur un iPhone en radio.
+  ///
+  /// COMMENT ÇA MARCHE, ET POURQUOI LA GARDE EST ICI. Le client envoie
+  /// `If-None-Match` avec l'empreinte de sa copie ; si l'hôte répond `304`, il
+  /// rend la copie **sans rien redécoder**. La mémoire est IN-MEMORY et par
+  /// client : rien n'est écrit sur disque (un journal de session n'a rien à y
+  /// faire), et un client neuf — donc une machine ou un jeton différents — ne
+  /// peut pas hériter de la liste d'un autre.
+  ///
+  /// À QUOI SERT `sessionsInchangees`, ALORS QUE LA LISTE SUFFIRAIT : à rendre
+  /// l'économie VISIBLE et éprouvable. Sans lui, un `304` et un `200` identique
+  /// seraient indiscernables depuis le modèle, et aucun test ne pourrait dire si
+  /// l'hôte a réellement répondu « rien n'a changé ».
+  private var sessionsConnues: ListeSessions?
+  private var empreinteSessions: String?
+  /// Nombre de réponses `304` reçues pour la liste — un compteur d'observation,
+  /// pas un état de l'application.
+  public private(set) var sessionsInchangees = 0
+
   /// - Parameters:
   ///   - adresse: racine du serveur, par exemple `http://127.0.0.1:3080` ou le
   ///     nom MagicDNS du tailnet. Le schéma et l'hôte sont validés.
@@ -22,7 +47,13 @@ public actor RemoteClient {
   ///     assez pour un tailnet lent. La SONDER de découverte passe un délai
   ///     court : elle interroge des machines dont on ne sait rien, et une
   ///     machine éteinte ne doit pas figer la liste pendant vingt secondes.
-  public init(adresse: String, jeton: String, delai: TimeInterval = 20) throws {
+  ///   - configuration: réservé aux TESTS, qui ont besoin d'un protocole
+  ///     d'URL bouchonné pour observer ce qui part réellement sur le fil —
+  ///     l'en-tête conditionnel, et ce qu'un `304` devient côté appelant. Le
+  ///     laisser `nil` en production, où la configuration est construite ici.
+  public init(adresse: String, jeton: String, delai: TimeInterval = 20, configuration: URLSessionConfiguration? = nil)
+    throws
+  {
     let normalisee = RemoteClient.normaliser(adresse)
     guard let url = URL(string: normalisee), let schema = url.scheme, let hote = url.host else {
       throw ErreurRemote.adresseInvalide(adresse)
@@ -34,15 +65,19 @@ public actor RemoteClient {
     self.base = url
     self.jeton = jeton
 
-    let configuration = URLSessionConfiguration.ephemeral
+    // LA CONFIGURATION VIENT DU PARAMÈTRE QUAND ELLE EST FOURNIE (tests), sinon
+    // d'une session éphémère. Elle est nommée `config` et non `configuration` :
+    // le paramètre porte déjà ce nom, et une liaison homonyme ferait douter de
+    // LAQUELLE des deux on règle les drapeaux ci-dessous.
+    let config = configuration ?? URLSessionConfiguration.ephemeral
     // Aucun cache : un journal de session n'a rien à faire sur disque, et une
     // réponse périmée induirait l'utilisateur en erreur.
-    configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-    configuration.urlCache = nil
-    configuration.httpShouldSetCookies = false
-    configuration.httpCookieAcceptPolicy = .never
-    configuration.timeoutIntervalForRequest = delai
-    configuration.timeoutIntervalForResource = max(delai, 120)
+    config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+    config.urlCache = nil
+    config.httpShouldSetCookies = false
+    config.httpCookieAcceptPolicy = .never
+    config.timeoutIntervalForRequest = delai
+    config.timeoutIntervalForResource = max(delai, 120)
     // ATTENDRE QUE LE RÉSEAU REVIENNE, AU LIEU D'ÉCHOUER TOUT DE SUITE.
     //
     // POURQUOI. Mesuré sur l'iPhone branché : trois `ping` tailnet vers
@@ -57,8 +92,8 @@ public actor RemoteClient {
     // dans la limite des délais ci-dessus. Il ne desserre aucun contrôle de
     // sécurité : l'en-tête `Authorization` et l'absence d'`Origin` ne changent
     // pas, et le serveur reste seul juge du jeton.
-    configuration.waitsForConnectivity = true
-    self.session = URLSession(configuration: configuration)
+    config.waitsForConnectivity = true
+    self.session = URLSession(configuration: config)
   }
 
   /// Complète une adresse saisie sans protocole.
@@ -105,7 +140,11 @@ public actor RemoteClient {
   ///   n'existe pas » : les confondre affichait « votre plugin est trop ancien »
   ///   à quelqu'un qui avait demandé un journal supprimé — un remède faux, qui
   ///   envoie mettre à jour un plugin alors qu'il n'y a rien à mettre à jour.
-  private func executer(_ requete: URLRequest, echange: Bool = false) async throws -> Data {
+  ///
+  /// Rend AUSSI la réponse HTTP, et pas seulement son corps : c'est elle qui
+  /// porte l'`ETag` dont la liste des sessions a besoin pour ne plus voyager
+  /// entière à chaque tour.
+  private func executerAvecReponse(_ requete: URLRequest, echange: Bool = false) async throws -> (Data, HTTPURLResponse) {
     let donnees: Data
     let reponse: URLResponse
     do {
@@ -153,8 +192,19 @@ public actor RemoteClient {
     guard let http = reponse as? HTTPURLResponse else {
       throw ErreurRemote.transport("réponse sans statut HTTP")
     }
-    if (200...299).contains(http.statusCode) { return donnees }
+    // `304` EST UN SUCCÈS, ET PAS UN STATUT INATTENDU. Il n'est pas dans
+    // `200...299`, donc le laisser tomber dans le `throw` ci-dessous rendait la
+    // réponse conditionnelle inexploitable : la liste était bien marquée
+    // inchangée par l'hôte, et le client la refusait comme une panne. C'est
+    // l'appelant qui sait s'il a une copie à ressortir — pas cette fonction, qui
+    // ne fait que rendre ce que le serveur a dit.
+    if (200...299).contains(http.statusCode) || http.statusCode == 304 { return (donnees, http) }
     throw RemoteClient.erreur(pour: http.statusCode, donnees: donnees, echange: echange)
+  }
+
+  /// Le corps seul, quand la réponse n'a rien à dire de plus.
+  private func executer(_ requete: URLRequest, echange: Bool = false) async throws -> Data {
+    try await executerAvecReponse(requete, echange: echange).0
   }
 
   /// UN STATUT ET UN CORPS DEVIENNENT UNE ERREUR TYPÉE.
@@ -249,6 +299,17 @@ public actor RemoteClient {
   }
 
   /// Liste les sessions présentes sur disque, de la plus récente à la plus ancienne.
+  ///
+  /// CONDITIONNELLE QUAND ELLE PEUT L'ÊTRE. La seconde lecture — celle du suivi,
+  /// toutes les trois secondes — porte l'empreinte de la liste déjà reçue. Si
+  /// l'hôte répond `304`, sa copie est rendue telle quelle : rien n'a voyagé, et
+  /// rien n'a été redécodé. Un hôte plus ancien, qui ne pose pas d'`ETag`, répond
+  /// `200` comme avant — cette méthode ne l'exige pas, elle en profite.
+  ///
+  /// LA COPIE EST CONSERVÉE MÊME SI L'APPELANT LA JETTE. Un `304` ne dit pas
+  /// « voici la liste », il dit « celle que tu as envoyée est encore bonne » :
+  /// sans la copie, le client n'aurait rien à rendre. Elle ne vit qu'en mémoire,
+  /// et meurt avec le client — donc avec le changement de cible.
   public func listerSessions(limite: Int? = nil) async throws -> ListeSessions {
     let corps: Data?
     if let limite {
@@ -256,9 +317,29 @@ public actor RemoteClient {
     } else {
       corps = nil
     }
-    let donnees = try await executer(
-      try requete("/dsh-remote/v1/sessions", methode: corps == nil ? "GET" : "POST", corps: corps))
-    return try decoder(ListeSessions.self, depuis: donnees)
+    var demande = try requete("/dsh-remote/v1/sessions", methode: corps == nil ? "GET" : "POST", corps: corps)
+    // La comparaison se fait EXACTEMENT sur l'empreinte reçue : c'est un `ETag`
+    // fort, donc deux empreintes égales désignent le même contenu.
+    if let empreinteSessions {
+      demande.setValue(empreinteSessions, forHTTPHeaderField: "If-None-Match")
+    }
+    let (donnees, http) = try await executerAvecReponse(demande)
+    if http.statusCode == 304 {
+      guard let connue = sessionsConnues else {
+        // Un `304` sans copie locale : le client ne PEUT pas répondre. Le dire
+        // vaut mieux que rendre une liste vide — qui se lirait « aucune session »
+        // — et mieux qu'un `200` rejoué avec un corps qui n'existe pas.
+        throw ErreurRemote.nonModifie
+      }
+      sessionsInchangees += 1
+      return connue
+    }
+    let liste = try decoder(ListeSessions.self, depuis: donnees)
+    sessionsConnues = liste
+    // Un hôte antérieur à l'empreinte n'en pose aucune : on oublie la précédente
+    // plutôt que de garder une copie que plus rien ne valide.
+    empreinteSessions = http.value(forHTTPHeaderField: "ETag")
+    return liste
   }
 
   /// Demande à l'hôte la liste des Macs qu'il voit sur son tailnet.

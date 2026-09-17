@@ -408,6 +408,12 @@ public enum ErreurRemote: Error, CustomStringConvertible {
   case adresseInvalide(String)
   case transport(String)
   case decodage(String)
+  /// L'hôte répond `304` — « cette liste n'a pas bougé » — alors que CE client
+  /// n'a rien à réutiliser : il vient d'être construit, ou sa mémoire a été
+  /// perdue. Cela ne devrait pas arriver, puisque c'est le client lui-même qui
+  /// envoie l'empreinte ; si cela arrive, le dire vaut mieux que rendre une liste
+  /// vide, qui se lirait « aucune session ».
+  case nonModifie
 
   /// La CAUSE de l'absence de DSH, quand cette erreur l'explique.
   ///
@@ -499,6 +505,8 @@ public enum ErreurRemote: Error, CustomStringConvertible {
       return "échec de transport : \(detail)"
     case let .decodage(detail):
       return "réponse illisible : \(detail)"
+    case .nonModifie:
+      return "l'hôte n'a rien renvoyé : la liste était marquée inchangée, et ce client n'en a pas de copie"
     }
   }
 }

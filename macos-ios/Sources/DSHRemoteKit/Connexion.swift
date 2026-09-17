@@ -73,8 +73,40 @@ public struct Connexion: Sendable {
 
   private let fabrique: Fabrique
 
+  /// LES CLIENTS DÉJÀ CONSTRUITS, PAR `(adresse, délai)`.
+  ///
+  /// POURQUOI CE PETIT REGISTRE. Chaque `RemoteClient` porte SA `URLSession`,
+  /// donc son propre pool de connexions : en fabriquer un neuf pour chaque appel
+  /// reperd le handshake TCP à chaque fois. C'était le cas de `/v1/serveurs` et
+  /// `/v1/espaces`, redemandés **toutes les quinze secondes** par la boucle de
+  /// synchronisation : deux connexions neuves par cycle, à côté d'une session de
+  /// trois secondes déjà chaude.
+  ///
+  /// LA CLÉ PORTE LE DÉLAI, ET C'EST ESSENTIEL : la politique de patience est
+  /// partie intégrante du client (`timeoutIntervalForRequest`). Deux appels qui
+  /// n'ont pas la même patience ne peuvent pas partager le même objet — les
+  /// fusionner rendrait la question courte aussi patiente que la lecture lourde,
+  /// c'est-à-dire ferait attendre trente secondes pour apprendre qu'une machine
+  /// est muette. Le registre ne change donc AUCUN délai : il évite seulement de
+  /// reconstruire ce qui existe déjà.
+  ///
+  /// LA CLÉ PORTE AUSSI L'ADRESSE : un client vise une machine et un jeton. Le
+  /// jeton n'y est pas — un jeton change en se ré-appairant, et cela passe par un
+  /// changement de cible, donc par de nouveaux appels. Le registre est BORNÉ :
+  /// au-delà de trois entrées, la plus ancienne est oubliée, sinon un usage long
+  /// accumulerait des sessions ouvertes pour des adresses qu'on ne vise plus.
+  private let registre = RegistreDeClients()
+
   public init(fabrique: @escaping Fabrique = Connexion.fabriqueParDefaut) {
     self.fabrique = fabrique
+  }
+
+  /// Fabrique un client, ou rend celui qui existe déjà pour ce couple.
+  private func client(_ adresse: String, _ jeton: String, delai: TimeInterval) throws -> any ClientDSH {
+    if let connu = registre.client(adresse: adresse, delai: delai) { return connu }
+    let neuf = try fabrique(adresse, jeton, delai)
+    registre.poser(neuf, adresse: adresse, delai: delai)
+    return neuf
   }
 
   public static let fabriqueParDefaut: Fabrique = { adresse, jeton, delai in
@@ -102,9 +134,9 @@ public struct Connexion: Sendable {
   /// ne répond pas » de « cette machine est lente ». Inverser les deux ferait
   /// attendre trente secondes pour apprendre qu'il n'y a personne.
   public func joindre(adresse: String, jeton: String) async throws -> Jonction {
-    let court = try fabrique(adresse, jeton, Self.delaiSante)
+    let court = try client(adresse, jeton, delai: Self.delaiSante)
     let sante = try await court.verifierSante()
-    let patient = try fabrique(adresse, jeton, Self.delaiListe)
+    let patient = try client(adresse, jeton, delai: Self.delaiListe)
     let liste = try await patient.listerSessions(limite: 200)
     return Jonction(
       sante: sante,
@@ -126,6 +158,10 @@ public struct Connexion: Sendable {
   /// dans son coffre, ce qui prend quelques millisecondes. Un délai long ici ne
   /// servirait qu'à faire attendre quelqu'un devant un code qui expire.
   public func echangerAppairage(adresse: String, code: String, nom: String) async throws -> AppareilAppaire {
+    // LE CLIENT EST FABRIQUÉ ICI, SANS REGISTRE, ET C'EST DÉLIBÉRÉ : son porteur
+    // est un CODE à usage unique, pas le jeton de la machine. Le ranger dans le
+    // registre le ferait survivre à l'échange, avec un porteur qui n'a plus
+    // aucun sens.
     let client = try fabrique(adresse, code, Self.delaiSante)
     return try await client.echangerAppairage(nom: nom)
   }
@@ -138,13 +174,61 @@ public struct Connexion: Sendable {
   /// de la même façon, et les perdre laisserait l'utilisateur devant une liste
   /// vide sans explication.
   public func serveursDeLhote(adresse: String, jeton: String) async throws -> ListeServeurs {
-    let client = try fabrique(adresse, jeton, Self.delaiHote)
+    let client = try self.client(adresse, jeton, delai: Self.delaiHote)
     return try await client.listerServeurs()
   }
 
   /// Les espaces déclarés par le registre de l'hôte.
   public func espacesDeLhote(adresse: String, jeton: String) async throws -> [EspaceHote] {
-    let client = try fabrique(adresse, jeton, Self.delaiHote)
+    let client = try self.client(adresse, jeton, delai: Self.delaiHote)
     return try await client.listerEspaces().espaces
+  }
+}
+
+/// LES CLIENTS RÉUTILISABLES, PAR `(adresse, délai)`.
+///
+/// POURQUOI UNE CLASSE, ET POURQUOI ELLE EST VERROUILLÉE. `Connexion` est une
+/// valeur `Sendable` : elle n'a pas de place pour un état modifiable, et lui en
+/// donner un sans verrou serait une course entre la boucle de suivi et un geste
+/// de l'utilisateur — exactement ce que la règle « un seul écrivain par état » de
+/// ce dépôt interdit. L'état vit donc dans cette petite classe, et son accès est
+/// sérialisé par un verrou.
+///
+/// ELLE EST BORNÉE À DESSEIN. Trois entrées suffisent à la politique réelle (les
+/// trois délais), et une borne évite qu'un usage long — plusieurs machines
+/// visitées, plusieurs jetons — accumule des sessions ouvertes vers des adresses
+/// qu'on ne vise plus. Au-delà, la plus ancienne est oubliée : un client oublié
+/// n'est pas une panne, c'est une session qui se referme et un handshake à
+/// refaire.
+private final class RegistreDeClients: @unchecked Sendable {
+  private struct Cle: Hashable {
+    let adresse: String
+    let delai: TimeInterval
+  }
+
+  private let verrou = NSLock()
+  /// L'ordre d'insertion est TENU À LA MAIN (`ordre`), parce qu'un dictionnaire
+  /// Swift n'en garantit aucun — et « la plus ancienne » doit vouloir dire
+  /// quelque chose de stable.
+  private var clients: [Cle: any ClientDSH] = [:]
+  private var ordre: [Cle] = []
+  private let maximum = 3
+
+  func client(adresse: String, delai: TimeInterval) -> (any ClientDSH)? {
+    verrou.lock()
+    defer { verrou.unlock() }
+    return clients[Cle(adresse: adresse, delai: delai)]
+  }
+
+  func poser(_ client: any ClientDSH, adresse: String, delai: TimeInterval) {
+    verrou.lock()
+    defer { verrou.unlock() }
+    let cle = Cle(adresse: adresse, delai: delai)
+    if clients[cle] == nil { ordre.append(cle) }
+    clients[cle] = client
+    while ordre.count > maximum {
+      let ancienne = ordre.removeFirst()
+      clients.removeValue(forKey: ancienne)
+    }
   }
 }

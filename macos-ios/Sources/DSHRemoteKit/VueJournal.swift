@@ -83,6 +83,12 @@ struct VueJournal: View {
         ToolbarItem(placement: .primaryAction) {
           // Le suivi en direct se voit et se commande : un flux silencieux qui
           // s'arrête sans le dire laisserait croire que la session est inactive.
+          //
+          // TROIS ÉTATS, PAS DEUX. « En direct », « Suivi arrêté », et — depuis que
+          // le flux se rouvre tout seul — « Reconnexion… ». Le troisième n'est pas
+          // un ornement : sans lui, une coupure de réseau de dix secondes
+          // afficherait « En direct » sur un journal qui ne reçoit rien, ou
+          // « Suivi arrêté » alors que l'application est en train de réessayer.
           Button {
             if modele.enDirect {
               modele.arreterFlux()
@@ -91,9 +97,14 @@ struct VueJournal: View {
             }
           } label: {
             Label(
-              modele.enDirect ? "En direct" : "Suivi arrêté",
-              systemImage: modele.enDirect ? "dot.radiowaves.left.and.right" : "pause.circle")
-              .foregroundStyle((modele.enDirect ? EtatVisuel.pret : .attente).couleur)
+              modele.reconnexion?.libelle ?? (modele.enDirect ? "En direct" : "Suivi arrêté"),
+              systemImage: modele.reconnexion != nil
+                ? "arrow.clockwise"
+                : (modele.enDirect ? "dot.radiowaves.left.and.right" : "pause.circle")
+            )
+            .foregroundStyle(
+              (modele.reconnexion != nil ? EtatVisuel.attente : (modele.enDirect ? EtatVisuel.pret : .attente))
+                .couleur)
           }
         }
       }
