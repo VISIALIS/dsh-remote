@@ -2798,6 +2798,7 @@ Sources/
 │   ├── AppariementDeMachines.swift  # quelles adresses désignent la MÊME machine (règles pures)
 │   ├── ModeleApp+Derivations.swift  # ce que l'interface LIT du modèle (dérivations, sans état)
 │   ├── ModeleApp+Ecriture.swift     # composer, envoyer, annuler — et les règles qui évitent le doublon
+│   ├── ModeleApp+Flux.swift         # le direct : reprise, reconnexion, battement, arrière-plan, chemin réseau
 │   ├── AdresseMachine.swift         # http ou https, décidé par ce que le paquet autorise
 │   ├── CheminReseau.swift           # NWPathMonitor : l'état du chemin, et la règle de reprise (pure)
 │   ├── ConfigurationReseau.swift    # la configuration PARTAGÉE des deux clients, et ses deux dissymétries mesurées
