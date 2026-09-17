@@ -64,7 +64,7 @@ Vérifications : aperçu inspecté jusqu'à 40 px ; dimensions, alpha, bleu exac
 niveaux de gris contrôlés ; dix représentations ICNS réextraites de 16 à 1024 px ;
 paquet macOS reconstruit et signature vérifiée ; compilation du simulateur réussie,
 avec `AppIcon` présent pour les familles iPhone et iPad. Les vérifications du dépôt
-passent : secrets, syntaxe, 131 tests de plugins et 317 tests Swift. Ces commandes
+passent : secrets, syntaxe, 150 tests de plugins et 341 tests Swift. Ces commandes
 ne réinstallent pas les copies déjà présentes sur les appareils.
 
 ### Où vit quoi : cinq pièces, et une seule porte sur le disque
@@ -141,6 +141,52 @@ SwiftUI replie en pile sur iPhone. La seule différence réelle est la provenanc
    `tailscale serve --https 443`, sans aucune exception à poser — ou
    `Scripts/construire-app-ios.sh`, qui pose l'exception pour votre tailnet. Avec
    l'exception, elle conseille `http://<machine>.<tailnet>.ts.net`, et le dit.
+
+### Le schéma suit ce que le paquet autorise — et l'hôte ANNONCE le sien
+
+**Le défaut, et c'était le plus gros obstacle à la distribution.** Trois endroits
+fabriquaient une adresse en écrivant `"http://" + hote` : le QR d'appairage, la liste
+des machines découvertes, la saisie manuelle. Dans un paquet **sans** exception ATS —
+c'est-à-dire dans tout clone du dépôt — ces trois chemins produisaient une adresse que
+le système refuse (`-1022`), **appairage compris** : on ne pouvait même pas se connecter
+pour corriger.
+
+**Deux règles, et la plus sévère gagne** (`AdresseMachine`, pure, éprouvée avec les
+plists qu'on veut) :
+
+| Source | Ce qu'elle dit | Exemple |
+|---|---|---|
+| Le paquet (`ExceptionATS`, lu dans l'Info.plist **en cours d'exécution**) | ce qui est seulement **possible** | sans exception → `https://mac…` ; avec → `http://mac…` |
+| La charge utile du QR (5ᵉ segment, omis quand il vaut `http`) | ce que l'hôte **annonce** | `dshremote://mac…/code/v1/<secret>/https` |
+
+Un hôte publié en clair ne fait donc **jamais** viser le clair à un paquet qui l'interdit :
+l'adresse serait refusée avant de partir, et le message parlerait de transport au lieu du
+vrai problème. Et un hôte publié en HTTPS est suivi, exception ou pas.
+
+**Où le schéma de l'hôte est-il lu ?** Dans `tailscale serve status --json`, par une
+fonction PURE du plugin (`publicationDepuisServe`), éprouvée sur la forme **mesurée** de
+cette installation (publication en clair sur 80) et sur la forme HTTPS documentée par
+Tailscale — celle-là **non mesurée ici**, donc lue sur le drapeau du port plutôt que
+supposée. Sans binaire, sans publication ou devant une sortie inattendue, on retombe sur
+le clair : le comportement d'avant, jamais une adresse inventée.
+
+**Le schéma n'est pas une identité.** `IdentiteHote.cle` porte désormais le **nom et le
+port** — plus le transport : la même machine en `http` et en `https` est LA MÊME. Sans
+cela, passer le serveur en HTTPS faisait perdre le jeton rangé pour l'adresse en clair,
+et la machine jointe n'était plus reconnue. Les jetons rangés sous l'ancienne clé sont
+retrouvés, réécrits sous la clé neuve, et l'ancienne entrée est effacée : la migration ne
+demande aucun geste (`AdresseMachineTests` le prouve sur les deux chemins).
+
+**Ce qui reste à faire à la main, et c'est dit** : publier en HTTPS
+(`tailscale serve --https 443 http://127.0.0.1:3080`), puis **supprimer l'exception** —
+c'est-à-dire ne pas créer `Config/DomaineTailnet`, ou retirer la phase « Exception ATS »
+du projet. Tant que l'exception est là, l'application vise le clair : c'est ce que le
+paquet autorise, et le lui cacher serait pire.
+
+**Ce qui n'a PAS été mesuré** : la publication en HTTPS elle-même (`tailscale serve
+--https 443`) et la confiance d'iOS dans ce certificat. Cette machine publie en clair sur
+le port 80 ; la branche HTTPS du lecteur est écrite d'après la documentation et éprouvée
+par des vecteurs, pas par un aller-retour réel.
 
 ### Essai sur le simulateur iOS — fait, et ce qu'il a appris
 
@@ -1434,14 +1480,56 @@ retombe sur l'icône générique, ce qui reste correct.
 
 ### Le suivi de l'activité
 
-La liste se rafraîchit **toutes les 3 secondes** tant qu'un serveur est joignable,
-et l'interrupteur « Suivre l'activité » permet de l'arrêter.
+La liste se rafraîchit **toutes les 3 secondes** tant que quelque chose bouge, et
+**toutes les 15 secondes** quand rien ne tourne — et l'interrupteur « Suivre
+l'activité » permet de l'arrêter complètement.
 
 Sans ce suivi, les pastilles ne changeaient qu'au lancement ou par glissement :
 le propriétaire a vu « des points bleus partout » alors que le serveur signalait
 déjà deux sessions en cours. **Un indicateur d'activité qui ne s'actualise pas
 est pire qu'aucun indicateur** : il donne une image fausse avec l'autorité d'une
 mesure.
+
+**La cadence n'est plus fixe, et c'est une question de radio.** Trois secondes
+était la bonne réponse à « qu'est-ce qui tourne ? » — pas une raison pour la
+poser en boucle quand rien ne tourne et que personne ne regarde : sur un iPhone,
+chaque tour réveille la radio. La règle (`ModeleApp.cadence`, une fonction PURE,
+donc éprouvée seule) est : **rapide** si une session est `en_cours`, si une
+décision est attendue, ou si un flux est ouvert — c'est-à-dire si l'utilisateur
+vient d'envoyer un prompt ; **lente** sinon. Le repos reste à quinze secondes, et
+pas trente : au-delà, la liste cesserait d'être un tableau de bord pour devenir
+une photo ancienne — un tour lancé depuis un autre appareil doit apparaître.
+
+### L'arrière-plan : ce qui s'arrête, ce qui est REPRIS
+
+**Le défaut.** Trois boucles et une socket « tournaient » pendant qu'iOS gèle le
+processus, et la temporisation de reconnexion reprenait au réveil avec un quota
+entamé : le cas « l'application a dormi dix minutes et le flux affiche un échec ».
+`isIdleTimerDisabled` ne couvre que l'écran allumé, et rien n'accrochait
+`scenePhase` au modèle.
+
+**Ce qui est fait, à chaque phase** (`VuePrincipale` lit `scenePhase` parce que
+c'est elle qui tient le modèle) :
+
+| Phase | Ce qui se passe | Pourquoi |
+|---|---|---|
+| `.background` | boucles arrêtées, flux fermé, reconnexion en vol annulée | libérer la radio et ne pas brûler le quota pendant que le processus est gelé |
+| `.active` | quota de reconnexion **remis à neuf**, relecture **immédiate**, flux rouvert avec `depuisSeq` | l'utilisateur qui rouvre doit voir l'état de maintenant, sans doublon et sans perte |
+| `.inactive` | **rien** | iOS passe par cet état pour le sélecteur d'applications, une bannière ou le centre de contrôle : y couper le flux le romprait à chaque notification |
+
+**`enDirect` survit à l'arrière-plan**, et c'est délibéré : c'est l'INTENTION de
+l'utilisateur — « je suivais cette session » — et c'est elle qui décide de la
+réouverture. L'éteindre ferait disparaître le direct au retour, sans que personne
+ne l'ait demandé. Le quota, lui, n'est remis à neuf que s'il y a un flux à
+rouvrir : un compteur de reconnexion sans flux afficherait « Reconnexion… » dans
+la barre d'outils pour un suivi qui n'existe pas.
+
+**Éprouvé sur le modèle complet** (`CycleDeVieTests`, client factice) : après
+suspension, **aucun listage ne part** pendant quatre secondes alors que la
+cadence rapide est de trois — et la vérification inverse a été faite, l'assertion
+échoue si `arreterSuivi()` disparaît (`attendu 2, vu 3`). Au retour : un listage
+part **immédiatement**, et le quota repasse à zéro après avoir consommé un essai
+sur un flux réellement mort.
 
 ### Interroger ne suffisait pas : la liste ne se redessinait pas
 
@@ -2741,6 +2829,106 @@ base du flux recouvrirait la page affichée et le journal montrerait des doublon
 barre d'outils : un flux qui s'arrête en silence laisserait croire que la session est
 inactive.
 
+### Le battement de cœur : une socket morte SANS LE DIRE
+
+**Le défaut.** Une connexion TCP peut mourir sans fermeture et sans erreur — la radio
+d'un téléphone perd les paquets — et `receive()` reste alors suspendu. Rien ne vérifiait
+que les pings revenaient : le serveur envoie le sien toutes les 30 s et la plateforme y
+répond toute seule, mais personne ne lisait la réponse, ni d'un côté ni de l'autre.
+L'écran affichait « En direct » sur un journal qui ne recevrait plus rien.
+
+**Le remède, des deux côtés.** `FluxSession` envoie son propre ping toutes les **15 s**
+et exige le pong en **5 s** (`FluxSession.Battement`) ; sans pong, la séquence se termine
+par une `erreur` et le modèle rouvre avec `depuisSeq`. Le serveur, lui, ferme en `1008`
+après **deux pings sans aucun pong** — un filet de sécurité pour les clients qui ne
+battent pas la mesure, l'application voyant la coupure bien avant.
+
+**Les valeurs sont mesurées, pas choisies.** Quinze secondes, c'est deux fois moins que
+le ping du serveur : une socket morte est vue en vingt secondes au pire. Cinq secondes
+pour le pong laissent la place à un réveil radio normal (mesuré : 412 ms) sans laisser
+passer une vraie coupure. Le type `Battement` est injectable pour une seule raison : un
+test qui devrait attendre quinze secondes pour éprouver une coupure ne serait pas lancé.
+
+**Éprouvé sur le fil**, contre le serveur d'essai Node (`Outils/serveur-flux-essai.mjs`),
+dans ses deux sens :
+
+| Essai | Ce que le serveur fait | Ce qui est vérifié |
+|---|---|---|
+| `sourd` | répond au `demarrer`, puis **jamais** aux pings | la base arrive (la socket a vécu), puis le client conclut seul — et il a bien envoyé son ping |
+| normal | répond à chaque ping | le flux **survit** à plusieurs battements, sans aucune erreur |
+
+**Trois autres défauts corrigés dans la même pièce.** L'échec de `send` du `demarrer`
+était ignoré (`{ _ in }`) : socket ouverte, aucun message parti, journal figé sur
+« En direct » — il est maintenant traité comme une erreur de flux, donc une reconnexion.
+La demande d'ouverture était un JSON **interpolé** (`"session":"\(identifiant)"`), ce qui
+marchait par chance sur un `session-<uuid>` ; elle passe par `JSONEncoder`, et un
+identifiant hostile (`"`, `\`, saut de ligne) traverse l'encodage intact. Enfin le
+battement démarre **tout de suite**, et non après l'envoi : sur une socket qui ne se
+connecte pas, `send` ne rend jamais la main, et un battement qui l'attendrait ne
+commencerait jamais.
+
+### Le statut poussé, et le chemin réseau observé
+
+**LE STATUT ARRIVE PAR LE FLUX, PLUS SEULEMENT PAR LA BOUCLE.** L'hôte pousse
+`{ "type": "statut", "statut": "en_cours" }` sur le flux de la session concernée, à
+partir d'`agent/status` du harness. Le client le décode en `MessageFlux.statut`, et
+`ModeleApp.appliquerStatut` met à jour **cette** session — jamais une autre, jamais une
+session inconnue (elles n'existent pas encore dans la liste), et jamais sous une
+génération périmée. La pastille s'allume donc en quelques millisecondes au lieu des trois
+secondes de la boucle HTTP. **Un statut n'est pas un enregistrement** : il ne porte aucun
+`seq`, ne compte pas comme un évènement, et ne fait pas avancer le curseur de reprise —
+le confondre ferait sauter des enregistrements à la reconnexion.
+
+**LE CHEMIN RÉSEAU EST OBSERVÉ EN CONTINU** (`NWPathMonitor`, `CheminReseau.swift`).
+La détection du tailnet restait une mesure ponctuelle (`getifaddrs`) : juste, mais muette
+sur les changements — activer Tailscale, couper le Wi-Fi, passer en 5G, sortir d'une zone
+blanche ne s'apprenaient qu'à l'échec de la requête suivante. L'observateur notifie ces
+changements, et le modèle en fait trois choses : il **remesure** le fait « cet appareil
+est sur le tailnet » (l'observateur le déclenche, il ne le remplace pas : iOS ne publie
+pas l'état d'un tunnel VPN), il **reprend** ce qui avait échoué quand le chemin revient
+sans cible jointe, et il **espace** le suivi sur un chemin coûteux ou en « données
+réduites » — sans jamais le couper, ce qui rendrait les pastilles fausses.
+
+**CE QUI EST ÉPROUVÉ, ET CE QUI NE L'EST PAS.** La RÈGLE est pure et éprouvée sans
+réseau (`CheminReseauTests`) : les deux conditions de la reprise — chemin présent ET
+cible non jointe, les deux défauts opposés qu'elles séparent — et l'espacement. Le
+CHEMIN LUI-MÊME ne l'est pas : `NWPathMonitor` ne se pilote pas depuis un test, et
+couper le réseau de la machine qui exécute la suite n'est pas un test qu'on lance. Ce qui
+reste dans l'adaptateur ne décide rien : il traduit un `NWPath` en état et prévient.
+
+### Déclaration de confidentialité, et ce qu'elle affirme
+
+`App/PrivacyInfo.xcprivacy` est **écrit à la main**, référencé par le projet Xcode, et sa
+présence dans le paquet construit est **vérifiée** (`plutil -p
+DSHRemote.app/PrivacyInfo.xcprivacy` sur une construction simulateur : le fichier est là,
+et c'est bien celui-là). Son contenu dit deux choses, et les deux sont vérifiables dans le
+code : aucune donnée collectée, aucun suivi (`NSPrivacyTracking = false`), et **une seule
+API à raison obligatoire** — `UserDefaults`, pour les préférences, avec la raison
+`CA92.1`. Le jeton d'appareil n'y est jamais : il vit au trousseau.
+
+**La construction simulateur nommait un appareil précis** (« iPhone 17 Pro ») et ce nom a
+cessé de résoudre quand les runtimes installés ont changé : `xcodebuild` refusait la
+construction en listant des destinations macOS et watchOS. Le script construit désormais
+pour `generic/platform=iOS Simulator`, et la construction passe (`BUILD SUCCEEDED`).
+
+### La configuration réseau est PARTAGÉE — et le flux n'attend pas le réseau
+
+`RemoteClient` et `FluxSession` construisaient chacun leur `URLSessionConfiguration`, et
+elles avaient divergé : le client HTTP portait des délais mesurés, le flux aucun. Elles
+viennent maintenant de `ConfigurationReseau`, avec **deux dissymétries qui sont des
+mesures**, pas des oublis :
+
+- **`waitsForConnectivity` va aux requêtes, jamais au flux.** Recopier le drapeau — l'«
+  alignement » qui semblait évident — a fait **pendre** le client : vers
+  `http://127.0.0.1:1`, le test de flux a été tué après **90 secondes**, alors qu'il
+  passait en quelques millisecondes avant. Sur un flux, l'attente de connectivité du
+  système se substitue au lieu de rendre l'échec, et rien ne la borne. Le flux a mieux :
+  un échec rapide, et la politique de reconnexion (`Reconnexion`).
+- **Le délai de ressource du flux n'est pas `max(delai, 120)`.** Il borne la durée
+  TOTALE d'une tâche : recopié des requêtes, il couperait le direct toutes les deux
+  minutes, en boucle. Il reste celui de la plateforme (sept jours), et un test le fixe
+  pour que personne ne « corrige » cette dissymétrie.
+
 ### La reconnexion est AUTOMATIQUE — et la reprise, c'est ce qui la rend gratuite
 
 **Le défaut que ça corrige, et il était bête.** Le protocole a été conçu pour la
@@ -2821,6 +3009,32 @@ rallumerait tout seul une seconde plus tard.
 - **Aucun cookie, aucun cache.** `URLSessionConfiguration.ephemeral`, cache vidé,
   cookies refusés : un journal de session n'a rien à faire sur disque, et une réponse
   périmée induirait l'utilisateur en erreur.
+- **Un porteur ne se présente QU'À l'hôte dont il est le secret.** La sonde de
+  découverte interroge les machines du tailnet : elle n'envoie **aucun** jeton, et un
+  `401` lui suffit à conclure « DSH est là » — le service a répondu, seul le porteur
+  manquait. Avant, le jeton de la cible partait vers chaque machine interrogée, qui
+  pouvait le rejouer ; c'est la règle du modèle (chaque hôte a SON jeton) poussée
+  jusqu'au bout. Éprouvé par `SondeTests` (quatre machines, quatre porteurs vides).
+- **Le transport est compressé, et le client n'a rien à faire.** Mesuré : le serveur
+  du harness compresse déjà ses réponses (`Content-Encoding: gzip`), et `URLSession`
+  annonce `Accept-Encoding: gzip, deflate` — ni `br`, ni `zstd`. Sur l'instance
+  réelle : 138 429 → 19 317 octets pour la liste (7,2×), 492 021 → 129 656 pour une
+  page de journal (3,8×), corps identique après décompression. Détail et
+  configuration dans le README du plugin ; c'est pourquoi **aucune ligne de
+  compression n'existe côté Swift**.
+- **Le registre de clients porte une EMPREINTE du jeton**, jamais le jeton. Sans elle,
+  se ré-appairer sur la **même** machine — jeton révoqué, réinstallation, second scan du
+  même QR — rendait le client gardé avec l'ANCIEN porteur : `401` sur toutes les routes
+  jusqu'à éviction du registre ou redémarrage, sans qu'aucun écran ne dise pourquoi. Le
+  raisonnement écrit dans le code (« un jeton ne change qu'en changeant de cible ») était
+  faux pour le cas le plus courant. Éprouvé par `ConnexionTests`.
+- **Les jetons macOS restent EN MÉMOIRE, et c'est décidé.** Le passage au trousseau a
+  été envisagé au titre des finitions : il n'est PAS fait. L'application macOS est
+  construite en ad-hoc (`Scripts/empaqueter-app-macos.sh`), et un élément de trousseau
+  est lié à la signature : une reconstruction changerait l'identité, donc l'accès — au
+  mieux une invite système à chaque lancement, au pire un secret perdu. La conséquence
+  est DITE (le jeton d'un hôte distant est à recoller après un redémarrage) plutôt que
+  subie sous forme d'invites. Sur iPhone, le trousseau garde tout.
 - **Les erreurs disent quoi faire.** `jetonRefuse` dit « le jeton est absent, révoqué ou
   faux », pas « erreur 401 ».
 - **La version du protocole est vérifiée, pas supposée.** Un serveur qui annonce une

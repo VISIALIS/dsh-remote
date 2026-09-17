@@ -108,7 +108,7 @@ C'est la **transcription du secret** qui disparaît.
 ### La charge utile — un contrat entre deux langages
 
 ```
-dshremote://<hote>/<genre>/v1/<secret>
+dshremote://<hote>/<genre>/v1/<secret>[/<transport>]
 ```
 
 | Segment | Ce qu'il porte | Pourquoi ainsi |
@@ -117,20 +117,50 @@ dshremote://<hote>/<genre>/v1/<secret>
 | `<genre>` | `jeton` (étape A) ou `code` (étape B) | un jeton se garde, un code s'échange et expire : les confondre donnerait un `401` incompréhensible |
 | `v1` | la version du contrat, **par genre** | un client qui ne connaît pas la version refuse en le disant, au lieu de l'essayer |
 | `<secret>` | base64url, donc sans `/` | le découpage du chemin n'est jamais ambigu |
+| `<transport>` | `http` ou `https`, **omis quand il vaut `http`** | l'application ne peut pas deviner si le Mac est publié en clair sur 80 ou en HTTPS sur 443 — `tailscale serve --https` change le port ET le transport |
 
-Le **port est implicite** (80, la convention que `tailscale serve` publie) : un
-champ de plus serait un champ de plus à faire diverger. Mesure sur un hôte réel de
-40 caractères : **105 octets**, soit un QR de **version 6, ECC M, 41 × 41
-modules** (capacité 106) — et l'encodeur couvre jusqu'à la version 10 (214 octets).
+Le **port reste implicite** — 80 pour `http`, 443 pour `https`, les deux conventions
+que `tailscale serve` publie : un champ de port serait un champ de plus à faire
+divergier, alors que le transport, lui, change l'adresse que l'application vise.
+
+**LE TRANSPORT SE LIT, IL NE SE DEVINE PAS.** `tailscale serve status --json` dit
+sous quel schéma cette machine est publiée ; `publicationDepuisServe` (pure, dans
+`dynamic/tailscale.js`) en extrait `{ schema, port, hote }`, et le résultat est mis en
+cache comme la découverte. Sa forme est **mesurée** sur cette installation — publiée
+en clair sur le port 80 :
+
+```json
+{ "TCP": { "80": { "HTTP": true } },
+  "Web": { "macmini.<tailnet>.ts.net:80": { "Handlers": { "/": { "Proxy": "http://127.0.0.1:3080" } } } } }
+```
+
+La branche HTTPS suit la même forme et se lit sur le **drapeau du port**
+(`"443": { "HTTPS": true }`) : elle n'a **pas** été mesurée ici, donc on la lit au lieu
+de la supposer. Sans binaire, sans publication, ou devant une sortie inattendue, le
+schéma retombe sur `http` — le comportement d'avant, jamais une adresse inventée. Le
+cinquième segment est vérifié contre une liste blanche (`SCHEMAS`, miroir de
+`Appairage.transportsAnnoncables` en Swift) : `ftp`, `file` ou `javascript` ne servent
+jamais à construire une adresse.
+
+Mesure sur un hôte réel de 40 caractères : **105 octets** en clair, soit un QR de
+**version 6, ECC M, 41 × 41 modules** (capacité 106). En HTTPS, le segment ajoute
+6 octets (111) : l'encodeur choisit la version **automatiquement** (`pickVersion`,
+jusqu'à la version 10 — 214 octets), donc l'appairage reste lisible sans rien changer.
+
+**UN CLIENT PLUS ANCIEN REFUSE UNE CHARGE UTILE À CINQ SEGMENTS**, et c'est le bon
+comportement : il ne saurait pas viser HTTPS, et lui donner l'adresse en clair d'un
+hôte publié en HTTPS ne le mènerait nulle part. Le refus est net (« ce texte n'est pas
+une charge utile d'appairage »), pas silencieux.
 
 **LES DEUX MOITIÉS SONT ÉPROUVÉES CONTRE LE MÊME FICHIER.** Une charge utile est
 construite en JavaScript (l'hôte) et analysée en Swift (l'application) : rien
 n'aurait signalé une divergence avant l'appairage, chez l'utilisateur. Le fixture
 `packages/dsh-remote-swift/Tests/DSHRemoteKitTests/Fixtures/vecteurs-appairage.json`
 est rejoué par `tests/appairage.test.js` **et** par `AppairageTests.swift` : les
-charges valides, les refus (sept motifs), les seuils de secret, et jusqu'aux
-**bornes de laxité** du nom d'hôte — `mauvais-.exemple.test` est accepté des deux
-côtés, parce que la règle est « commence et finit alphanumérique », pas une règle
+charges valides — dont une en HTTPS —, les refus (sept motifs, plus le transport hors
+liste blanche et le sixième segment), les seuils de secret, la casse du transport, et
+jusqu'aux **bornes de laxité** du nom d'hôte — `mauvais-.exemple.test` est accepté des
+deux côtés, parce que la règle est « commence et finit alphanumérique », pas une règle
 DNS par étiquette. C'est la divergence qui coûte, pas la laxité.
 
 **UN GENRE CONNU N'EST PAS UN GENRE TRAITÉ.** Le contrat connaît `code` — la
@@ -680,6 +710,65 @@ un client plus ancien, qui n'envoie rien, reçoit exactement la même liste qu'a
 L'empreinte n'entre pas non plus dans le fixture partagé avec le Swift — c'est un
 mécanisme de transport, pas une donnée de protocole.
 
+### Le transport est DÉJÀ compressé — mesuré, et c'est le harness qui le fait
+
+**IL N'Y A RIEN À ACTIVER DANS LE PLUGIN, ET C'EST UNE MESURE, PAS UNE SUPPOSITION.**
+Le serveur web du harness (`@deepseek-ai/dsh-host-webserver`) monte un intergiciel
+gzip (`compression`, niveau 1, seuil 1 024 octets) devant **toutes** les réponses —
+routes de plugin comprises, puisque l'intergiciel enveloppe le gestionnaire de
+requêtes avant le routage. Le bundle `dsh-web-app` l'active déjà :
+
+```yaml
+# @deepseek-ai/dsh-web-app/cordis.patch.yml, ligne « webserver »
+compression: gzip
+compressionLevel: 1
+compressionThresholdBytes: 1024
+```
+
+Le défaut du paquet, lui, est `none` : un déploiement SANS le bundle web ne
+compresse rien. C'est le seul cas où il faut l'activer — et cela se fait dans le
+profil, pas dans le plugin :
+
+```yaml
+- id: webserver
+  config: { compression: gzip }
+```
+
+**Ce que ça donne, mesuré sur l'instance réelle** (profil `web`, plugin chargé,
+`curl` en boucle locale avec le jeton de l'appareil, `Accept-Encoding: gzip`) :
+
+| Route | Sans compression | Avec compression | Gain |
+|---|---|---|---|
+| `POST /v1/sessions` (200 sessions) | 138 429 octets | **19 317 octets** | **7,2×** (−86 %) |
+| `POST /v1/session/<id>` (200 enregistrements) | 492 021 octets | **129 656 octets** | **3,8×** (−74 %) |
+
+Le corps décompressé est **identique octet pour octet** à celui servi sans
+compression (même SHA-256), et les en-têtes disent ce qu'ils font :
+`Content-Encoding: gzip`, `Vary: Accept-Encoding`, `Transfer-Encoding: chunked`
+(le `Content-Length` est retiré par l'intergiciel).
+
+**POURQUOI LE PLUGIN N'AJOUTE PAS SA PROPRE COMPRESSION.** Ce serait du code mort
+au mieux — l'intergiciel saute les réponses qui portent déjà un
+`Content-Encoding` — et deux seuils configurables pour une seule décision au pire.
+Le harness possède déjà ce mécanisme, à un endroit qui couvre aussi l'interface
+web : le plugin le réutilise, comme il réutilise le serveur et sa clôture de
+confiance (RÈGLE #0, interdit #7).
+
+**L'`ETag` RESTE CELUI DU CONTENU, POUR LES DEUX CODAGES — et c'est assumé.** Un
+validateur fort devrait distinguer les représentations (RFC 9110 § 8.8.1) ; ici
+l'empreinte désigne le CONTENU, que le transport compresse ou non — c'est le
+comportement de l'intergiciel, mesuré : les deux réponses portent le même `ETag`.
+La confusion qu'un cache partagé pourrait en faire est hors de portée : les
+réponses portent `cache-control: no-store`, il n'y a qu'un client par jeton, et
+`Vary: Accept-Encoding` est posé. Le client, lui, ne s'en aperçoit pas : il
+compare ce qu'il a reçu à ce qu'on lui renvoie.
+
+**Ce que le client annonce, mesuré aussi** : `URLSession` (CFNetwork 3896, macOS
+27) envoie `Accept-Encoding: gzip, deflate` — ni `br`, ni `zstd`. Une compression
+brotli ou zstd n'aurait donc aucun preneur côté application, et `node:zlib` ne
+propose zstd que sur les versions de Node qui l'exposent. gzip est le seul
+codage qui sert ici.
+
 ### `POST /v1/session/<id>`
 
 ```json
@@ -835,19 +924,75 @@ Le serveur répond :
 | Message | Contenu |
 |---|---|
 | `base` | Le résumé de la session, les derniers enregistrements, et `dernierSeq`. |
-| `evenement` | Un enregistrement, dès qu'une écriture est détectée. |
+| `evenement` | Un enregistrement, **dès qu'il est validé** — par le bus, ou par la scrutation. |
 | `delta` | Le nouveau `dernierSeq`, après un groupe d'évènements. |
+| `statut` | `en_cours` / `inactif` : un changement d'état de l'agent de CETTE session. |
 | `tronque` | La fenêtre de lecture n'a pas suffi : le client doit redemander une page. |
 | `erreur` | Un message lisible, jamais une trace technique. |
+
+**LES ÉVÈNEMENTS ARRIVENT PAR LE BUS, PLUS PAR LA SEULE SCRUTATION.** Le harness
+émet chaque enregistrement **en mémoire** au moment où il le valide
+(`session/event`, émis synchroniquement à l'append — la persistance disque n'est
+elle-même qu'un abonné). Le plugin s'y abonne **une fois** pour toutes les sessions,
+et diffuse à la connexion qui suit la session concernée : l'évènement part en
+quelques millisecondes au lieu d'attendre un tour de minuterie.
+
+Ce que ça ne remplace PAS : **le disque reste la source de la `base` et de la
+reprise**, et la scrutation continue — espacée à **5 s** au lieu de 750 ms — pour une
+session écrite par un **autre processus**, que le bus de celui-ci ne voit pas. Un
+flux fermé est **retiré de la table du bus** : sans cela, un serveur qui vit des
+jours accumulerait des sockets mortes et écrirait dedans pour toujours.
+
+**LE STATUT EST POUSSÉ AUSSI.** `agent/status` est émis à chaque transition
+(`idle` → `running`) : le plugin le traduit en `en_cours` / `inactif` et le pousse
+sur le flux de **sa** session, à personne d'autre. C'est ce qui allume la pastille
+d'activité de l'application en quelques millisecondes au lieu des trois secondes de
+la boucle HTTP — sans réveiller la radio pour l'apprendre.
+
+**Ce qui n'est PAS transmis : aucun objet vivant du harness.** Le plugin ne lit que
+des scalaires — `session.id`, `agent.id`, `status` — et transmet l'enregistrement,
+qui est **gelé et déjà JSON** par construction (`dsh-session` le valide et le fige à
+l'append). Sérialiser un `Service`, une `Session` ou un `Snapshot` est interdit par
+la RÈGLE #0, et rien ici ne s'en approche.
+
+**Sans bus, rien ne change** : si `ctx.on` n'existe plus ou lève, le plugin garde
+exactement le comportement d'avant — scrutation à 750 ms. C'est la même dégradation
+que pour les autres API internes (RÈGLE #3).
 
 Le serveur sonde le fichier toutes les **750 ms** et ne décompresse que les **derniers
 64 Kio**, fenêtre qu'il élargit jusqu'à 8 Mio si nécessaire. Relire le journal entier à
 chaque tour ferait croître le coût sans fin sur une session longue ; comme un journal
 est append-only, tout ce qui précède la fin est déjà connu du client.
 
-Boucle de vie : un `ping` toutes les 30 s, et une fermeture `1008` si le client n'absorbe
-pas ses messages (4 Mio en attente) — un client lent ne doit pas faire enfler la mémoire
-du harness. Il se reconnecte avec `depuisSeq` et rattrape sans perte.
+**LES TRAMES FRAGMENTÉES SONT RÉASSEMBLÉES.** Un message peut arriver en plusieurs
+trames (RFC 6455 § 5.4) : la première sans le bit FIN, les suivantes en continuation
+(`0x0`). Le serveur ignorait tout ce qui n'était pas `0x1` — un client qui fragmentait
+n'obtenait donc **aucune réponse, sans erreur**, et le flux se taisait : la pire des
+pannes. Le réassemblage est borné (64 Mio, comme une trame seule), une continuation
+orpheline ferme en `1002`, une trame de contrôle peut s'intercaler sans perdre le
+message, et un message de données pendant un autre est refusé. Éprouvé par
+`tests/trames.test.js` (5 vecteurs) et par `tests/hote.test.js` — un `demarrer` coupé
+en deux, avec un ping au milieu, est servi.
+
+**Un flux suit UNE SEULE session.** Un second `demarrer` sur la même socket est refusé
+par un message `erreur` — et la connexion reste ouverte. Deux `demarrer` qui se croisent
+réécriraient `chemin`, `offset` et `seuilReprise` dans un ordre non déterministe, puisque
+la lecture disque qui les précède est asynchrone : le journal pourrait afficher un
+mélange de deux sessions sans qu'aucune erreur ne soit levée. Fermer la socket punirait
+le direct en cours pour une faute du client ; un refus explicite se lit et se corrige.
+Éprouvé par `tests/hote.test.js` (un flux ouvert sur `session-aaa`, un second `demarrer`
+sur `session-bbb` : une seule `base`, un refus nommé, la connexion vivante).
+
+Boucle de vie : un `ping` toutes les 30 s, une fermeture `1008` si le client n'absorbe
+pas ses messages (4 Mio en attente), et **une fermeture `1008` après deux pings sans
+aucun pong**. Ce dernier contrôle manquait, et son absence était coûteuse : le serveur
+envoyait bien un ping, mais `if (trame.opcode !== 0x1) continue` ignorait les pongs —
+donc rien ne lisait jamais la réponse. Un téléphone dont la radio s'éteint sans fermer
+la connexion laissait son minuteur vivant, et le serveur continuait de `stat` et de
+relire 64 Kio de journal toutes les 750 ms pour un appareil qui n'était plus là. Deux
+pings, et pas un : un ping peut se perdre, ou son pong revenir après l'échéance sur un
+réseau mobile. Un client qui n'absorbe plus, ou qui ne répond plus, se reconnecte avec
+`depuisSeq` et rattrape sans perte.
 
 `depuis` et `limite` paginent les enregistrements **filtrés**. `types` restreint
 aux types demandés. Sans `types`, les enregistrements volumineux
@@ -1359,6 +1504,8 @@ limite la surface de casse.
 | La capacité est annoncée séparément | `capacites.questions: true`, distinct de `capacites.approbations: false` — signaler n'est pas répondre |
 | L'observateur doit être EN TÊTE | 4 écouteurs inscrits sur le waterfall, le nôtre jamais atteint avant `{ prepend: true }` |
 | Le flux fonctionne depuis Swift | `dsh-remote-ctl <adresse> flux <id>` : 5 évènements et 3 deltas reçus en direct, 0 doublon, curseur conservé |
+| **Un flux suit UNE session : le second `demarrer` est refusé** | `tests/hote.test.js` : un flux ouvert sur `session-aaa`, un second `demarrer` sur `session-bbb` → une seule `base`, un refus nommé (`un flux suit deja une session`), et la connexion **reste ouverte** |
+| **Un client qui ne répond plus est FERMÉ** | même fichier, horloge simulée (`node:test` mock timers) : un ping sans pong ne ferme pas ; deux pings sans aucun pong ferment en `1008` — et un client qui répond à ses trois pings garde son flux |
 | Sans jeton : refus | `401` sur `/v1/sante` et sur l'`Upgrade` WebSocket |
 | **Un jeton en lecture seule n'écrit pas** | 10 tests (`tests/portee.test.js`) : l'écriture et l'annulation rendent `403 jeton en lecture seule` ET le contrôleur de session n'est **jamais** appelé ; un jeton d'écriture passe ; un enregistrement sans portée reste en écriture |
 | **La capacité d'écriture suit la portée** | `capacites.ecriture` et `capacites.annulation` valent `false` en lecture seule, `true` en écriture — l'application cache son composeur sur ce booléen |
@@ -1476,4 +1623,4 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 | 4 | Écriture : prompt, approbations, questions | **prompt, annulation et SIGNALEMENT d'une décision attendue livrés et prouvés** ; le « blocage » était une capture précoce du service, corrigée. Répondre aux questions et aux approbations reste hors d'atteinte : un seul répondeur terminal par déploiement, déjà occupé par l'interface web |
 | 5 | Installation et signature iOS | **livré** — app signée et installée sur l'iPhone du propriétaire, connectée au harness via Tailscale (106 sessions) |
 | 6 | Appairage par QR — **étape A** : contrat versionné, panneau durable, scanner iPhone, collage macOS | **livrée**, puis **remplacée par l'étape B** : la route qui publiait le jeton d'appareil a été retirée, et la règle « le jeton n'est jamais renvoyé par une route » est rétablie |
-| 6 | Appairage par QR — **étape B** : code à usage unique (2 min), échange contre un jeton **par appareil**, portée par appareil, liste et révocation dans le panneau | **écrite et éprouvée localement** (131 tests de plugins dont le flux complet, 317 tests Swift, construction iOS simulateur verte) ; l'épreuve du panneau exige un **redémarrage** du harness — procédure en **10 points** ci-dessus, **non encore exécutée** |
+| 6 | Appairage par QR — **étape B** : code à usage unique (2 min), échange contre un jeton **par appareil**, portée par appareil, liste et révocation dans le panneau | **écrite et éprouvée localement** (150 tests de plugins dont le flux complet, 341 tests Swift, construction iOS simulateur verte) ; l'épreuve du panneau exige un **redémarrage** du harness — procédure en **10 points** ci-dessus, **non encore exécutée** |
