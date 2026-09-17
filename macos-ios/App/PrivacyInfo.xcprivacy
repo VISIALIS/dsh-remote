@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    LA DECLARATION DE CONFIDENTIALITE DE « DSH REMOTE ».
+
+    POURQUOI ELLE EST ECRITE A LA MAIN, ET POURQUOI ELLE EST VIDE LA OU ON
+    POURRAIT ATTENDRE QUELQUE CHOSE. Apple demande a chaque application de
+    declarer ce qu'elle COLLECTE et POURQUOI elle utilise certaines API. Cette
+    application ne collecte rien : aucun analytics, aucune telemetrie, aucun
+    appel sortant hors du tailnet de l'utilisateur (REGLE #0 du depot — « aucune
+    donnee de session ne quitte la machine »). Les listes sont donc vides, et
+    c'est une AFFIRMATION VERIFIABLE dans le code, pas une formalite :
+    NSPrivacyTracking est faux, et aucune API de suivi n'existe ici.
+
+    LA SEULE API A RAISON OBLIGATOIRE EST UserDefaults : les preferences de
+    l'application (adresse memorisee, espaces replies, mode d'envoi) y sont
+    rangees. La raison CA92.1 est celle d'Apple pour « acceder a des informations
+    ecrites par la meme application » — ce qui est exactement le cas. Le JETON
+    d'appareil, lui, n'y est JAMAIS : il vit au trousseau.
+
+    CE QUE CE FICHIER NE COUVRE PAS, PARCE QUE LE CODE NE LES UTILISE PAS :
+    les API de mesure du disque, de l'horloge systeme et des horodatages de
+    fichiers — verifie dans Sources/ et App/, pas suppose.
+  -->
+  <key>NSPrivacyTracking</key>
+  <false/>
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array/>
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>CA92.1</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

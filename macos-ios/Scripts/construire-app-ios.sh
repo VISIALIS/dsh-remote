@@ -51,7 +51,14 @@ fichier_domaine="$racine/Config/DomaineTailnet"
 PB=/usr/libexec/PlistBuddy
 
 if [[ "${1:-}" == "--simulateur" ]]; then
-  destination='platform=iOS Simulator,name=iPhone 17 Pro'
+  # LA DESTINATION EST GÉNÉRIQUE, ET C'EST UNE MESURE. Elle nommait un appareil
+  # précis (« iPhone 17 Pro »), et ce nom a cessé de résoudre quand les runtimes
+  # installés ont changé : `xcodebuild` refusait la construction avec « Unable to
+  # find a device matching the provided destination specifier », en listant des
+  # destinations macOS et watchOS — un message qui n'oriente vers rien. Le script
+  # ne fait que CONSTRUIRE (l'installation sur un simulateur précis est un autre
+  # geste) : la destination générique suffit et ne périme pas.
+  destination='generic/platform=iOS Simulator'
   configuration=Debug
   paquet="$racine/.build/iphone/Build/Products/Debug-iphonesimulator/DSHRemote.app"
 else
