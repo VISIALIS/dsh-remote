@@ -18,6 +18,32 @@ Compagnon Swift : [`packages/dsh-remote-swift`](../dsh-remote-swift/) — client
 
 ---
 
+## Index — ce qui est contrat, ce qui est procédure, ce qui est carnet
+
+**POURQUOI CET INDEX.** Ce document a grossi par accumulation : chaque défaut corrigé
+y a laissé sa mesure, et le contrat stable s'est retrouvé voisin de récits
+d'investigation. Un lecteur qui cherche « que garantit le plugin ? » ou « comment le
+déployer ? » ne peut pas le deviner au sommaire. Les quatre familles sont donc
+nommées ici, dans l'ordre où on les lit.
+
+| Famille | Ce qu'on y trouve | Sections |
+|---|---|---|
+| **Contrat** (normatif, stable) | ce que l'hôte promet, et le format des échanges | `La charge utile — un contrat entre deux langages` · `Les trois routes de l'appairage` · `Le registre des jetons, et la portée par appareil` · `Protocole` et ses routes (`/v1/sessions`, `/v1/session/<id>`, `.../prompt`, `.../annuler`, `Upgrade /v1/flux`) · `Modèle de session` · `Jeton d'appareil` · `Portée du jeton` |
+| **Procédure** (à exécuter) | comment charger, essayer, vérifier | `Chargement` · `Ce que patchReload: live recharge` · `Le panneau` · `L'épreuve, après un redémarrage du harness` · `Les fichiers, et les tests` |
+| **Limites ouvertes** | ce que le plugin ne fait pas, et ce qui reste à prouver | `Limites assumées` · `Ce que cette route ne fait pas` · `Ce que le plugin ne fait PAS` · `Limites connues` · `Feuille de route` |
+| **Carnets de mesures** | des constats datés, avec leur méthode — **pas** des engagements | `Pourquoi ce plugin existe` · `Le transport est DÉJÀ compressé` · `Deux noms de journal — et 39 sessions qui n'existaient pas` · `« Le service est absent de la composition »` · `Une erreur avalée a coûté une heure de diagnostic` · `Le piège : dans un waterfall…` · `Ce qui a été mesuré, et qui a coûté du temps` · `Ce qui est gardé en mémoire, et POURQUOI DU TEXTE` · `Ce qui a été prouvé, et comment` |
+
+**LA RÈGLE DE LECTURE.** Une section de la quatrième famille explique POURQUOI une
+règle est ce qu'elle est : elle est précieuse pour la modifier, et elle n'a aucune
+autorité sur le comportement. En cas de doute, c'est la famille « Contrat » qui
+tranche — et si le code dit autre chose, c'est un défaut, pas une interprétation.
+
+**SÉCURITÉ.** `Sécurité — dérogations assumées à la RÈGLE #0` et `API internes
+utilisées` ne sont ni un carnet ni une procédure : ce sont des **déclarations
+obligatoires** (RÈGLE #0 et RÈGLE #3), à lire avant toute revue.
+
+---
+
 ## Pourquoi ce plugin existe
 
 Quatre constats **mesurés** sur cette installation (v0.1.5-rc.1), pas déduits de

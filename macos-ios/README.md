@@ -10,6 +10,25 @@ MISE À JOUR — jalons 2, 3 et l'écriture livrés : voir [Application](#applic
 
 ---
 
+## Index — contrat, procédure, mesures, limites
+
+**POURQUOI CET INDEX.** Ce document est un journal de bord autant qu'une référence :
+chaque essai sur l'appareil, chaque défaut corrigé y a laissé sa mesure — c'est ce qui
+en fait la valeur, et c'est aussi ce qui rend difficile de trouver « que garantit le
+client ? » quand on arrive. Les quatre familles sont nommées ici.
+
+| Famille | Où | Sections |
+|---|---|---|
+| **Contrat** (normatif) | ce que le client promet et suit | `Application` (l'interface et ses règles), `Flux temps réel` (le protocole, la reprise, le battement de cœur), `Jeton d'appareil`, `Choix de conception` |
+| **Procédure** (à exécuter) | installer, construire, essayer | `Construire et lancer`, `Installer sur l'iPhone`, `Amorce par fichier`, `Essai sur le simulateur iOS`, `Structure` |
+| **Mesures** (datées, sans autorité) | pourquoi une règle est ce qu'elle est | `Le suivi de l'activité`, `L'arrière-plan`, `La reconnexion est AUTOMATIQUE`, `Le battement de cœur`, `La configuration réseau est PARTAGÉE`, `Vue d'un défaut trouvé en regardant`, `Ce que l'essai a appris` |
+| **Limites ouvertes** | ce qui reste à prouver | `Ce qui reste non prouvé`, `Ce que cette route ne fait pas` (côté hôte), les notes « non mesuré » des sections de mesure |
+
+**CE QUI N'EST PAS DANS CE DOCUMENT** : le format des échanges (charge utile
+d'appairage, corps JSON, en-têtes) appartient au README du plugin — ici, c'est le
+CLIENT qui est décrit, et une divergence entre les deux moitiés est un défaut que les
+fixtures partagés attrapent.
+
 ## Application
 
 ```bash
