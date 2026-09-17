@@ -2795,6 +2795,10 @@ Sources/
 │   ├── Reconnexion.swift  # la politique de reconnexion (valeur pure, éprouvée)
 │   ├── RemoteClient.swift
 │   ├── ModeleApp.swift    # état de l'application — la vue ne parle jamais au réseau
+│   ├── AppariementDeMachines.swift  # quelles adresses désignent la MÊME machine (règles pures)
+│   ├── AdresseMachine.swift         # http ou https, décidé par ce que le paquet autorise
+│   ├── CheminReseau.swift           # NWPathMonitor : l'état du chemin, et la règle de reprise (pure)
+│   ├── ConfigurationReseau.swift    # la configuration PARTAGÉE des deux clients, et ses deux dissymétries mesurées
 │   ├── EtatMachine.swift  # l'état d'une machine : MÊMES MOTS au panneau latéral et sur sa page
 │   ├── ExceptionATS.swift # ce que CE paquet autorise en clair, lu dans son propre Info.plist
 │   ├── ConseilAdresse.swift  # l'adresse à conseiller, décidée par ce que le paquet autorise
