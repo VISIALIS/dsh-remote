@@ -2796,6 +2796,7 @@ Sources/
 │   ├── RemoteClient.swift
 │   ├── ModeleApp.swift    # état de l'application — la vue ne parle jamais au réseau
 │   ├── AppariementDeMachines.swift  # quelles adresses désignent la MÊME machine (règles pures)
+│   ├── ModeleApp+Derivations.swift  # ce que l'interface LIT du modèle (dérivations, sans état)
 │   ├── AdresseMachine.swift         # http ou https, décidé par ce que le paquet autorise
 │   ├── CheminReseau.swift           # NWPathMonitor : l'état du chemin, et la règle de reprise (pure)
 │   ├── ConfigurationReseau.swift    # la configuration PARTAGÉE des deux clients, et ses deux dissymétries mesurées

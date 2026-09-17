@@ -460,22 +460,8 @@ public final class ModeleApp {
   /// couverte à part (`ModeleApp.estBoucleLocale`).
   private var adressesDeCetAppareil: Set<String> = []
 
-  /// LES MACHINES TELLES QU'ELLES S'AFFICHENT — joignables d'abord, prêtes en premier.
-  ///
-  /// POURQUOI CE N'EST PAS `serveurs`. La liste rangée vient de la découverte ou de
-  /// l'hôte ; l'ordre d'affichage, lui, dépend d'un fait que cette liste ne porte
-  /// pas : le verdict de la SONDE (« cette machine sert DSH »). Le tri se fait donc
-  /// à la lecture, sur les deux seuls critères qui comptent — joignable, puis
-  /// prête — et JAMAIS sur la sélection.
-  ///
-  /// LE DÉFAUT QUE LA SÉLECTION A CAUSÉ, ET QUI A ÉTÉ RETIRÉ. Un tri « machine
-  /// connectée d'abord » a existé ici : la vignette visée SAUTAIT à l'instant où
-  /// on la touchait, puisque le toucher connecte. L'ordre d'une liste qu'on
-  /// parcourt du doigt ne doit dépendre que des machines, jamais de ce qu'on vient
-  /// de faire.
-  public var serveursAffiches: [ServeurMac] {
-    DecouverteServeurs.ordonnerPourAffichage(serveurs) { sertDsh($0) == true }
-  }
+  /// DÉRIVATION : la règle vit dans `ModeleApp+Derivations`.
+
 
   /// Le serveur dont la PAGE est ouverte, s'il y en a un.
   ///
@@ -1066,8 +1052,8 @@ public final class ModeleApp {
   public private(set) var terminees: Set<String> = []
   private var rappelsDeFin = RappelsDeFin()
 
-  /// Vrai si une fin de tour non vue mérite la pastille verte.
-  public func aTermine(_ identifiant: String) -> Bool { terminees.contains(identifiant) }
+  /// DÉRIVATION : la règle vit dans `ModeleApp+Derivations`.
+
 
   /// Confronte la liste reçue à la précédente pour détecter les fins de tour.
   ///
@@ -3209,17 +3195,8 @@ public final class ModeleApp {
     refus = nil
   }
 
-  /// Un tour s'exécute-t-il dans cette session, d'après la dernière liste reçue ?
-  ///
-  /// La question est posée au MODÈLE et non à la session affichée : l'égalité
-  /// d'une `SessionListee` ignore son statut (l'identité d'une session est son
-  /// identifiant, sinon la sélection se perdrait à chaque rafraîchissement), donc
-  /// une vue qui ne lirait que la valeur reçue ne se redessinerait pas quand
-  /// l'agent passe de `inactif` à `en_cours`. Lire `sessions` ici rétablit
-  /// l'observation.
-  public func estEnCours(_ identifiant: String) -> Bool {
-    sessions.first { $0.id == identifiant }?.statut == "en_cours"
-  }
+  /// DÉRIVATION : la règle vit dans `ModeleApp+Derivations`.
+
 
   /// Rend une erreur d'écriture lisible, en gardant le motif de l'hôte.
   private static func expliquerEcriture(_ erreur: any Error) -> String {
@@ -3259,39 +3236,11 @@ public final class ModeleApp {
   /// sans que le harness ait à exposer un point d'entrée de recherche.
   public var recherche: String = ""
 
-  /// Sessions retenues après recherche, puis filtre « vivantes ».
-  public var sessionsFiltrees: [SessionListee] {
-    let retenues = sessionsAffichees
-    let terme = recherche.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    guard !terme.isEmpty else { return retenues }
-    return retenues.filter { session in
-      if session.titreAffiche.lowercased().contains(terme) { return true }
-      if let cwd = session.resume.cwd, cwd.lowercased().contains(terme) { return true }
-      if let preset = session.resume.preset, preset.lowercased().contains(terme) { return true }
-      return false
-    }
-  }
+  /// DÉRIVATION : la règle vit dans `ModeleApp+Derivations`.
 
-  /// LE SERVEUR DONT ON MONTRE LES ESPACES DE TRAVAIL — son nom, jamais deviné.
-  ///
-  /// POURQUOI IL EXISTE. Les espaces listés ne sont pas un ensemble global : ce
-  /// sont ceux du serveur JOINT, et ils changent quand on change de machine. Or
-  /// le nom de ce serveur n'est visible nulle part quand une session est ouverte
-  /// — la vignette du carrousel n'affiche que le premier mot du nom, et deux
-  /// Macs peuvent le partager (« Portable Un », « Portable Deux »). L'en-tête de
-  /// la section le dit donc, à l'endroit où le lecteur se pose la question.
-  ///
-  /// `nil` quand il n'y a RIEN à attribuer : une liste vide n'appartient à
-  /// personne, et nommer un serveur au-dessus de rien laisserait croire qu'il a
-  /// répondu.
-  public var nomDuServeurAffiche: String? {
-    guard !sessions.isEmpty || !espacesHote.isEmpty else { return nil }
-    if let nom = serveurChoisi?.nom, !nom.isEmpty { return nom }
-    if let nom = nomServeur, !nom.isEmpty { return nom }
-    // Adresse saisie à la main, machine inconnue de la liste : on dit l'hôte,
-    // qui est un fait, plutôt que rien.
-    return ExceptionATS.hote(adresse)
-  }
+
+  /// DÉRIVATION : la règle vit dans `ModeleApp+Derivations`.
+
 
   /// LES ÉTAPES D'UNE MACHINE — ou la liste de travail quand il n'y en a pas.
   ///
