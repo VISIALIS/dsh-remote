@@ -22,6 +22,10 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import zlib from 'node:zlib'
 
 import { analyser } from '../dynamic/appairage.js'
 import { apply, configurerTtlCode, inject, name, VERSION_PROTOCOLE } from '../dynamic/host.js'
@@ -73,7 +77,7 @@ function coffreFactice({ historique = JETON_HISTORIQUE, registre = null, avecSup
 }
 
 /** Un `ctx` minimal : juste ce qu'`apply` exige pour enregistrer ses routes. */
-function contexteFactice({ coffre = coffreFactice(), avecNavigateur = true, authentifie = true } = {}) {
+function contexteFactice({ coffre = coffreFactice(), avecNavigateur = true, authentifie = true, agents = null } = {}) {
   const routes = []
   const ctx = {
     routes,
@@ -92,6 +96,11 @@ function contexteFactice({ coffre = coffreFactice(), avecNavigateur = true, auth
         }
       }
       if (service === 'credentials') return coffre
+      // LES AGENTS NE SONT PAS TOUJOURS FOURNIS, et c'est le cas nominal de ce
+      // test : `statut` vaut alors `null` (« état inconnu »). Le test d'empreinte
+      // les injecte pour rejouer ce qu'un VRAI harness fait — un agent qui passe
+      // de `idle` à `running` sans qu'aucun fichier ne bouge.
+      if (service === 'agents') return agents ?? undefined
       if (service === 'connection') {
         if (!avecNavigateur) return undefined
         return {
@@ -182,6 +191,96 @@ async function demarrer(options = {}, config = { journaliser: false }) {
 }
 
 const entete = (valeur) => ({ authorization: 'Bearer ' + valeur })
+
+/**
+ * UNE RACINE DE SESSIONS FICTIVE, DANS UN DOSSIER TEMPORAIRE.
+ *
+ * POURQUOI ELLE EST ECRITE EN VRAI, ET PAS SIMULEE. La liste des sessions lit un
+ * ARBRE DE DOSSIERS : deux noms de journal possibles par session, un `stat` pour
+ * chacun, une mise en cache par `(taille, mtime)`. Simuler `readdir` prouverait
+ * que le code appelle ce qu'on a simule — pas qu'il trouve un journal reel, ni
+ * qu'une ECRITURE change l'empreinte. Ici, une seule ligne est ajoutee au
+ * fichier, et c'est bien le `stat` du plugin qui doit s'en apercevoir.
+ *
+ * `DSH_HOME` est pose sur ce dossier : c'est exactement la variable que `apply`
+ * lit pour resoudre `<DSH_HOME>/sessions` — donc aucun test ne touche a la vraie
+ * installation, et aucun journal reel n'est lu ni ecrit.
+ *
+ * Le dossier de projet imite la forme reelle (`--tmp-essai--`), et l'horodatage
+ * est FICTIF et fixe : un test qui depend de l'heure de la machine finit par
+ * echouer un jour sans que personne n'ait rien change.
+ */
+async function arbreDeSessions({ sessions = ['session-aaa', 'session-bbb'] } = {}) {
+  const racine = await mkdtemp(join(tmpdir(), 'dsh-remote-test-'))
+  const ancien = process.env.DSH_HOME
+  process.env.DSH_HOME = racine
+  const projet = '--tmp-essai--'
+  const dossier = (identifiant) => join(racine, 'sessions', projet, identifiant)
+  /** Une ecriture de journal est UNE TRAME ZSTD, comme le vrai format. */
+  const trame = (objet) => zlib.zstdCompressSync(Buffer.from(JSON.stringify(objet) + '\n', 'utf8'))
+  // LE JOURNAL EST RECONSTRUIT EN ENTIER A CHAQUE ECRITURE, depuis ce registre.
+  // Ecrire la seule trame nouvelle ECRASERAIT l'en-tete : la session perdrait son
+  // identifiant, et le test mesurerait tout autre chose que ce qu'il annonce.
+  const ecritures = new Map()
+  const ecrire = async (identifiant, ...objets) => {
+    ecritures.set(identifiant, [...(ecritures.get(identifiant) ?? []), ...objets])
+    await mkdir(dossier(identifiant), { recursive: true })
+    await writeFile(join(dossier(identifiant), 'session.v3.jsonl.zstd'), Buffer.concat(ecritures.get(identifiant).map(trame)))
+  }
+  let horodatage = 1_700_000_000_000
+  for (const identifiant of sessions) {
+    horodatage += 1000
+    await ecrire(identifiant, {
+      type: 'session',
+      id: identifiant,
+      cwd: '/tmp/essai',
+      createdAt: horodatage,
+      agentPreset: 'standard',
+    })
+  }
+  return {
+    racine,
+    /** Ajoute une ecriture a une session — et fait donc bouger sa taille. */
+    ajouter: (identifiant, seq) => ecrire(identifiant, { type: 'assistant/message', seq, time: horodatage + seq }),
+    /** Restaure `DSH_HOME` : sans ca, un test suivant lirait un dossier efface. */
+    nettoyer: async () => {
+      if (ancien === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = ancien
+      await rm(racine, { recursive: true, force: true })
+    },
+  }
+}
+
+/** Demande UNE PAGE d'un journal, comme le fait le client a l'ouverture. */
+async function demanderUnePage(ctx, identifiant, depuis) {
+  const reponse = reponseFactice()
+  const chemin = '/dsh-remote/v1/session'
+  route(ctx, chemin).handler(
+    requete({
+      method: 'POST',
+      url: chemin + '/' + identifiant,
+      headers: entete(JETON_HISTORIQUE),
+      corps: { depuis, limite: 200 },
+    }),
+    reponse,
+  )
+  return attendre(reponse)
+}
+
+/** Interroge la liste des sessions, avec l'en-tete conditionnel demande. */
+async function demanderLaListe(ctx, entetesSupplementaires = {}, corps = { limite: 2 }) {
+  const reponse = reponseFactice()
+  route(ctx, '/dsh-remote/v1/sessions').handler(
+    requete({
+      method: 'POST',
+      url: '/dsh-remote/v1/sessions',
+      headers: { ...entete(JETON_HISTORIQUE), ...entetesSupplementaires },
+      corps,
+    }),
+    reponse,
+  )
+  return attendre(reponse)
+}
 
 /** Frappe un code, rend son secret. */
 async function frapperUnCode(ctx) {
@@ -579,4 +678,101 @@ test('les routes natives refusent toujours Origin, les routes navigateur non', (
     appairage,
   )
   assert.notEqual(appairage.code, 403, 'la route du panneau ne refuse pas Origin')
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// L'EMPREINTE DE LA LISTE — 115 Kio remplaces par une chaine
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// POURQUOI CES TROIS TESTS, ET PAS UN SEUL. Le gain de cette optimisation est
+// invisible : un `304` qui remplace 115 Kio ne se voit pas a l'ecran. Ce qui se
+// verrait, en revanche, c'est un `304` servi a tort — une liste qui ne bouge plus
+// alors que quelque chose a change. Les trois cas ou l'empreinte DOIT changer
+// sont donc eprouves separement, et le troisieme (l'etat d'un agent) est celui
+// qu'une empreinte fondee sur les seuls fichiers aurait rate.
+
+test('la liste des sessions porte une empreinte, et un 304 sans corps la rejoue', async () => {
+  const arbre = await arbreDeSessions()
+  try {
+    const ctx = await demarrer()
+    const premier = await demanderLaListe(ctx)
+
+    assert.equal(premier.code, 200, 'corps : ' + premier.corps)
+    const empreinte = premier.entetes.etag
+    assert.equal(typeof empreinte, 'string', 'un ETag doit etre pose sur la liste')
+    assert.ok(premier.corps.length > 0)
+    assert.equal(premier.json().sessions.length, 2, 'les deux sessions de l arbre')
+    // L'EMPREINTE N'EST PAS PUBLIEE DANS LE CORPS : c'est un en-tete, pas un
+    // champ de contrat. Un client plus ancien ne doit rien voir de nouveau.
+    assert.equal('empreinte' in premier.json(), false)
+
+    const second = await demanderLaListe(ctx, { 'if-none-match': empreinte })
+    assert.equal(second.code, 304, 'la meme empreinte doit rendre 304')
+    assert.equal(second.corps, '', 'un 304 ne porte AUCUN corps')
+    assert.equal(second.entetes.etag, empreinte)
+    assert.equal(second.entetes['cache-control'], 'no-store')
+
+    // Une empreinte perimee rend la liste entiere : le 304 n'est pas un piege.
+    const perime = await demanderLaListe(ctx, { 'if-none-match': '"empreinte-perimee"' })
+    assert.equal(perime.code, 200)
+    assert.equal(perime.json().sessions.length, 2)
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+test('une ECRITURE de journal change l empreinte, meme sans nouvelle session', async () => {
+  const arbre = await arbreDeSessions()
+  try {
+    const ctx = await demarrer()
+    const avant = await demanderLaListe(ctx)
+    assert.equal(avant.code, 200)
+
+    // Une SEULE ligne de plus dans un journal : ni session nouvelle, ni nom de
+    // fichier change. C'est le cas qu'un client ne doit pas manquer.
+    await arbre.ajouter('session-bbb', 7)
+
+    const apres = await demanderLaListe(ctx, { 'if-none-match': avant.entetes.etag })
+    assert.equal(apres.code, 200, 'la liste a bouge : pas de 304')
+    assert.notEqual(apres.entetes.etag, avant.entetes.etag)
+    const bbb = apres.json().sessions.find((session) => session.id === 'session-bbb')
+    assert.equal(bbb.dernierSeq, 7, 'le nouveau seq est bien publie')
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+test('un agent qui passe EN COURS change l empreinte sans qu aucun fichier ne bouge', async () => {
+  const arbre = await arbreDeSessions()
+  try {
+    // L'ETAT VIVANT VIENT DU PROCESSUS, PAS DU DISQUE : c'est le piege de cette
+    // optimisation. `statut` valait `idle` a l'instant d'avant, et l'agent passe
+    // a `running` — aucune ecriture, donc aucune date de fichier ne change. Une
+    // empreinte fondee sur `taille` et `mtime` repondrait ici `304`, et la
+    // pastille d'activite de l'application resterait figee.
+    let etat = 'idle'
+    const agents = {
+      get: () => ({ id: 'session-bbb', status: etat }),
+      // `estVivante` interroge AUSSI les racines d'agents : c'est la forme que le
+      // vrai harness publie, et un faux qui ne l'aurait pas rendrait le test faux
+      // pour une raison qui n'a rien a voir avec l'empreinte.
+      roots: () => [{ id: 'session-bbb', session: { id: 'session-bbb' } }],
+    }
+    const ctx = await demarrer({ agents })
+
+    const avant = await demanderLaListe(ctx)
+    assert.equal(avant.code, 200)
+    const bbbAvant = avant.json().sessions.find((session) => session.id === 'session-bbb')
+    assert.equal(bbbAvant.statut, 'inactif')
+    assert.equal(bbbAvant.vivante, true, 'l agent connait la session : elle est vivante')
+
+    etat = 'running'
+
+    const apres = await demanderLaListe(ctx, { 'if-none-match': avant.entetes.etag })
+    assert.equal(apres.code, 200, 'un tour vient de demarrer : pas de 304')
+    assert.notEqual(apres.entetes.etag, avant.entetes.etag)
+    assert.equal(apres.json().sessions.find((session) => session.id === 'session-bbb').statut, 'en_cours')
+  } finally {
+    await arbre.nettoyer()
+  }
 })

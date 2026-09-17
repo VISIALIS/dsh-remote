@@ -67,6 +67,12 @@ import { join } from 'node:path'
 // éprouvables sans lancer de processus (voir `tests/tailscale.test.js`).
 import { decouvrirMachines } from './tailscale.js'
 
+// LE CACHE DE TEXTE DES JOURNAUX vit dans son propre fichier : il ne depend que
+// d'une fonction de lecture et d'une fonction de decodage, donc il s'eprouve seul
+// — un cache qu'on ne peut verifier qu'en montant un harness entier n'est pas
+// verifie. Le POURQUOI du texte plutot que des objets est mesure, et documente la.
+import { creerCacheTexte } from './cache-texte.js'
+
 // LA LECTURE DU JOURNAL vit dans son propre fichier : décodage des trames zstd,
 // analyse des lignes JSONL, et résumé d'une session. Ce sont des règles pures —
 // donc éprouvables sans harness (voir `tests/journal.test.js`).
@@ -505,6 +511,19 @@ export function apply(ctx, config) {
   const cache = new Map()
   let dernierNettoyage = 0
 
+  // ── Le cache du TEXTE des journaux lus en entier ───────────────────────────
+  // La regle (bornes, cle de validite, LRU) vit dans `cache-texte.js`, ou elle est
+  // eprouvee seule. Ici, on ne fait que lui donner ses deux dependances.
+  const cacheTexte = creerCacheTexte({ lire: readFile, decoder: decoderJournal })
+
+  /** Le journal d'un fichier, decompresse — servi par le cache quand rien n'a bouge. */
+  const decoderFichier = (fichier, information) => cacheTexte.lignes(fichier, information)
+
+  const viderLesCaches = () => {
+    cache.clear()
+    cacheTexte.vider()
+  }
+
   const nettoyerCache = () => {
     const maintenant = Date.now()
     if (maintenant - dernierNettoyage < 60000) return
@@ -559,8 +578,7 @@ export function apply(ctx, config) {
           faits = { illisible: 'journal trop volumineux (' + information.size + ' octets)' }
         } else {
           try {
-            const tampon = await readFile(fichier)
-            const { lignes, tronque } = decoderJournal(tampon)
+            const { lignes, tronque } = await decoderFichier(fichier, information)
             const enregistrements = []
             for (const ligne of lignes) {
               const analyse = analyserLigne(ligne)
@@ -596,7 +614,15 @@ export function apply(ctx, config) {
       }
     }
     resultats.sort((a, b) => (b.dernierEvenementLe ?? b.modifieLe) - (a.dernierEvenementLe ?? a.modifieLe))
-    return { racine, total: resultats.length, sessions: resultats.slice(0, limite) }
+    // L'empreinte est calculée AVANT la troncature : elle décrit la liste
+    // complète, donc elle ne dépend pas de la page demandée — la `limite` est
+    // dans l'empreinte, justement pour que deux pages ne se confondent pas.
+    return {
+      racine,
+      total: resultats.length,
+      empreinte: empreinteDeListe(resultats, limite),
+      sessions: resultats.slice(0, limite),
+    }
   }
 
   /**
@@ -621,6 +647,62 @@ export function apply(ctx, config) {
     } catch {
       return null
     }
+  }
+
+  /**
+   * L'EMPREINTE DE LA LISTE PUBLIÉE — ce qui remplace 115 Kio par une chaîne.
+   *
+   * POURQUOI ELLE EXISTE. La liste était retransmise EN ENTIER toutes les trois
+   * secondes par l'application, alors qu'un tailnet ne change pas d'une seconde à
+   * l'autre : mesuré sur cette installation, 172 sessions × 685 octets ≈ **115
+   * Kio par appel**, vingt fois par minute, soit ~135 Mio par heure d'usage actif
+   * pour un contenu presque toujours identique. L'application envoie désormais
+   * `If-None-Match`, et un `304` sans corps répond « rien n'a changé ».
+   *
+   * POURQUOI PAS SEULEMENT `taille` ET `mtime`. C'est le piège de cette
+   * optimisation, et il est silencieux : `statut` (`en_cours`), `vivante` et
+   * `attendReponse` viennent du PROCESSUS, pas du fichier. Une empreinte fondée
+   * sur les seuls états de fichier rendrait `304` pendant qu'un tour démarre ou
+   * qu'une question attend une réponse — l'écran gèlerait ses pastilles, et
+   * l'information la plus actionnable de la liste (« une décision humaine est
+   * attendue ») ne remonterait plus.
+   *
+   * CE QUI ENTRE DANS L'EMPREINTE, ET RIEN DE PLUS : pour chaque session, les
+   * marqueurs de FICHIER (`modifieLe`, `octets`, `dernierSeq`) et les marqueurs de
+   * PROCESSUS (`vivante`, `statut`, `attendReponse`) — plus la `limite`, car deux
+   * listes tronquées différemment ne sont pas la même représentation, et un client
+   * qui réutiliserait son empreinte en changeant de limite recevrait un `304`
+   * au-dessus d'une liste d'une autre longueur.
+   *
+   * LE COÛT EST CELUI DU BALAYAGE, PAS DE LA SÉRIALISATION : l'empreinte est
+   * calculée sur ce que `listerSessions` a DÉJÀ en mémoire. L'ancien chemin
+   * sérialisait ces 115 Kio (avec `content-length`, donc un second passage sur le
+   * tampon) avant de les écrire : un `304` évite les deux.
+   *
+   * @param {object[]} resultats - les entrées DÉJÀ mises en forme, liste complète
+   * @param {number} limite
+   * @returns {string} une empreinte stable pour un contenu identique
+   */
+  const empreinteDeListe = (resultats, limite) => {
+    const condensat = createHash('sha256')
+    condensat.update('dsh-remote/liste/v1\u0000' + limite + '\u0000' + resultats.length + '\u0000')
+    for (const entree of resultats) {
+      condensat.update(
+        [
+          entree.id ?? '',
+          entree.modifieLe ?? '',
+          entree.octets ?? '',
+          entree.dernierSeq ?? '',
+          entree.vivante === true ? 1 : 0,
+          entree.statut ?? '',
+          entree.attendReponse === true ? 1 : 0,
+        ].join('\u0001') + '\u0000',
+      )
+    }
+    // Guillemets : la forme d'un `ETag` fort (RFC 9110, § 8.8.3). L'empreinte
+    // porte sur le CONTENU de la représentation, pas sur ses octets : deux corps
+    // identiques la partagent, ce qui est exactement ce qu'on compare.
+    return '"' + condensat.digest('base64url') + '"'
   }
 
   /**
@@ -759,8 +841,11 @@ export function apply(ctx, config) {
     const trouve = await resoudreJournal(identifiant)
     if (trouve === null) return { erreur: 'session inconnue', code: 404 }
     if (trouve.information.size > PLAFOND_FICHIER) return { erreur: 'journal trop volumineux', code: 413 }
-    const tampon = await readFile(trouve.fichier)
-    const { lignes, tronque } = decoderJournal(tampon)
+    // LA LECTURE PASSE PAR LE CACHE : le client demande une page a l'ouverture,
+    // puis une autre aussitot apres (l'en-tete, puis les enregistrements) — et
+    // c'est le MEME journal, donc le meme decodage. Le cache est valide par
+    // `(taille, mtime)`, donc une session en train d'ecrire est relue.
+    const { lignes, tronque } = await decoderFichier(trouve.fichier, trouve.information)
     const tous = []
     for (const ligne of lignes) {
       const analyse = analyserLigne(ligne)
@@ -798,13 +883,18 @@ export function apply(ctx, config) {
 
   // ── Réponses HTTP ──────────────────────────────────────────────────────────
 
-  const envoyer = (res, code, charge) => {
+  const envoyer = (res, code, charge, etag = null) => {
     const corps = JSON.stringify(charge)
-    res.writeHead(code, {
+    const entetes = {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
       'content-length': Buffer.byteLength(corps),
-    })
+    }
+    // L'`ETag` est OPTIONNEL : seules les réponses dont l'empreinte est connue
+    // (la liste des sessions) en portent un. En poser un partout promettrait une
+    // validité qu'aucune autre route ne sait calculer.
+    if (typeof etag === 'string') entetes.etag = etag
+    res.writeHead(code, entetes)
     res.end(corps)
   }
 
@@ -1482,13 +1572,59 @@ export function apply(ctx, config) {
     },
   })
 
+  /**
+   * Répond `304 Not Modified` : la liste n'a pas bougé depuis la dernière fois.
+   *
+   * POURQUOI UNE RÉPONSE À PART, ET POURQUOI ELLE PORTE L'EN-TÊTE. Un `304` est
+   * la seule réponse de ce plugin qui n'a pas de corps : elle ne peut donc pas
+   * passer par `envoyer`, qui sérialise une charge. Les règles de cache valent
+   * aussi pour elle (`no-store`), sans quoi un intermédiaire pourrait la garder.
+   */
+  const envoyerNonModifie = (res, empreinte) => {
+    res.writeHead(304, {
+      etag: empreinte,
+      'cache-control': 'no-store',
+      'content-length': '0',
+    })
+    res.end()
+  }
+
+  /**
+   * La requête porte-t-elle DÉJÀ l'empreinte de la liste courante ?
+   *
+   * L'en-tête `If-None-Match` peut arriver sous trois formes — chaîne, tableau
+   * (en-tête répété), ou liste séparée par des virgules — et un client qui
+   * n'envoie rien reçoit simplement la liste, comme avant. La comparaison est
+   * exacte, et non un « contient » approximatif : deux `ETag` forts ne sont égaux
+   * que s'ils sont identiques.
+   */
+  const listeInchangee = (req, empreinte) => {
+    const brut = req.headers['if-none-match']
+    const presented = Array.isArray(brut) ? brut.join(',') : typeof brut === 'string' ? brut : ''
+    if (presented.length === 0) return false
+    if (presented.trim() === '*') return true
+    return presented.split(',').some((element) => element.trim() === empreinte)
+  }
+
   const repondreListe = async (req, res, demande) => {
     // Toute erreur est convertie en reponse JSON explicite. Une exception non
     // rattrapee ici deviendrait un 400 vide, indiscernable d'une requete
     // malformee — et donc indebogable depuis le client.
     try {
       const resultat = await listerSessions(demande)
-      envoyer(res, 200, { protocole: VERSION_PROTOCOLE, ...resultat })
+      // RIEN N'A CHANGÉ : on répond AVANT de sérialiser quoi que ce soit. C'est
+      // tout le gain — l'ancien chemin construisait les 115 Kio (et les comptait
+      // pour `content-length`) pour les envoyer à un client qui les avait déjà.
+      if (typeof resultat.empreinte === 'string' && listeInchangee(req, resultat.empreinte)) {
+        envoyerNonModifie(res, resultat.empreinte)
+        tracer(req, 304, 'liste inchangee')
+        return
+      }
+      // L'EMPREINTE EST UN EN-TÊTE, PAS UN CHAMP DU CONTRAT. Elle ne doit donc
+      // PAS entrer dans le corps : un client qui l'y lirait en ferait une donnée
+      // de protocole, et le fixture partagé avec le Swift ne la connaît pas.
+      const { empreinte, ...publie } = resultat
+      envoyer(res, 200, { protocole: VERSION_PROTOCOLE, ...publie }, empreinte)
       tracer(req, 200, resultat.total === undefined ? '' : resultat.total + ' sessions')
     } catch (erreur) {
       envoyer(res, 500, { erreur: 'listage impossible', detail: String(erreur?.message ?? erreur) })
@@ -1956,7 +2092,10 @@ export function apply(ctx, config) {
         // deja retiree
       }
     }
-    cache.clear()
+    // LES DEUX CACHES SONT VIDES ICI, ET PAS SEULEMENT CELUI DES FAITS : le cache
+    // de texte tiendrait sinon des journaux entiers apres le retrait des routes —
+    // de la memoire du harness gardee pour un plugin qui n'est plus monte.
+    viderLesCaches()
     console.log('[dsh-remote] routes retirees')
   }
 

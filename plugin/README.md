@@ -398,6 +398,7 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 | `package.json` | ce qui rend `client.js` **découvrable** (`dsh.client`, `exports["./client"]`) — aucune installation promise (RÈGLE #5) |
 | `dynamic/tailscale.js` | la découverte du tailnet — lancement du CLI local et **analyse pure** de sa sortie |
 | `dynamic/journal.js` | la lecture d'un journal de session : trames zstd concaténées, lignes JSONL, résumé |
+| `dynamic/cache-texte.js` | le cache des journaux lus en entier : clé `(taille, mtime)`, LRU, deux bornes — éprouvé seul |
 | `dynamic/trames.js` | le protocole WebSocket écrit à la main (RFC 6455) : texte, ping, pong, fermeture |
 | `tests/appairage.test.js` | le contrat d'appairage, rejoué contre le fixture **partagé avec le Swift** |
 | `tests/hote.test.js` | le module hôte chargé **hors harness** : routes et gardes, puis le flux complet frappe → échange → jeton → portée → révocation |
@@ -406,11 +407,12 @@ Le plugin est un **module ES**, chargé par le loader d'un profil : il peut donc
 | `tests/outils/decoder-qr.swift` | le décodeur **indépendant** (Vision/macOS) qui lit cette image |
 | `tests/tailscale.test.js` | les règles de la découverte, éprouvées sans lancer Tailscale |
 | `tests/journal.test.js` | les règles de lecture du journal, éprouvées avec de vraies trames zstd |
+| `tests/cache-texte.test.js` | le cache de texte, éprouvé seul avec un **compteur de lectures disque** |
 | `tests/contrat.test.js` | le contrat avec le client : le plugin produit exactement les clés du fixture |
 | `tests/trames.test.js` | le protocole WebSocket, éprouvé octet par octet |
 
 ```bash
-node --test plugins/dsh-remote/tests/*.test.js     # 73 tests, aucune dépendance
+node --test plugins/dsh-remote/tests/*.test.js     # 84 tests, aucune dépendance
 
 POURQUOI LE MODULE HÔTE EST CHARGÉ HORS HARNESS. C'est la panne qui a déjà coûté une
 instance neuve : un import manquant (`cheminIndicatif`) ne casse pas `node --check`,
@@ -638,6 +640,45 @@ appareil présente avant d'avoir un jeton. Voir « Appairer un appareil » et
 ```json
 { "limite": 50 }
 ```
+
+#### La liste est CONDITIONNELLE — et pourquoi ça a été nécessaire
+
+**Le problème, chiffré.** L'application relit cette liste **toutes les trois
+secondes** pendant que le suivi est actif. Sur l'installation du propriétaire, la
+liste complète pèse ~**115 Kio** (172 sessions × ~685 octets) : vingt
+retransmissions par minute d'un contenu qui ne bouge presque jamais, soit
+~**135 Mio par heure** d'usage actif, sur un iPhone en radio.
+
+**Ce qui a été fait.** La réponse porte un `ETag`, et le client l'envoie en
+`If-None-Match`. Si rien n'a changé, l'hôte répond **`304`, sans corps** — et
+n'ayant rien sérialisé.
+
+**Ce que ça donne, mesuré** (arbre de sessions fictif, deux sessions, protocole
+réel — même mesure que `tests/hote.test.js` joue sans réseau) :
+
+| Appel | Résultat |
+|---|---|
+| premier, sans `If-None-Match` | `200`, `ETag: "ZBzfJRZewKhO-EGQYdCaWSOf_E74KyZw-tjEeJE_b9o"`, **1 313 octets** |
+| second, avec cette empreinte | **`304`, 0 octet** |
+| avec une empreinte périmée | `200`, 1 313 octets — le `304` n'est pas un piège |
+| après une écriture de journal | `200`, **empreinte changée** |
+
+Sur un arbre réel de 172 sessions, la même bascule remplace ~115 Kio par zéro.
+
+**LE PIÈGE, ET POURQUOI L'EMPREINTE NE PORTE PAS QUE LES FICHIERS.**
+`statut` (`en_cours`), `vivante` et `attendReponse` viennent du **processus**, pas
+du disque. Une empreinte fondée sur `taille` et `mtime` répondrait `304` pendant
+qu'un tour démarre ou qu'une question attend une décision — l'écran gèlerait ses
+pastilles, et l'information la plus actionnable de la liste cesserait de remonter.
+L'empreinte couvre donc **les marqueurs de fichier ET les marqueurs de
+processus**, plus la `limite` (deux listes tronquées différemment ne sont pas la
+même représentation). Trois tests le tiennent : `304` rejoué, écriture qui
+invalide, **agent qui passe `idle` → `running` sans qu'aucun fichier ne bouge**.
+
+**CE QUI N'A PAS CHANGÉ.** L'`ETag` est un **en-tête**, jamais un champ du corps :
+un client plus ancien, qui n'envoie rien, reçoit exactement la même liste qu'avant.
+L'empreinte n'entre pas non plus dans le fixture partagé avec le Swift — c'est un
+mécanisme de transport, pas une donnée de protocole.
 
 ### `POST /v1/session/<id>`
 
@@ -1094,6 +1135,43 @@ journal qui dépasse est refusé en `413`, jamais tronqué en silence.
 Un cache mémoire (clé : chemin) évite de redécoder un journal inchangé ; il est
 invalidé par couple `(taille, mtime)`.
 
+### Ce qui est gardé en mémoire, et POURQUOI DU TEXTE — c'est une mesure
+
+`lireSession` relit et redécompresse le journal **entier** à chaque page, et le
+client en demande deux d'affilée (l'en-tête à l'ouverture, puis la première page).
+Le cache évite donc la seconde décompression — et le résultat est mesuré, sur un
+journal de **3 Mio compressés** (37 196 enregistrements) :
+
+| Appel | Sans le cache | Avec |
+|---|---|---|
+| première page (froid) | 225 ms | **224 ms** — la décompression reste à payer |
+| seconde page (chaud) | 225 ms | **36 ms** |
+| lectures disque | une par page | **une seule** par version du journal |
+
+**CE QUI EST GARDÉ : LES LIGNES DÉCOMPRESSÉES, PAS LES OBJETS ANALYSÉS.** C'est le
+résultat d'une mesure, et elle est contre-intuitive. Sur le plus gros journal de
+cette installation (9,7 Mio compressés, 37 989 enregistrements), le tas de Node
+croît de **84 Mio** quand on matérialise les objets JS, soit **8,7 fois le
+fichier** — dont 42 Mio pour la seule décompression. Garder les objets ferait donc
+payer 84 Mio de mémoire du harness par journal chaud, pour épargner une analyse
+JSON de quelques millisecondes. On garde le texte, et on réanalyse.
+
+**LES DEUX BORNES, ET POURQUOI ELLES SONT DEUX.** 8 entrées au maximum (LRU : la
+plus ancienne part), et **48 Mio de texte** au total. Le nombre seul ne suffirait
+pas — huit journaux de 60 Mio tiendraient un demi-gigaoctet — et le total seul non
+plus : un journal plus gros que le plafond n'entre **pas du tout**, plutôt que
+d'évincer tout le reste pour un seul usage.
+
+**LA RÈGLE VIT DANS SON PROPRE FICHIER** (`dynamic/cache-texte.js`), et c'est un
+aveu utile : ce cache a d'abord été écrit en ligne dans `host.js`, à l'intérieur de
+`apply` — donc **invérifiable seul**. Deux tentatives de test ont échoué
+(`mock.method` ne peut pas redéfinir `readFile` d'un module natif : « Cannot
+redefine property » ; `mock.module` exige un drapeau que le lanceur de tests
+n'accepte pas). Un test impossible à écrire était le signal que la pièce était mal
+découpée : extraite, elle reçoit ses deux dépendances et s'éprouve avec un
+**compteur de lectures disque** — 8 tests dans `tests/cache-texte.test.js`, dont
+l'invalidation par la date, l'éviction LRU et le journal trop gros pour le plafond.
+
 ---
 
 ## Sécurité — dérogations assumées à la RÈGLE #0
@@ -1398,4 +1476,4 @@ désormais explicitement `nbEnregistrements` et `dernierEvenementLe`.
 | 4 | Écriture : prompt, approbations, questions | **prompt, annulation et SIGNALEMENT d'une décision attendue livrés et prouvés** ; le « blocage » était une capture précoce du service, corrigée. Répondre aux questions et aux approbations reste hors d'atteinte : un seul répondeur terminal par déploiement, déjà occupé par l'interface web |
 | 5 | Installation et signature iOS | **livré** — app signée et installée sur l'iPhone du propriétaire, connectée au harness via Tailscale (106 sessions) |
 | 6 | Appairage par QR — **étape A** : contrat versionné, panneau durable, scanner iPhone, collage macOS | **livrée**, puis **remplacée par l'étape B** : la route qui publiait le jeton d'appareil a été retirée, et la règle « le jeton n'est jamais renvoyé par une route » est rétablie |
-| 6 | Appairage par QR — **étape B** : code à usage unique (2 min), échange contre un jeton **par appareil**, portée par appareil, liste et révocation dans le panneau | **écrite et éprouvée localement** (73 tests JS dont le flux complet, 273 tests Swift, construction iOS simulateur verte) ; l'épreuve du panneau exige un **redémarrage** du harness — procédure en **10 points** ci-dessus, **non encore exécutée** |
+| 6 | Appairage par QR — **étape B** : code à usage unique (2 min), échange contre un jeton **par appareil**, portée par appareil, liste et révocation dans le panneau | **écrite et éprouvée localement** (84 tests JS dont le flux complet, 315 tests Swift, construction iOS simulateur verte) ; l'épreuve du panneau exige un **redémarrage** du harness — procédure en **10 points** ci-dessus, **non encore exécutée** |
