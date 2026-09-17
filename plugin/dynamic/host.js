@@ -153,17 +153,20 @@ const CLE_JETON = 'dsh-remote/device-token'
 // sont valides en même temps — l'historique étant simplement la première entrée.
 const CLE_JETONS = 'dsh-remote/device-tokens'
 
+// LES BORNES DE L'APPAIRAGE VIENNENT DE `codes-appairage.js`, ou elles servent, et
+// sont REEXPORTEES ici : c'est la surface publique du plugin (les tests les lisent
+// d'ici), et une seule definition pour deux lecteurs.
+export { configurerTtlCode } from './codes-appairage.js'
+
 // ── Les codes d'appairage ─────────────────────────────────────────────────────
 //
 // DURÉE DE VIE. Deux minutes : assez pour lire un QR code, le temps d'un geste —
 // et assez court pour qu'une PHOTO de l'écran, prise pendant ce temps, ne vaille
 // plus rien après. C'est ce que l'étape A ne savait pas faire : elle publiait le
 // jeton lui-même, qui n'expirait jamais.
-const TTL_CODE_MS = 2 * 60 * 1000
 // Nombre de codes VIVANTS simultanément. Un plafond, pas un compteur d'usage :
 // sans lui, un panneau laissé ouvert (ou une page qui se reconnecte en boucle)
 // ferait croître une carte en mémoire sans fin.
-const CODES_VIVANTS_MAX = 8
 // Bornes de la durée de vie réglable (`config.ttlCodeMs`). POURQUOI UNE BORNE
 // BASSÉ : en dessous d'une seconde, un code expirerait avant que l'utilisateur
 // ait fini de lever son téléphone — la borne protège d'une valeur absurde, pas
@@ -171,8 +174,6 @@ const CODES_VIVANTS_MAX = 8
 // HAUTE : au-delà d'un quart d'heure, la fenêtre pendant laquelle une photo de
 // l'écran vaut un jeton redevient celle de l'étape A, et le code perd sa raison
 // d'être.
-const TTL_CODE_MIN_MS = 1000
-const TTL_CODE_MAX_MS = 15 * 60 * 1000
 // Plafonds par fenêtre glissante, pour la frappe et pour l'échange.
 //
 // POURQUOI ILS NE PROTÈGENT PAS DU DEVINAGE, ET POURQUOI ILS EXISTENT QUAND MÊME.
@@ -184,9 +185,6 @@ const TTL_CODE_MAX_MS = 15 * 60 * 1000
 // « par IP » serait donc un plafond par personne… sauf qu'il n'y a qu'une IP :
 // ce serait une illusion de contrôle, écrite ici pour ne pas laisser croire
 // qu'elle existe.
-const FENETRE_MS = 60 * 1000
-const FRAPPES_MAX = 30
-const ECHANGES_MAX = 30
 
 // ── Portée du jeton ──────────────────────────────────────────────────────────
 //
@@ -208,6 +206,13 @@ const ECHANGES_MAX = 30
 export { PORTEE_ECRITURE, PORTEE_LECTURE } from './auth.js'
 import { creerAuthentification, PORTEE_ECRITURE, PORTEE_LECTURE } from './auth.js'
 import { creerRegistreDAppareils } from './appareils.js'
+// LA MEMOIRE DES CODES D'APPAIRAGE vit dans son propre fichier : elle porte des regles
+// de securite (un code sert UNE fois, un code perime reste brule, les perimes sont
+// retires AVANT le plafond des vivants) qui s'eprouvent avec une horloge reglable.
+import {
+  configurerTtlCode,
+  creerMemoireDesCodes,
+} from './codes-appairage.js'
 
 /**
  * La portée d'un enregistrement de jeton.
@@ -263,10 +268,6 @@ const TTL_DECOUVERTE_MS = 15000
 // Plugin
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function configurerTtlCode(valeur) {
-  if (!Number.isFinite(valeur)) return TTL_CODE_MS
-  return Math.min(Math.max(Math.trunc(valeur), TTL_CODE_MIN_MS), TTL_CODE_MAX_MS)
-}
 
 export function apply(ctx, config) {
   const options = config ?? {}
@@ -334,15 +335,14 @@ export function apply(ctx, config) {
   // (comparaison à temps constant sans sortie anticipée, entrée mal formée
   // ignorée, écriture relue sous verrou, jeton historique supprimé et non filtré)
   // s'éprouvent sans monter un serveur.
-  // ── Les codes d'appairage et les plafonds glissants ───────────────────────
+  // ── La mémoire des codes d'appairage ──────────────────────────────────────
   //
-  // CES TROIS ÉTATS RESTENT ICI, avec les routes du panneau : les codes vivent en
-  // MÉMOIRE SEULEMENT, et c'est délibéré — un code qui survit à un redémarrage
-  // serait un code qu'on aurait oublié, alors qu'il donne un jeton.
-  const codes = new Map()
-  // Horodatages des frappes et des échanges, pour les plafonds glissants.
-  let frappes = []
-  let echanges = []
+  // LES CODES, LES FRAPPES ET LES ÉCHANGES vivaient ici, manipulés à la main par six
+  // lignes de route. Ils vivent désormais dans `codes-appairage.js`, qui est le seul
+  // dépositaire de ces trois compteurs — et dont les règles (consommation IMMÉDIATE,
+  // code périmé qui reste brûlé, périmés retirés AVANT le plafond des vivants)
+  // s'éprouvent avec une horloge réglable, sans monter un serveur.
+  const codes = creerMemoireDesCodes({ ttlMs: ttlCode })
 
   /**
    * LE COFFRE DU HARNESS, ou `null` — et `null` est un état NORMAL, pas une panne.
@@ -1071,26 +1071,28 @@ export function apply(ctx, config) {
    * pour que l'utilisateur sache ce qu'il donne avant de scanner.
    */
   const repondreFrappe = async (req, res) => {
-    const maintenant = Date.now()
-    frappes = frappes.filter((instant) => maintenant - instant < FENETRE_MS)
-    if (frappes.length >= FRAPPES_MAX) {
+    // L'ORDRE COMPTE, ET IL EST CELUI D'AVANT : le nom de l'hôte d'abord, le code
+    // ensuite. Tirer un code avant de savoir si l'adresse est joignable brûlerait un
+    // crédit du plafond pour une frappe qui ne peut pas aboutir — sur une machine
+    // dont le nom n'est pas joignable, c'est-à-dire précisément le cas où
+    // l'utilisateur insiste.
+    const { hote, via, schema } = await nomDeLHote()
+    // LA FRAPPE APPARTIENT À LA MÉMOIRE DES CODES : plafond glissant, retrait des
+    // périmés AVANT de faire de la place, tirage du secret.
+    const tire = codes.frapper()
+    if (tire === null) {
       envoyer(res, 429, { erreur: 'trop de codes demandes', detail: 'patientez une minute avant de recommencer' })
       return tracer(req, 429)
     }
-    const { hote, via, schema } = await nomDeLHote()
-    const code = randomBytes(16).toString('base64url')
+    const { code, expireLe } = tire
     const resultat = construire({ hote, genre: GENRE_CODE, secret: code, schema })
     if (resultat.ok !== true) {
+      // UN CODE QUI N'A PAS PU ÊTRE PUBLIÉ NE VIT PAS : sans ce retrait, une adresse
+      // injoignable laisserait des codes fantômes occuper les places.
+      codes.retirer(code)
       envoyer(res, 503, { erreur: 'adresse injoignable', motif: resultat.motif, detail: resultat.message })
       return tracer(req, 503, resultat.motif)
     }
-    // Les codes perimes sont retires AVANT le plafond : sans cela, huit codes
-    // expires bloqueraient la frappe d'un neuvieme.
-    for (const [valeur, fiche] of codes) if (fiche.expireLe <= maintenant) codes.delete(valeur)
-    while (codes.size >= CODES_VIVANTS_MAX) codes.delete(codes.keys().next().value)
-    const expireLe = maintenant + ttlCode
-    codes.set(code, { creeLe: maintenant, expireLe })
-    frappes.push(maintenant)
 
     envoyer(res, 200, {
       protocole: VERSION_PROTOCOLE,
@@ -1132,14 +1134,15 @@ export function apply(ctx, config) {
       envoyer(res, 400, { erreur: 'code absent ou malforme' })
       return tracer(req, 400)
     }
-    const maintenant = Date.now()
-    echanges = echanges.filter((instant) => maintenant - instant < FENETRE_MS)
-    if (echanges.length >= ECHANGES_MAX) {
+    // LA CONSOMMATION APPARTIENT A LA MEMOIRE DES CODES, et elle est IMMEDIATE : un
+    // code ne sert qu'une fois, meme si l'echange qui suit echoue. La route traduit
+    // le verdict, elle ne decide plus.
+    const verdict = codes.echanger(code)
+    if (verdict.etat === 'plafond') {
       envoyer(res, 429, { erreur: 'trop d echanges', detail: 'patientez une minute avant de recommencer' })
       return tracer(req, 429)
     }
-    const fiche = codes.get(code)
-    if (fiche === undefined) {
+    if (verdict.etat === 'inconnu') {
       // DEUX CAUSES, UN SEUL REFUS — et c'est assumé : distinguer « jamais emis »
       // de « deja utilise » dirait a un porteur de code devine si son texte a
       // existe. Le message donne les deux possibilites, l'utilisateur tranche par
@@ -1147,13 +1150,11 @@ export function apply(ctx, config) {
       envoyer(res, 403, { erreur: 'code inconnu ou deja utilise', detail: 'les codes ne servent qu une fois et expirent en deux minutes' })
       return tracer(req, 403)
     }
-    // Consommation IMMEDIATE, avant toute écriture.
-    codes.delete(code)
-    echanges.push(maintenant)
-    if (fiche.expireLe <= maintenant) {
+    if (verdict.etat === 'expire') {
       envoyer(res, 403, { erreur: 'code expire', detail: 'redemandez un code dans le panneau « Appairer un appareil »' })
       return tracer(req, 403, 'expire')
     }
+    const maintenant = Date.now()
     const credentials = coffre()
     if (credentials === null) {
       envoyer(res, 503, { erreur: 'coffre indisponible', detail: "sans coffre, aucun jeton ne peut etre range" })
