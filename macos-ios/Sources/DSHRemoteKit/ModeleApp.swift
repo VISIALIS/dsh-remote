@@ -445,7 +445,7 @@ public final class ModeleApp {
 
   /// Le client de la cible jointe. Le type est la SURFACE du port, pas la classe
   /// concrète : le modèle n'a pas à savoir qu'il parle HTTP.
-  private var client: (any ClientDSH)?
+  var client: (any ClientDSH)?
 
   /// Macs proposés, découverts au lancement. Vide est un état normal : la
   /// découverte peut échouer des deux côtés (Tailscale absent sur l'hôte, aucun
@@ -3000,77 +3000,21 @@ public final class ModeleApp {
   /// fermeture de l'application. Le garder d'une exécution à l'autre demanderait
   /// d'écrire dans les préférences ce que l'utilisateur n'a pas encore envoyé —
   /// une décision qui n'appartient pas à ce correctif.
-  private var brouillons: [String: String] = [:]
+  var brouillons: [String: String] = [:]
   /// Un envoi est en vol : le bouton se verrouille, la frappe continue.
-  public private(set) var envoiEnCours = false
+  public internal(set) var envoiEnCours = false
   /// Acquittement du dernier envoi réussi, **et la session qu'il concerne**.
   ///
   /// POURQUOI LA SESSION EST GARDÉE AVEC LE MESSAGE. Un envoi peut être acquitté
   /// APRÈS qu'on a changé de session : le message s'afficherait alors sous une
   /// session qui n'a rien envoyé. Le couple (session, texte) rend ce mensonge
   /// impossible — la vue ne lit que ce qui concerne SA session.
-  private var acquittement: (session: String, texte: String)?
+  var acquittement: (session: String, texte: String)?
   /// Motif du dernier refus, en français, et la session qui l'a reçu.
-  private var refus: (session: String, texte: String)?
+  var refus: (session: String, texte: String)?
 
-  /// Le brouillon d'UNE session. Vide pour une session sans texte en cours.
-  public func brouillon(pour identifiant: String) -> String {
-    brouillons[cleBrouillon(pour: identifiant)] ?? ""
-  }
+  // ── L'ÉCRITURE VIT DANS `ModeleApp+Ecriture.swift` ──────────────────────────
 
-  /// Écrit le brouillon d'UNE session — la frappe ne touche aucune autre.
-  public func definirBrouillon(_ texte: String, pour identifiant: String) {
-    brouillons[cleBrouillon(pour: identifiant)] = texte
-  }
-
-  /// Le brouillon de cette session est-il vide, aux blancs près ?
-  ///
-  /// Sert au bouton d'envoi : il se verrouille sur du vide, et « vide » veut
-  /// dire « rien qui puisse partir », pas « zéro caractère ».
-  public func brouillonVide(pour identifiant: String) -> Bool {
-    brouillon(pour: identifiant).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-  }
-
-  /// L'acquittement de CETTE session, s'il y en a un à montrer.
-  public func acquittement(pour identifiant: String) -> String? {
-    acquittement?.session == identifiant ? acquittement?.texte : nil
-  }
-
-  /// Le refus de CETTE session, s'il y en a un à montrer.
-  public func refusEcriture(pour identifiant: String) -> String? {
-    refus?.session == identifiant ? refus?.texte : nil
-  }
-
-  /// La clé d'un brouillon : l'hôte ET la session, comme pour le jeton.
-  private func cleBrouillon(pour identifiant: String) -> String {
-    "\(IdentiteHote.cle(adresse))|\(identifiant)"
-  }
-
-  /// RETIRE DU BROUILLON CE QUI VIENT D'ÊTRE ACQUITTÉ — et rien de plus.
-  ///
-  /// POURQUOI CE N'EST PAS « brouillon = "" ». Le champ reste modifiable pendant
-  /// l'envoi (le modèle le dit lui-même : « la frappe continue ») : effacer après
-  /// l'attente réseau détruisait donc la frappe concurrente — exactement ce que
-  /// l'utilisateur venait d'écrire pendant que son message partait.
-  ///
-  /// Trois cas, et le troisième est le plus important :
-  ///
-  ///   - le brouillon est encore EXACTEMENT ce qui est parti : il est vidé ;
-  ///   - il COMMENCE par ce qui est parti : seul ce préfixe est retiré, la suite
-  ///     reste sous les doigts ;
-  ///   - il a divergé : on ne touche à RIEN. Deviner quoi garder reviendrait à
-  ///     effacer un texte que personne n'a envoyé.
-  func retirerCeQuiEstAcquitte(_ texteEnvoye: String, pour identifiant: String) {
-    let courant = brouillon(pour: identifiant)
-    if courant.trimmingCharacters(in: .whitespacesAndNewlines) == texteEnvoye {
-      brouillons[cleBrouillon(pour: identifiant)] = ""
-      return
-    }
-    guard courant.hasPrefix(texteEnvoye) else { return }
-    brouillons[cleBrouillon(pour: identifiant)] =
-      String(courant.dropFirst(texteEnvoye.count))
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-  }
 
   /// Envoi non encore acquitté : sa règle d'identité vit dans `EnvoiEnAttente`.
   ///
@@ -3079,7 +3023,7 @@ public final class ModeleApp {
   /// neuf, l'hôte insérerait un SECOND message : la conversation afficherait
   /// deux fois la même demande. Tant que l'hôte n'a pas acquitté, on rejoue donc
   /// avec le MÊME identifiant — l'hôte rend alors l'acceptation d'origine.
-  private var envoiEnAttente = EnvoiEnAttente()
+  var envoiEnAttente = EnvoiEnAttente()
 
   /// L'hôte a-t-il annoncé savoir écrire ? Sinon, aucun composeur n'est proposé :
   /// un champ de saisie qui ne peut rien envoyer est un mensonge d'interface.
@@ -3133,73 +3077,14 @@ public final class ModeleApp {
     capacites?.annulation ?? capacites?.ecriture ?? false
   }
 
-  /// Adresse un message à une session.
-  ///
-  /// Le texte n'est effacé QU'APRÈS l'acquittement : un échec ne doit jamais
-  /// coûter à l'utilisateur ce qu'il vient d'écrire. Le fuseau du client est
-  /// joint à la demande — l'hôte le refuse s'il est mal formé, et le journal
-  /// situe ainsi l'heure locale de l'auteur.
-  public func envoyer(_ session: SessionListee, mode: ModePrompt = .queue) async {
-    let texte = brouillon(pour: session.id).trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !texte.isEmpty, !envoiEnCours, let client else { return }
-    let identifiant = envoiEnAttente.identifiant(pour: texte)
-    envoiEnCours = true
-    defer { envoiEnCours = false }
-    do {
-      let reponse = try await client.envoyerPrompt(
-        session.id,
-        demande: DemandePrompt(
-          texte: texte, mode: mode, requestId: identifiant,
-          fuseau: TimeZone.current.identifier))
-      envoiEnAttente.acquitter()
-      // CE QUI EST RETIRÉ EST CE QUI EST PARTI, pas ce que le champ contient
-      // maintenant : la frappe concurrente survit à l'acquittement.
-      retirerCeQuiEstAcquitte(texte, pour: session.id)
-      refus = nil
-      acquittement = (
-        session: session.id,
-        texte: reponse.reprise == true
-          ? "accepté — la session était fermée, l'hôte l'a reprise"
-          : "accepté — la réponse arrivera dans le journal"
-      )
-    } catch {
-      // Le texte ET l'identifiant restent : rejouer ne créera pas de doublon.
-      refus = (session: session.id, texte: Self.expliquerEcriture(error))
-      acquittement = nil
-    }
-  }
+  // ── L'ÉCRITURE VIT DANS `ModeleApp+Ecriture.swift` ──────────────────────────
 
-  /// Interrompt le tour en cours. La file d'attente est conservée.
-  public func annulerTour(_ session: SessionListee) async {
-    guard let client else { return }
-    do {
-      let reponse = try await client.annuler(session.id)
-      acquittement = reponse.annule ? (session: session.id, texte: "tour interrompu") : nil
-      refus = reponse.annule ? nil : (session: session.id, texte: "l'hôte n'a pas interrompu le tour")
-    } catch {
-      refus = (session: session.id, texte: Self.expliquerEcriture(error))
-      acquittement = nil
-    }
-  }
-
-  /// Efface les messages d'état du composeur (acquittement ou refus).
-  ///
-  /// NE TOUCHE PAS AUX BROUILLONS, et c'est une correction : cette fonction est
-  /// appelée au changement de session, et elle effaçait autrefois le texte en
-  /// cours — c'est-à-dire le travail de l'utilisateur. Chaque session garde
-  /// désormais le sien (`brouillon(pour:)`), et seuls les MESSAGES sont oubliés :
-  /// un acquittement affiché sous une autre session ferait croire qu'elle le
-  /// concerne.
-  public func oublierEtatEcriture() {
-    acquittement = nil
-    refus = nil
-  }
 
   /// DÉRIVATION : la règle vit dans `ModeleApp+Derivations`.
 
 
   /// Rend une erreur d'écriture lisible, en gardant le motif de l'hôte.
-  private static func expliquerEcriture(_ erreur: any Error) -> String {
+  static func expliquerEcriture(_ erreur: any Error) -> String {
     if case let ErreurRemote.refusServeur(_, motif, code) = erreur {
       return RefusEcriture.expliquer(code: code, detail: motif, erreur: motif)
     }
