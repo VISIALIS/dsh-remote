@@ -27,6 +27,7 @@ SVG lui-même, et remplit les polygones avec Pillow.
 Usage :
     Scripts/generer-icone.py [--apercu] [--variante NOM]
     Scripts/generer-icone.py --comparer        # n'écrit RIEN dans le catalogue
+    Scripts/generer-icone.py --icns-seul --icns CHEMIN.icns   # ne touche PAS au catalogue
 
 `--apercu` écrit en plus une planche de contrôle dans .build/icone-apercu.png,
 qui montre l'icône aux tailles réelles d'affichage (180, 120, 60, 40 px) : c'est
@@ -34,6 +35,20 @@ qui montre l'icône aux tailles réelles d'affichage (180, 120, 60, 40 px) : c'e
 
 `--comparer` met les variantes côte à côte aux mêmes tailles réelles, sur
 fond clair et sur fond sombre, sans modifier le catalogue de l'application.
+
+`--icns-seul` est le mode de l'EMPAQUETAGE macOS : il écrit le `.icns` demandé et
+RIEN d'autre. Le catalogue iOS (`App/Assets.xcassets/AppIcon.appiconset`) est un
+artefact de l'icône, pas de la compilation du Mac : le réécrire à chaque
+empaquetage salissait trois fichiers versionnés pour des différences d'encodage
+que personne ne peut juger (mesuré le 18 septembre 2026 — et 42 pixels
+d'anti-aliasing sur un million pour la variante sombre). Le catalogue se régénère
+donc EXPLICITEMENT, quand l'icône change : sans `--icns-seul`, ou avec `--sortie`.
+
+UN SEUL INTERPRÉTEUR PORTE PILLOW SUR CETTE MACHINE : `/usr/bin/python3`
+(3.9.6, Pillow 11.1.0). Celui du PATH (`/opt/homebrew/bin/python3`) ne l'a pas.
+C'est l'environnement de référence des PNG commités :
+
+    PATH="/usr/bin:$PATH" python3 Scripts/generer-icone.py
 """
 
 from __future__ import annotations
@@ -1284,6 +1299,9 @@ def main() -> int:
                            help="quelle icône écrire (défaut : arrondi)")
     analyseur.add_argument("--comparer", action="store_true",
                            help="écrit la planche des variantes sans modifier le catalogue")
+    analyseur.add_argument("--icns-seul", action="store_true",
+                           help="n'écrit QUE le fichier .icns demandé : ne touche PAS au "
+                                "catalogue iOS (pour l'empaquetage macOS)")
     options = analyseur.parse_args()
 
     racine = pathlib.Path(__file__).resolve().parent.parent
@@ -1294,10 +1312,27 @@ def main() -> int:
         print(f"[icone] planche de comparaison : {planche_comparaison(racine)}")
         return 0
 
+    # ── POURQUOI `--icns-seul` EXISTE, ET CE QU'IL A RÉPARÉ ──────────────────
+    #
+    # MESURÉ LE 18 SEPTEMBRE 2026. `empaqueter-app-macos.sh` appelle ce script pour
+    # obtenir un `.icns` — et le script, lui, réécrivait AUSSI les trois PNG de
+    # 1024 px du catalogue iOS, qui appartiennent à Xcode. Conséquence : chaque
+    # empaquetage macOS salissait trois fichiers VERSIONNÉS, avec un diff que
+    # personne ne peut juger (encodage de Pillow, et 42 pixels d'anti-aliasing sur
+    # un million pour la variante sombre). Un diff qu'on ne peut pas juger est un
+    # diff qu'on apprend à ignorer — et le jour où l'icône change vraiment, on ne
+    # le voit plus.
+    #
+    # Le catalogue iOS est donc un ACTE EXPLICITE : on le régénère quand on change
+    # l'icône, pas à chaque compilation du Mac. Les images sont tout de même
+    # dessinées ici (elles servent à `--apercu` et à l'ICNS) ; seul leur ENREGISTREMENT
+    # dans le catalogue est sauté.
     catalogue = pathlib.Path(options.sortie) if options.sortie else (
         racine / "App" / "Assets.xcassets" / "AppIcon.appiconset"
     )
-    catalogue.mkdir(parents=True, exist_ok=True)
+    # Le catalogue s'écrit s'il est explicitement demandé (`--sortie`), ou si l'on
+    # n'a pas dit qu'on ne voulait QUE l'ICNS.
+    ecrire_catalogue = options.sortie is not None or not options.icns_seul
 
     # iOS n'exige QU'UNE image de 1024 px par apparence : le système en dérive
     # toutes les tailles. Les tailles plus petites sont tout de même écrites,
@@ -1306,15 +1341,15 @@ def main() -> int:
     suffixes = {"claire": "", "sombre": "-sombre", "teintee": "-teintee"}
     sources = {apparence: dessiner(1024, apparence, options.variante) for apparence in suffixes}
     maitre = sources["claire"]
-    for apparence, suffixe in suffixes.items():
-        image = sources[apparence]
-        image.save(catalogue / f"icone-1024{suffixe}.png")
 
     # Les tailles intermédiaires ne vont PAS dans le catalogue : Xcode les
     # signale comme « non assignées » (avertissement de build), parce qu'iOS ne
     # lit que les images de 1024 px et dérive le reste. Elles sont donc écrites
     # à part, dans .build/, pour être regardées et réutilisées (README, aperçu)
     # sans polluer le catalogue.
+    #
+    # ELLES SUIVENT LE MÊME SORT QUE LE CATALOGUE : ce sont des artefacts de
+    # l'icône, pas de la compilation macOS.
     tailles = {
         "icone-180.png": 180,  # iPhone, écran d'accueil @3x
         "icone-120.png": 120,  # iPhone, écran d'accueil @2x
@@ -1325,16 +1360,25 @@ def main() -> int:
         "icone-58.png": 58,    # réglages @2x
         "icone-40.png": 40,    # notification @2x
     }
-    dossier_tailles = racine / ".build" / "icones"
-    dossier_tailles.mkdir(parents=True, exist_ok=True)
-    for nom, taille in tailles.items():
-        for apparence, suffixe in suffixes.items():
-            source = sources[apparence]
-            source.resize((taille, taille), Image.LANCZOS).save(
-                dossier_tailles / nom.replace(".png", f"{suffixe}.png"))
 
-    print(f"[icone] 3 apparences (1024 px) dans {catalogue}")
-    print(f"[icone] {len(tailles) * 3} tailles d'usage dans {dossier_tailles}")
+    if ecrire_catalogue:
+        catalogue.mkdir(parents=True, exist_ok=True)
+        for apparence, suffixe in suffixes.items():
+            image = sources[apparence]
+            image.save(catalogue / f"icone-1024{suffixe}.png")
+
+        dossier_tailles = racine / ".build" / "icones"
+        dossier_tailles.mkdir(parents=True, exist_ok=True)
+        for nom, taille in tailles.items():
+            for apparence, suffixe in suffixes.items():
+                source = sources[apparence]
+                source.resize((taille, taille), Image.LANCZOS).save(
+                    dossier_tailles / nom.replace(".png", f"{suffixe}.png"))
+
+        print(f"[icone] 3 apparences (1024 px) dans {catalogue}")
+        print(f"[icone] {len(tailles) * 3} tailles d'usage dans {dossier_tailles}")
+    else:
+        print("[icone] catalogue iOS NON modifie (--icns-seul) : seules les images demandees sont ecrites")
 
     # ── L'icône macOS ────────────────────────────────────────────────────────
     #

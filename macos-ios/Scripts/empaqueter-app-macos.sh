@@ -40,7 +40,15 @@ if [[ ! -x "$binaire" ]]; then
 fi
 
 echo "[macos] generation de l'icone"
-python3 "$racine/Scripts/generer-icone.py" --icns "$icns" >/dev/null
+# `--icns-seul`, ET C'EST UN CORRECTIF MESURÉ. Le générateur réécrivait AUSSI les
+# trois PNG de 1024 px du catalogue iOS, qui appartiennent à Xcode : chaque
+# empaquetage macOS salissait donc trois fichiers VERSIONNÉS, avec un diff que
+# personne ne peut juger (encodage de Pillow ; et 42 pixels d'anti-aliasing sur un
+# million pour la variante sombre, mesuré le 18 septembre 2026). Un diff qu'on ne
+# peut pas juger est un diff qu'on apprend à ignorer — et le jour où l'icône change
+# vraiment, on ne le voit plus. Le catalogue iOS se régénère donc explicitement,
+# quand l'icône change, jamais comme effet de bord d'une compilation du Mac.
+python3 "$racine/Scripts/generer-icone.py" --icns-seul --icns "$icns" >/dev/null
 
 echo "[macos] assemblage du paquet"
 rm -rf "$bundle"
