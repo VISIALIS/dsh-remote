@@ -108,7 +108,7 @@ import {
   resumer,
 } from './journal.js'
 
-import { codePlausible, construire, GENRE_CODE, GENRE_JETON, nomDAppareil, VERSIONS } from './appairage.js'
+import { codePlausible, construire, GENRE_CODE, nomDAppareil, VERSIONS } from './appairage.js'
 
 export const name = 'dsh-remote'
 
