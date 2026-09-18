@@ -62,9 +62,51 @@ transparentes, exportée en ICNS.
 Commandes exécutées depuis la racine du dépôt :
 
 ```bash
-python3 packages/dsh-remote-swift/Scripts/generer-icone.py --apercu --icns packages/dsh-remote-swift/.build/macos/DSHRemote.icns
-bash packages/dsh-remote-swift/Scripts/empaqueter-app-macos.sh
+PATH="/usr/bin:$PATH" python3 packages/dsh-remote-swift/Scripts/generer-icone.py --apercu  # icône explicite
+bash packages/dsh-remote-swift/Scripts/empaqueter-app-macos.sh                             # paquet macOS
 ```
+
+#### Le catalogue iOS ne se réécrit plus à chaque empaquetage — 18 septembre 2026
+
+**Le défaut, trouvé en reconstruisant l'application.** `empaqueter-app-macos.sh` appelle
+le générateur pour obtenir un `.icns` — et le générateur réécrivait **aussi** les trois
+PNG de 1024 px du catalogue iOS, qui appartiennent à Xcode. Chaque empaquetage du Mac
+salissait donc **trois fichiers versionnés**, pour des différences que personne ne peut
+juger. Mesuré, sur cette machine :
+
+| Constat | Mesure |
+|---|---|
+| Apparence claire, apparence teintée | **pixels identiques** — seuls les octets changent (encodage de Pillow) |
+| Apparence sombre | **42 pixels sur 1 048 576**, dont 37 purement transparents : un bord de silhouette décalé d'environ un pixel, zone (401, 299)–(471, 314) |
+| À taille d'usage | invisible : 1 px sur 1024 |
+| Source de non-déterminisme dans le script | **aucune** — ni `random`, ni `time`, ni `locale`, ni police (le seul `text()` sert la planche d'aperçu) ; deux exécutions donnent le même fichier |
+
+C'est donc le **rééchantillonnage de Pillow** qui a bougé entre la version qui a produit
+les PNG commités le 14 septembre et celle d'aujourd'hui — et seule la variante la plus
+travaillée s'en ressent. Le problème n'est pas visuel : il est qu'**un diff qu'on ne peut
+pas juger est un diff qu'on apprend à ignorer**, et le jour où l'icône change vraiment,
+on ne le voit plus.
+
+**TROIS CORRECTIFS, ET CHACUN FERME UNE PORTE :**
+
+1. **`--icns-seul`** — le générateur sait désormais n'écrire QUE l'ICNS demandé. C'est ce
+   que l'empaquetage macOS utilise : le catalogue iOS est un artefact de l'icône, pas de
+   la compilation du Mac. Vérifié par empreinte : les trois PNG sont **intacts** après un
+   empaquetage complet ;
+2. **`scripts/verifier-icones.py`**, branché au vérificateur du dépôt — il régénère dans
+   un dossier **temporaire** et compare les **pixels**, jamais les octets : l'égalité des
+   octets n'est pas une promesse tenable (elle dépend de Pillow), l'égalité des pixels en
+   est une. Il est lancé par `--tout`, ou dès qu'un fichier d'icône est touché. Sans
+   Pillow, il se **déclare impossible** au lieu d'échouer : il ne doit pas accuser l'icône
+   d'un défaut d'environnement ;
+3. **les trois PNG ont été régénérés une fois**, depuis l'environnement de référence
+   (`/usr/bin/python3`, Pillow 11.1.0), pour que « régénérer » redevienne un no-op
+   observable. C'est ce que le point 2 vérifie ensuite en permanence.
+
+**CE QUI RESTE VRAI, ET QU'IL FAUT SAVOIR** : les PNG ne sont **pas** reproductibles à
+l'octet d'une version de Pillow à l'autre. Le contrôle porte donc sur les pixels, et un
+changement d'environnement de rendu se signale par une différence de pixels — ce qui est
+exactement ce qu'on veut voir **avant** de commiter une icône qu'on n'a pas voulu changer.
 
 **Pillow est un prérequis, et il n'est pas dans le `python3` du PATH sur cette
 machine — mesuré le 14 septembre 2026.** `generer-icone.py` dessine le sillon
@@ -85,6 +127,16 @@ paquet macOS reconstruit et signature vérifiée ; compilation du simulateur ré
 avec `AppIcon` présent pour les familles iPhone et iPad. Les vérifications du dépôt
 passent : secrets, syntaxe, 194 tests de plugins et 341 tests Swift. Ces commandes
 ne réinstallent pas les copies déjà présentes sur les appareils.
+
+**MISE À JOUR — 18 septembre 2026.** Ces deux comptes ont bougé depuis : l'application
+macOS a été reconstruite et réinstallée sur cette machine (empreinte du binaire vérifiée
+entre le paquet construit et la copie de `/Applications`), et la suite Swift compte
+désormais **348 tests**. `scripts/verifier.sh --tout` passe : secrets, syntaxe des plugins,
+194 tests de plugins, **214 clés de traduction** toutes traduites, **catalogue d'icônes
+identique au générateur**, 348 tests Swift. Trois changements de cette session sont
+décrits plus bas : la suppression du champ « Jeton d'appareil » de la fiche, la re-mesure
+du diagnostic à l'ouverture de sa page, et le catalogue iOS qui ne se réécrit plus à
+chaque empaquetage.
 
 ### Où vit quoi : cinq pièces, et une seule porte sur le disque
 
@@ -1074,20 +1126,64 @@ serveur ». L'ordre suit les questions qu'on se pose, et rien d'autre :
 |---|---|---|
 | 1. Verdict | pastille, **la conclusion en une phrase**, adresse copiable, **une** action (ou, en mode ajout, la phrase qui sépare les deux mondes et les deux recours) | l'état se dit une fois, et l'action proposée peut aboutir |
 | 2. Parcours | les **cinq** constats, sans titre | la démonstration, avec **une seule** méthode dépliée : celle de l'étape qui bloque — ou, sur une liste de travail, celle de **cet appareil** |
-| 3. Réglages de cette machine | jeton d'appoint, suivi, filtre — **repliés** | chaque réglage reste à l'endroit qui le rend vrai, sans s'interposer entre l'adresse et le verdict |
+| 3. Réglages de cette machine | suivi, filtre — **repliés** | chaque réglage reste à l'endroit qui le rend vrai, sans s'interposer entre l'adresse et le verdict |
 | 4. Détail technique | l'erreur brute — **repliée**, et seulement si rien ne l'explique | une phrase en français n'est pas un détail technique |
 
 **LES BANDES 3 ET 4 N'EXISTENT PAS EN MODE AJOUT** : il n'y a pas encore de machine dont on
-puisse régler le jeton ni lire l'erreur. Et **la conclusion a quitté la bande 2 pour la
+puisse régler le suivi ni lire l'erreur. Et **la conclusion a quitté la bande 2 pour la
 bande 1** : elle était sous un titre « Diagnostic », ce qui obligeait à lire quatre constats
 pour apprendre ce que la page avait à dire.
 
 **CE QUI A ÉTÉ RETIRÉ, ET POURQUOI.** Trois choses, toutes mesurées à l'écran ou dans le
 code : le titre « Diagnostic » (la conclusion est juste au-dessus, et la première ligne
 s'annonce elle-même) ; le paragraphe du jeton expliquant qu'il ne s'affiche qu'une fois —
-c'est vrai, mais le chemin normal est devenu l'appairage, et le champ n'est plus qu'une
-porte de service ; et la marche à suivre dupliquée dans les deux pages, qui n'existe plus
-qu'une fois (voir plus bas).
+c'est vrai, mais le chemin normal est devenu l'appairage ; et la marche à suivre dupliquée
+dans les deux pages, qui n'existe plus qu'une fois (voir plus bas).
+
+#### Le champ « Jeton d'appareil » a été retiré de la fiche — 18 septembre 2026
+
+Retour du propriétaire, et il est exact sur les trois points : « dans les réglages de cette
+machine, je trouve que le jeton d'appareil de cet hôte ne correspond plus au contexte actuel
+des réglages. Je pense que nous devrions revoir cette partie quitte à la supprimer. »
+
+Ce que le bloc faisait, et ce qui le rendait faux :
+
+| Le bloc | Ce qui le condamnait |
+|---|---|
+| un `SecureField` « jeton d'appareil », collage, effacement, badge « jeton complet (43 caractères) » | l'**étape 5**, juste au-dessus, porte déjà le geste normal (`BoutonsAppairage` : QR code ou texte, adresse ET jeton d'un seul geste) |
+| son libellé disait « **— à la main** » | il présentait le chemin principal comme un dépannage, alors que c'est l'appairage qui l'était devenu |
+| il rappelait un `401` par « Le service a refusé ce jeton. Collez celui de CET hôte » | l'étape 5 le dit **mieux** : « Le jeton rangé a été refusé : c'est celui d'une autre machine. Appairez à nouveau pour le remplacer. » — deux textes pour un seul fait, à trente points d'écart |
+| il vivait dans une bande « Réglages » | un jeton n'est pas un **réglage** mais une **réparation**, et sa place est l'étape qui l'exige |
+
+**CE QUI A ÉTÉ SUPPRIMÉ, ET CE QUI A ÉTÉ GARDÉ.** Sont partis : le champ, ses deux boutons,
+son verdict de forme, le rappel du `401` qui le doublait, le bouton « Essayer le jeton du
+coffre », et trois fonctions du modèle devenues sans appelant (`jeton(pour:)`,
+`jetonDuCoffreDiffert(pour:)`, `adopterLeJetonDuCoffre(pour:)`, plus la comparaison
+`memeJeton` qui n'existait que pour la seconde). Cinq clés de traduction sont devenues
+orphelines : le script du dépôt les a retirées lui-même (`Scripts/traduire.py`), et son
+compte est passé de 219 à **214 clés**.
+
+**LA RÈGLE, ELLE, N'A PAS DISPARU — ELLE A CHANGÉ DE SOURCE.** `etatAppairage` lisait le
+champ ; elle lit désormais `jetonDetenu(pour:)`, qui est la **seule** lecture par hôte et la
+même que celle de la connexion (`jetonDeLaCible`) : le gardien pour cet hôte, et le coffre du
+harness **uniquement** si la machine interrogée est celle qui l'exécute. Ce dernier point
+n'est pas un détail : sur macOS, le jeton de la machine locale vient du coffre et **jamais**
+du gardien, si bien qu'une lecture qui n'aurait consulté que le gardien aurait affiché
+« pas appairé » pour le Mac qui héberge le harness — c'est-à-dire pour le cas le plus
+fréquent. « Ce qui est montré est ce qui part » : les deux passent maintenant par la même
+fonction.
+
+**LA SAISIE MANUELLE N'A PAS DISPARU DU PRODUIT** : elle est dans la feuille « Adresse »
+(section « Jeton d'appareil »), c'est-à-dire là où l'on désigne une machine, avec le même
+collage et le même verdict de forme. Un appareil neuf garde donc ses deux chemins —
+l'appairage, et le jeton déjà connu qu'on veut simplement poser.
+
+**TROUVÉ EN VÉRIFIANT, ET PAS SUPPOSÉ** : la page d'une machine dont le service refuse le
+jeton conseille « recopiez celui de CET hôte » — encore faut-il que le champ de la feuille
+« Adresse » porte le jeton de la machine **visée**, et non celui de la précédente. C'est
+`viser` qui le recharge, et il est appelé à chaque changement de cible
+(`ModeleApp+Parc.swift:44`).
+
 
 **UNE SEULE PASTILLE, ET UN SEUL VOCABULAIRE.** La page disait l'état de la machine à
 quatre endroits, et avec d'autres mots que le panneau latéral — « hors ligne sur le
@@ -1168,7 +1264,7 @@ Le partage a été fait **par nature**, pas par commodité :
 | Réglage | Où | Pourquoi |
 |---|---|---|
 | État, adresse, actions, diagnostic, remèdes | **page du serveur** | cela ne vaut que pour UNE machine |
-| **Jeton d'appareil** | **page du serveur** | mesuré : il est tiré par chaque hôte, celui d'un Mac ne vaut pas pour un autre |
+| **Jeton d'appareil** | **étape 5 (appairage), et feuille « Adresse »** | mesuré : il est tiré par chaque hôte, celui d'un Mac ne vaut pas pour un autre — et c'est l'appairage qui le pose, pas un réglage. Le champ de la fiche a été retiré le 18 septembre 2026 (voir plus bas) |
 | « Chargées en mémoire seulement », « Suivre l'activité » | **page du serveur** | ils portent sur la CONNEXION à une machine : l'un décide si l'on interroge CE serveur, l'autre filtre SA liste |
 | Saisie manuelle d'une adresse | **feuille « Adresse »** | on vise une machine, on ne règle pas l'application ; elle s'ouvre depuis « Saisir une adresse » |
 
@@ -1285,6 +1381,76 @@ Dans ce cas précis, le pavé de transport (`NSURLErrorDomain -1004 … | sous-j
 n'est **plus affiché** : il redisait en rouge, et en charabia, ce que l'encadré dit en une
 ligne et répare. Il reste affiché pour toutes les autres causes, où il est le seul
 diagnostic — et il est de toute façon conservé dans `diagnostic.json`.
+
+#### Le diagnostic se remesure quand on rouvre sa page — 18 septembre 2026
+
+Seconde demande du propriétaire, dans le même retour : « le diagnostic se met à jour à
+chaque fois qu'on recharge la page ? Ce serait nécessaire. »
+
+**IL NE L'ÉTAIT PAS, ET LE DÉFAUT SE VOIT À L'USAGE.** La sonde ne partait qu'à quatre
+endroits, tous déjà là :
+
+| Déclencheur | Ce qu'il couvrait |
+|---|---|
+| `demarrer()` au lancement | une fois |
+| `.task(id: empreinteServeurs)` | seulement quand l'ENSEMBLE DES MACHINES EN LIGNE changeait |
+| « Revérifier » | geste manuel |
+| `chargerServeursDeLhote`, boucle de 15 s | même garde d'empreinte |
+
+Le cas qui manquait est le plus fréquent : **on installe le plugin `dsh-remote` sur la
+machine d'en face, elle reste en ligne, l'empreinte ne change pas** — et la page continue
+d'afficher « 4. Le plugin `dsh-remote` est installé : à faire » alors que c'est fait.
+Rouvrir la page, la recharger, changer de machine puis revenir : **aucune de ces actions ne
+relançait la sonde**. Il fallait quitter l'application, ou penser à « Revérifier ».
+
+**TROIS DÉCLENCHEURS ONT ÉTÉ AJOUTÉS, ET DEUX D'ENTRE EUX NE SONT PAS THROTTLÉS :**
+
+| Geste | Où | Délai de garde |
+|---|---|---|
+| ouvrir la page d'une machine | `FicheServeur`, `.task(id: serveur?.id)` | **oui** — 5 s |
+| changer la machine jugée dans la barre latérale | `VueListeSessions`, `.task(id: modele.serveurChoisi?.id)` | **oui** — 5 s |
+| revenir au premier plan | `reprendreLeTravailDeFond` | non — on FORCE |
+| la liste des machines change | `chargerServeursDeLhote` | non — l'empreinte a déjà tranché |
+| appairer un appareil | `appliquer(hote:secret:)` | non — on vient de changer le secret |
+
+**LE DÉLAI DE GARDE EST DANS LE MODÈLE, PAS DANS LA VUE** — deux surfaces montrent le même
+diagnostic (la fiche, et la barre latérale quand la machine choisie n'est pas appairée) : le
+laisser aux appelants, c'est deux copies d'un même délai, et la seconde oublierait la
+première. Cinq secondes, et c'est un ordre de grandeur assumé : une sonde coûte **16 ms**
+sur une machine saine (mesuré), **2,5 s** au pire sur une machine muette — le délai borne le
+PIRE cas, pas le coût courant.
+
+**LE RE-SONDAGE FORCÉ APRÈS UNE MODIFICATION DE LISTE A ÉTÉ TROUVÉ PAR LES TESTS.** Ma
+première version throttlait *toutes* les re-sondes, y compris celle que
+`chargerServeursDeLhote` déclenche quand l'empreinte a changé : trois tests existants ont
+échoué (`SondeConditionnelleTests`), parce qu'une machine qui apparaît dans le tailnet
+restait cinq secondes sans verdict. La frontière juste est celle-ci : le délai protège la
+re-sonde demandée par l'AFFICHAGE, où rien ne dit que quelque chose a bougé ; quand
+l'empreinte a changé, quelque chose a bougé, et le garde-fou de l'empreinte a déjà fait
+l'économie.
+
+**ON N'ATTEND PAS LA SONDE POUR AFFICHER.** L'appel d'appairage est LANCÉ et non attendu :
+l'appelant enchaîne sur `connecter()`, qui est le geste que l'utilisateur attend, et une
+sonde de 16 ms n'a pas à retarder le remplissage des sessions. Et rien ne clignote : un
+verdict CONNU reste affiché pendant qu'on le rafraîchit (règle acquise plus haut).
+
+**CE QUI EST ÉPROUVÉ, ET COMMENT.** Six tests dans
+`Tests/DSHRemoteKitTests/SondeAuChangementDePageTests.swift`, plus un septième venu de la
+relecture (« un jeton tronqué n'est pas un appairage », dans `SondeSansJetonTests`) — la
+suite passe de 341 à **348 tests** :
+
+- la **règle pure** `ModeleApp.sondeDoitRepartir(derniere:maintenant:seuil:verdictConnu:)`,
+  éprouvée des deux côtés de la frontière (0 s, 2 s, seuil − 0,1 s / seuil, seuil + 0,1 s,
+  1 h), **sans réseau et sans horloge simulée** : on lui donne une date ;
+- les **deux réponses toujours oui** qui comptent : aucune sonde antérieure, et aucun
+  verdict connu — une sonde annulée ne verrouille pas la question ;
+- la **conséquence observable** du délai, sur un hôte simulé : trois ouvertures de page
+  après une mesure ne repartent pas sur le réseau, et la même ouverture après le seuil
+  réinterroge bien les deux machines.
+
+**CE QUI N'A PAS ÉTÉ MESURÉ** : le comportement sur un vrai iPhone en arrière-plan
+prolongé. La règle du modèle, elle, ne dépend pas de la plateforme ; ce qui reste à voir sur
+l'appareil est la cadence réelle des `scenePhase`, pas le calcul.
 
 #### Les séparateurs de ligne, sur macOS
 
@@ -1785,14 +1951,15 @@ La lecture automatique du coffre ne fonctionne **pas** dans le simulateur : son
 conteneur est en bac à sable et ne voit pas le `~/.dsh` du Mac — vérifié, l'application
 affiche « Aucun jeton d'appareil » alors que `DSH_REMOTE_COFFRE` désigne bien le fichier.
 Sur un iPhone réel, ce chemin n'existe de toute façon pas : le jeton se saisit **une
-fois** dans le champ prévu, puis il est conservé au trousseau.
+fois** — à l'appairage, ou dans la feuille « Adresse » —, puis il est conservé au
+trousseau.
 
 **Où est ce champ, et pourquoi c'était un cul-de-sac.** Une revue d'interface a montré
 que le champ n'existait que sur la page d'une machine **connue** — or cette page s'ouvre
 après une découverte, qui exige une connexion authentifiée. Sur un iPhone neuf : liste
 vide, donc aucune page de machine, donc aucun champ ; la connexion ne pouvait finir qu'en
-`401`, et le message du `401` renvoyait vers les **Réglages**, qui ne contiennent plus
-aucun champ de jeton depuis que chaque hôte a le sien. Le remède prescrit était un écran
+`401`, et le message du `401` renvoyait vers les **Réglages**, qui ne contenaient déjà
+aucun champ de jeton (chaque hôte a le sien). Le remède prescrit était un écran
 vide, et le champ réel était derrière une porte fermée.
 
 Le jeton est donc **aussi** dans la feuille « Adresse » — le seul écran qu'un appareil
@@ -1800,19 +1967,26 @@ neuf puisse ouvrir —, dans une section qui lui est propre :
 
 | Où | Quand |
 |---|---|
-| Feuille « Adresse » | saisie manuelle d'une adresse, donc sur un appareil neuf |
-| Page d'une machine | la machine est déjà dans la liste : c'est son jeton, et lui seul |
+| Étape 5 de la fiche d'une machine (appairage) | **le chemin normal** : QR code ou texte, qui posent l'adresse ET le jeton d'un seul geste |
+| Feuille « Adresse » | saisie manuelle : appareil neuf, ou jeton déjà connu qu'on veut poser |
 
-**Le champ d'une page est celui de la machine AFFICHÉE.** Une page de serveur peut
+**LE CHAMP DE LA FICHE A ÉTÉ RETIRÉ LE 18 SEPTEMBRE 2026** (demande du propriétaire : « le
+jeton d'appareil de cet hôte ne correspond plus au contexte actuel des réglages »). Cette
+section décrit ce qu'il fallait corriger tant qu'il existait, et cette correction n'a pas
+été perdue : c'est elle qui a donné `jetonDetenu(pour:)`, la lecture par hôte dont
+dépendent désormais l'étape d'appairage ET la connexion. Le détail est au
+§ « Le champ “Jeton d'appareil” a été retiré de la fiche ».
+
+**Le champ d'une page était celui de la machine AFFICHÉE.** Une page de serveur peut
 s'ouvrir sur un hôte auquel on n'est **pas** connecté — c'est même le cas qui donne
 son sens au remède d'installation. Or la lecture, l'écriture et l'effacement
 passaient tous par la cible : le champ annonçait « Jeton d'appareil de cet hôte »
 et affichait le jeton d'une autre machine, pouvait envoyer vers la cible un jeton
 collé sur la fiche d'un autre, et effaçait le jeton de la cible depuis la page d'une
-autre. Tout passe désormais par l'adresse de la page, et `jetonSaisi` — la valeur la
-plus fraîche, mais qui ne décrit **que** la cible — n'est plus lu pour une autre
-machine. Le rappel du `401` ne s'affiche que sur la page de la machine visée : un
-`401` parle de la connexion en cours, pas d'une fiche qu'on consulte.
+autre. Tout passait désormais par l'adresse de la page, et `jetonSaisi` — la valeur la
+plus fraîche, mais qui ne décrit **que** la cible — n'était plus lu pour une autre
+machine. **C'est la règle qui survit dans `jetonDetenu`**, et elle est éprouvée :
+`JetonParHoteTests` et `HoteLocalTests` interrogent maintenant la lecture par adresse.
 
 Deux détails d'implémentation, et le second est une règle de sécurité :
 
@@ -3151,10 +3325,14 @@ rallumerait tout seul une seconde plus tard.
 | **La commande d'aide est VRAIE** | `tailscale serve --bg --http=80 http://127.0.0.1:3080` passée sur la machine : `serve status --json` **identique** avant/après — l'ancienne forme (`--bg 80 <url>`) était invalide |
 | **La vérification est mesurée, pas supposée** | découverte 44 ms, sonde complète 16 ms, verdict posé **0,3 s** après le lancement ; requêtes 1,2 à 15 ms selon la cible |
 | **Un port 80 occupé par autre chose est reconnu** | MacMini renvoie `HTTP/1.1 404 Not Found` (sans `Server`) : message et commandes affichés, là où l'écran montrait « réponse inattendue (HTTP 404) » ; 1 test couvre les deux formes |
-| **Le jeton est sur la page de l'hôte, pas dans les réglages** | capture iPhone : « Jeton d'appareil de cet hôte » + état « jeton complet (43 caractères) » sur la page ; les Réglages ne le contiennent plus |
+| ~~**Le jeton est sur la page de l'hôte, pas dans les réglages**~~ | **retiré le 18 septembre 2026** — capture iPhone d'alors : « Jeton d'appareil de cet hôte » + « jeton complet (43 caractères) » sur la page. Le champ a été supprimé à la demande du propriétaire ; ce qui reste vrai est la règle, et elle est éprouvée autrement (voir les deux lignes suivantes) |
+| **Le jeton d'une machine se lit par SON adresse, jamais par la mémoire de la cible** | `JetonParHoteTests` : ce qu'on détient pour une autre machine est vide, et la cible garde le sien — c'est `jetonDetenu`, la lecture qui alimente l'étape d'appairage depuis le retrait du champ |
+| **Aucun secret local n'est détenu pour un hôte distant** | `HoteLocalTests` : marqueur `local` reçu ignoré, et la lecture rend le jeton de cet hôte-là, jamais celui du coffre de ce Mac |
 | **Un iPhone neuf peut saisir son premier jeton** | capture iPhone de la feuille « Adresse » (`--adresse`) : section « Jeton d'appareil », son bouton « Coller », le compte de caractères, puis « Se connecter » et « Tester l'adresse » — le champ qui manquait au seul écran qu'un appareil vierge puisse ouvrir |
 | **Le conseil d'adresse suit ce que le paquet autorise** | capture iPhone du build AVEC exception : pied de page « Ce build autorise le clair vers le tailnet déclaré » ; 6 tests couvrent le paquet sans exception (il conseille `https://…`), l'exception inopérante, et un domaine qui n'est pas un sous-domaine |
-| **Le remède d'un 401 mène à un champ qui existe** | test : le message ne dit plus « Réglages » (qui n'a plus de champ de jeton) et nomme les deux écrans qui en ont un |
+| **Le remède d'un 401 mène à un champ qui existe** | la fiche nomme l'appairage, et la feuille « Adresse » porte le champ — le seul écran de saisie qui reste, avec le même collage et le même verdict de forme |
+| **Le diagnostic se remesure quand on rouvre sa page** | 6 tests (`SondeAuChangementDePageTests`) : la règle pure des deux côtés du seuil, les deux cas toujours-oui, trois ouvertures après une mesure qui ne repartent pas sur le réseau, et la même après le seuil qui réinterroge les deux machines |
+| **Un jeton tronqué n'est pas un appairage** | `SondeSansJetonTests` : vingt caractères rangés dans le gardien donnent `.absent`, un jeton complet donne `.appaire` — la présence d'un secret ne suffit pas, il faut sa forme |
 | **Les étapes grisées restent lisibles** | capture iPhone (`--ajout --page-seule`) : étapes 3 et 4 grisées avec cadenas ET « Voir la méthode » dépliable ; test : aucune étape non franchie d'une liste de travail n'est sans méthode |
 | **Les états sont dits en mots, pas seulement en couleur** | 6 tests : les cinq états de session ont cinq libellés distincts, la ligne annonce titre + état + matière, et une machine en ligne sans DSH n'est plus annoncée « en ligne » |
 | **Le brouillon ne suit plus d'une session à l'autre** | 8 tests : cloisonnement par session et par hôte, changement de session qui ne perd plus le texte, et les trois cas de l'acquittement (vidé / préfixe retiré / texte divergent intact) |
