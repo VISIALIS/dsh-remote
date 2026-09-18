@@ -1219,7 +1219,7 @@ Vérifié par capture macOS (`--page-seule`), sur les trois états qui comptent 
 |---|---|
 | **prêt** (MacBook Air, hôte interrogé) | pastille verte « DSH · hôte interrogé », « Reconnecter », « Ce serveur est prêt. », quatre constats verts — **la page entière tient sans défiler** |
 | **pas de DSH** (MacMini) | pastille orange « pas de DSH », « Il reste une étape : « Le plugin `dsh-remote` est installé » », étapes 1-3 vertes, étape 4 avec la démarche d'installation dépliée |
-| **hors ligne** (MacBook Pro de Camille) | pastille « hors ligne », action « Choisir MacBook », « Rien ne peut être joint sur cette machine… », étape 2 avec `tailscale status` / `tailscale up` — et l'explication « Il est hors ligne sur le tailnet : la découverte ne le propose donc pas » |
+| **hors ligne** (<MacBook Pro>) | pastille « hors ligne », action « Choisir MacBook », « Rien ne peut être joint sur cette machine… », étape 2 avec `tailscale status` / `tailscale up` — et l'explication « Il est hors ligne sur le tailnet : la découverte ne le propose donc pas » |
 
 **PAS DE CAPTURE IPHONE CETTE FOIS**, et c'est un manque assumé : sur un simulateur
 neuf, `--page-seule` n'a **pas de serveur courant** à montrer, et cet environnement
@@ -1340,7 +1340,7 @@ correction, la page affiche « en ligne · DSH · hôte interrogé », vérifié
 
 Trouvé sur la même capture, et corrigé : l'application annonçait
 
-> « http://127.0.0.1:58674 **ne répond pas** : basculé sur « MacBook Air de Camille » »
+> « http://127.0.0.1:58674 **ne répond pas** : basculé sur « <MacBook Air> » »
 
 alors qu'elle était **connectée** à cette adresse, qui répondait. `ajusterAuParc` se
 déclenchait dès que l'adresse courante n'était pas une machine **découverte et en
