@@ -28,13 +28,19 @@ struct FeuilleAdresse: View {
 
   /// LE JETON SAISI ICI, TENU À PART DU MODÈLE JUSQU'À LA SOUMISSION.
   ///
-  /// POURQUOI PAS UNE LIAISON DIRECTE, comme la page d'une machine le fait. Là-bas,
-  /// la clé du jeton est l'adresse d'une machine CONNUE : elle ne bouge pas, et
-  /// une frappe n'écrit qu'une entrée, corrigée à chaque caractère. Ici, la clé
-  /// EST l'adresse en cours de saisie : une liaison directe confierait au
-  /// trousseau, caractère par caractère, un jeton tronqué rangé sous une adresse
-  /// tronquée — autant de copies partielles d'un secret que de préfixes
-  /// d'adresse. Le champ reste donc local, et n'est engagé qu'au moment d'agir.
+  /// POURQUOI PAS UNE LIAISON DIRECTE, comme la fiche d'une machine le faisait.
+  /// Là-bas, la clé du jeton était l'adresse d'une machine CONNUE : elle ne
+  /// bougeait pas, et une frappe n'écrivait qu'une entrée. Ici, la clé EST
+  /// l'adresse en cours de saisie : une liaison directe confierait au trousseau,
+  /// caractère par caractère, un jeton tronqué rangé sous une adresse tronquée —
+  /// autant de copies partielles d'un secret que de préfixes d'adresse. Le champ
+  /// reste donc local, et n'est engagé qu'au moment d'agir.
+  ///
+  /// CETTE FEUILLE EST LE SEUL ENDROIT OÙ L'ON SAISIT UN JETON, depuis que la
+  /// fiche d'une machine a perdu le sien (demande du propriétaire : « le jeton
+  /// d'appareil de cet hôte ne correspond plus au contexte actuel des réglages »).
+  /// L'appairage reste le chemin normal ; celui-ci couvre le jeton déjà connu
+  /// qu'on veut simplement poser, et l'appareil neuf dont on n'a que le texte.
   @State private var jeton = ""
 
   /// Ce que CE paquet autorise, et ce qu'il a donc le droit de conseiller.

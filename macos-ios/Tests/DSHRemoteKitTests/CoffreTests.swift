@@ -57,23 +57,13 @@ func empreinteNeReveleRien() {
   #expect(empreinteUn.count == 16, "huit octets en hexadécimal")
 }
 
-// MARK: - Sortir d'un jeton étranger
-
-@Test("Deux jetons se comparent sans être révélés")
-func memesJetons() {
-  // POURQUOI CETTE RÈGLE EXISTE. Mesure du 13 septembre : une instance de
-  // l'application présentait un jeton de 43 caractères que le service refusait,
-  // alors que le coffre de la machine contenait le bon. La sortie de secours
-  // compare donc les DEUX empreintes — jamais les valeurs : on veut seulement
-  // savoir si elles diffèrent, et le secret ne sort ni à l'écran ni dans un
-  // journal.
-  let un = String(repeating: "a", count: 43)
-  let deux = String(repeating: "b", count: 43)
-
-  #expect(ModeleApp.memeJeton(un, un))
-  #expect(!ModeleApp.memeJeton(un, deux))
-  // Un champ vide n'est PAS « le même jeton » : c'est précisément le cas où le
-  // bouton doit apparaître (le champ ne porte rien, le coffre si).
-  #expect(!ModeleApp.memeJeton(un, ""))
-  #expect(!ModeleApp.memeJeton("", ""))
-}
+// CE QUI A ÉTÉ RETIRÉ DE CE FICHIER, ET POURQUOI. Il portait un test
+// « Deux jetons se comparent sans être révélés » (`ModeleApp.memeJeton`), écrit
+// pour la sortie de secours d'un jeton étranger : quand le coffre du harness
+// proposait un AUTRE jeton que le champ, la fiche l'annonçait et proposait de
+// l'essayer. Le champ de jeton de la fiche a été SUPPRIMÉ (demande du
+// propriétaire : « le jeton d'appareil de cet hôte ne correspond plus au contexte
+// actuel des réglages »), et `memeJeton` avec lui — elle n'avait plus d'appelant.
+//
+// La comparaison par empreinte, elle, reste éprouvée juste au-dessus : c'est la
+// seule pièce qui comptait, et elle n'a pas bougé.

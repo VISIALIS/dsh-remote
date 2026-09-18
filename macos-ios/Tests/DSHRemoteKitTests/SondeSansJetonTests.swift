@@ -111,3 +111,32 @@ func jetonRefuseSeDitRefuse() async {
   #expect(modele.jetonRefuseParLeService)
   #expect(modele.etatAppairage(pour: macSansJeton) == .refuse)
 }
+
+@MainActor
+@Test("Un jeton TRONQUÉ n'est pas un appairage — la présence ne suffit pas")
+func jetonTronqueNestPasUnAppairage() {
+  // POURQUOI CE TEST EXISTE, ET CE QU'IL A FAILLI LAISSER PASSER. En retirant le
+  // champ de jeton de la fiche, la lecture de l'appairage est passée du champ à ce
+  // qu'on détient. Une version intermédiaire se contentait de « un secret est
+  // rangé » (`jetonGarde != nil`) : un jeton de vingt caractères collé dans la
+  // feuille « Adresse » aurait alors affiché « Cet appareil est appairé », alors que
+  // la connexion, elle, le refuse pour sa forme (`jeton.count == 43`) — la page
+  // aurait annoncé un appairage que l'application ne peut pas utiliser.
+  //
+  // La règle d'avant exigeait la FORME, et elle n'avait aucune raison de changer
+  // avec la source.
+  let modele = ModeleApp(gardien: GardienEnMemoire(), persistance: persistanceDeTest())
+  modele.remplacerServeursPourEssai([macSansJeton])
+
+  // Vingt caractères : assez pour que le gardien le range, trop court pour le
+  // service. C'est exactement la saisie interrompue.
+  modele.definirJeton(String(repeating: "a", count: 20), pour: macSansJeton.adresse)
+  #expect(
+    modele.etatAppairage(pour: macSansJeton) == .absent,
+    "un secret rangé mais inutilisable n'est pas un appairage")
+
+  // Et le jeton COMPLET, lui, suffit — sans réseau, sans connexion : c'est le
+  // gardien qui répond, et c'est ce qu'on veut éprouver ici.
+  modele.definirJeton(String(repeating: "b", count: 43), pour: macSansJeton.adresse)
+  #expect(modele.etatAppairage(pour: macSansJeton) == .appaire)
+}

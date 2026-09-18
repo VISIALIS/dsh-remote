@@ -1,7 +1,7 @@
 /* Table française — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   222 clés. */
+   214 clés. */
 
 "%d jeton(s) d'appareil effacé(s)" = "%d jeton(s) d'appareil effacé(s)";
 "%d préférence(s) oubliée(s)" = "%d préférence(s) oubliée(s)";
@@ -30,8 +30,8 @@
 "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond." = "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond.";
 "Aucun événement" = "Aucun événement";
 "aucune préférence à oublier" = "aucune préférence à oublier";
-"aucune session" = "aucune session";
 "Aucune session" = "Aucune session";
+"aucune session" = "aucune session";
 "Aucune session en mémoire" = "Aucune session en mémoire";
 "Aucune session ouverte" = "Aucune session ouverte";
 "Caméra indisponible" = "Caméra indisponible";
@@ -79,18 +79,15 @@
 "DSH Remote y répond : la machine peut servir l'application." = "DSH Remote y répond : la machine peut servir l'application.";
 "DSH · hôte" = "DSH · hôte";
 "DSH · hôte interrogé" = "DSH · hôte interrogé";
-"déjà enregistré — saisir pour remplacer" = "déjà enregistré — saisir pour remplacer";
 "Détail technique" = "Détail technique";
 "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit." = "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit.";
 "Effacer la recherche" = "Effacer la recherche";
-"Effacer le jeton" = "Effacer le jeton";
 "Effacer le jeton saisi" = "Effacer le jeton saisi";
 "en attente" = "en attente";
 "Envoyer" = "Envoyer";
 "Envoyer le message" = "Envoyer le message";
 "erreur" = "erreur";
 "Espaces de travail" = "Espaces de travail";
-"Essayer le jeton du coffre" = "Essayer le jeton du coffre";
 "est hors ligne sur le tailnet. Allumez-le, ou choisissez une machine en ligne : la liste se rafraîchit toute seule." = "est hors ligne sur le tailnet. Allumez-le, ou choisissez une machine en ligne : la liste se rafraîchit toute seule.";
 "Et vérifiez, sur cette machine-là :" = "Et vérifiez, sur cette machine-là :";
 "hors ligne" = "hors ligne";
@@ -108,10 +105,7 @@
 "Interrompre" = "Interrompre";
 "Interrompre le tour en cours" = "Interrompre le tour en cours";
 "Interrompre le tour en cours — la file d'attente est conservée" = "Interrompre le tour en cours — la file d'attente est conservée";
-"jeton complet (43 caractères)" = "jeton complet (43 caractères)";
 "Jeton d'appareil" = "Jeton d'appareil";
-"jeton d'appareil" = "jeton d'appareil";
-"Jeton d'appareil de cet hôte — à la main" = "Jeton d'appareil de cet hôte — à la main";
 "jeton incomplet :" = "jeton incomplet :";
 "jeton refusé" = "jeton refusé";
 "joignable" = "joignable";
@@ -122,7 +116,6 @@
 "l'hôte a refusé la demande" = "l'hôte a refusé la demande";
 "La machine à ajouter est sur le tailnet" = "La machine à ajouter est sur le tailnet";
 "Le bouton d'appairage est en bas de la barre latérale, sous le nom « DSH Remote ». Rechargez l'onglet : les routes du plugin s'activent à chaud, mais un bouton ajouté n'apparaît pas dans une page déjà ouverte (mesuré)." = "Le bouton d'appairage est en bas de la barre latérale, sous le nom « DSH Remote ». Rechargez l'onglet : les routes du plugin s'activent à chaud, mais un bouton ajouté n'apparaît pas dans une page déjà ouverte (mesuré).";
-"Le coffre du harness de cette machine contient un AUTRE jeton." = "Le coffre du harness de cette machine contient un AUTRE jeton.";
 "le fuseau horaire envoyé n'est pas reconnu" = "le fuseau horaire envoyé n'est pas reconnu";
 "Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre." = "Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre.";
 "Le jeton rangé a été refusé : c'est celui d'une autre machine. Appairez à nouveau pour le remplacer." = "Le jeton rangé a été refusé : c'est celui d'une autre machine. Appairez à nouveau pour le remplacer.";
@@ -141,7 +134,6 @@
 "Le secret est absent, tronqué ou mal formé." = "Le secret est absent, tronqué ou mal formé.";
 "Le serveur joint ne voit aucune machine sur le tailnet. Saisissez l'adresse ci-dessous." = "Le serveur joint ne voit aucune machine sur le tailnet. Saisissez l'adresse ci-dessous.";
 "Le service a refusé ce jeton. Chaque machine a le sien : recopiez celui de CET hôte." = "Le service a refusé ce jeton. Chaque machine a le sien : recopiez celui de CET hôte.";
-"Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien." = "Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien.";
 "Le texte affiché sous le QR code commence par `dshremote://` et contient le nom du Mac. Un texte d'un autre genre est refusé, avec la raison." = "Le texte affiché sous le QR code commence par `dshremote://` et contient le nom du Mac. Un texte d'un autre genre est refusé, avec la raison.";
 "Le travail déjà fait est conservé, et la file d'attente aussi." = "Le travail déjà fait est conservé, et la file d'attente aussi.";
 "Lecture du journal…" = "Lecture du journal…";

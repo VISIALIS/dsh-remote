@@ -1,7 +1,7 @@
 /* Table anglaise — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   222 clés. */
+   214 clés. */
 
 "%d jeton(s) d'appareil effacé(s)" = "%d device token(s) erased";
 "%d préférence(s) oubliée(s)" = "%d preference(s) forgotten";
@@ -30,8 +30,8 @@
 "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond." = "No service is listening on that machine's port 80. The tailnet itself works: the machine answers.";
 "Aucun événement" = "No events";
 "aucune préférence à oublier" = "no preference to forget";
-"aucune session" = "no sessions";
 "Aucune session" = "No sessions";
+"aucune session" = "no sessions";
 "Aucune session en mémoire" = "No sessions in memory";
 "Aucune session ouverte" = "No session open";
 "Caméra indisponible" = "Camera unavailable";
@@ -79,18 +79,15 @@
 "DSH Remote y répond : la machine peut servir l'application." = "DSH Remote answers there: the machine can serve the application.";
 "DSH · hôte" = "DSH · host";
 "DSH · hôte interrogé" = "DSH · host queried";
-"déjà enregistré — saisir pour remplacer" = "already stored — type to replace";
 "Détail technique" = "Technical detail";
 "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit." = "Erases the device tokens kept on this device — ALL of them, including those of machines you no longer visit —, the remembered address and name, the per-server preferences, the last session opened, the alert setting and the diagnostic file. The harness token, on the Mac, is untouched. A bootstrap file placed by hand is NOT erased: it would bring the address and the token back on the next launch, and the report says so.";
 "Effacer la recherche" = "Clear the search";
-"Effacer le jeton" = "Clear the token";
 "Effacer le jeton saisi" = "Clear the entered token";
 "en attente" = "pending";
 "Envoyer" = "Send";
 "Envoyer le message" = "Send the message";
 "erreur" = "error";
 "Espaces de travail" = "Workspaces";
-"Essayer le jeton du coffre" = "Try the vault token";
 "est hors ligne sur le tailnet. Allumez-le, ou choisissez une machine en ligne : la liste se rafraîchit toute seule." = "is offline on the tailnet. Turn it on, or choose a machine that is online: the list refreshes on its own.";
 "Et vérifiez, sur cette machine-là :" = "And check, on that machine:";
 "hors ligne" = "offline";
@@ -108,10 +105,7 @@
 "Interrompre" = "Interrupt";
 "Interrompre le tour en cours" = "Interrupt the current turn";
 "Interrompre le tour en cours — la file d'attente est conservée" = "Interrupt the current turn — the queue is kept";
-"jeton complet (43 caractères)" = "complete token (43 characters)";
 "Jeton d'appareil" = "Device token";
-"jeton d'appareil" = "device token";
-"Jeton d'appareil de cet hôte — à la main" = "Device token for this host — by hand";
 "jeton incomplet :" = "incomplete token:";
 "jeton refusé" = "token refused";
 "joignable" = "reachable";
@@ -122,7 +116,6 @@
 "l'hôte a refusé la demande" = "the host refused the request";
 "La machine à ajouter est sur le tailnet" = "The machine to add is on the tailnet";
 "Le bouton d'appairage est en bas de la barre latérale, sous le nom « DSH Remote ». Rechargez l'onglet : les routes du plugin s'activent à chaud, mais un bouton ajouté n'apparaît pas dans une page déjà ouverte (mesuré)." = "The pairing button is at the bottom of the sidebar, labelled « DSH Remote ». Reload the tab: the plugin's routes come up hot, but a button added afterwards does not appear in an already-open page (measured).";
-"Le coffre du harness de cette machine contient un AUTRE jeton." = "The harness vault on that machine holds a DIFFERENT token.";
 "le fuseau horaire envoyé n'est pas reconnu" = "the time zone sent is not recognised";
 "Le jeton n'est pas en cause ici : rien n'a pu être joint. Attention, il est PROPRE À CHAQUE HÔTE — celui de cette machine ne vaudra pas pour un autre." = "The token is not what failed here: nothing could be reached. Note that it is SPECIFIC TO EACH HOST — this machine's token will not work for another.";
 "Le jeton rangé a été refusé : c'est celui d'une autre machine. Appairez à nouveau pour le remplacer." = "The stored token was refused: it belongs to another machine. Pair again to replace it.";
@@ -141,7 +134,6 @@
 "Le secret est absent, tronqué ou mal formé." = "The secret is missing, truncated or malformed.";
 "Le serveur joint ne voit aucune machine sur le tailnet. Saisissez l'adresse ci-dessous." = "The server you reached sees no machine on the tailnet. Enter the address below.";
 "Le service a refusé ce jeton. Chaque machine a le sien : recopiez celui de CET hôte." = "The service refused this token. Each machine has its own: copy the one for THIS host.";
-"Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien." = "The service refused this token. Paste the one for THIS host: each machine has its own.";
 "Le texte affiché sous le QR code commence par `dshremote://` et contient le nom du Mac. Un texte d'un autre genre est refusé, avec la raison." = "The text shown under the QR code starts with `dshremote://` and contains the Mac's name. Text of another kind is refused, with the reason.";
 "Le travail déjà fait est conservé, et la file d'attente aussi." = "Work already done is kept, and so is the queue.";
 "Lecture du journal…" = "Reading the journal…";

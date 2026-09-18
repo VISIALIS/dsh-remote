@@ -110,15 +110,20 @@ func leJetonDuChampCompte() {
   #expect(modele.jetonDeLaCible() == jetonUn)
 }
 
-// MARK: - La page d'une machine montre LE JETON DE CETTE MACHINE
+// MARK: - Ce qu'on détient pour une machine est LE SIEN
 
 @MainActor
-@Test("Le champ d'une page lit le jeton de la machine AFFICHÉE, pas celui de la cible")
+@Test("Ce qu'on détient pour une machine AFFICHÉE n'est pas le jeton de la cible")
 func jetonDeLaMachineAffichee() {
-  // LE DÉFAUT. La page d'un serveur peut être ouverte sur un hôte auquel on
-  // n'est PAS connecté. Le champ annonçait « jeton de cet hôte » et lisait
-  // pourtant `jetonSaisi`, qui ne décrit que la cible — le jeton d'une machine
-  // s'affichait donc sous le nom d'une autre.
+  // LE DÉFAUT, ET CE QU'IL EST DEVENU. La page d'un serveur peut être ouverte sur
+  // un hôte auquel on n'est PAS connecté, et son champ de jeton annonçait « jeton
+  // de cet hôte » tout en lisant `jetonSaisi`, qui ne décrit que la cible : le
+  // secret d'une machine s'affichait donc sous le nom d'une autre.
+  //
+  // LE CHAMP A ÉTÉ RETIRÉ (demande du propriétaire), mais la règle qu'il avait
+  // fallu corriger reste VRAIE et c'est elle que ce test tient : la lecture par
+  // adresse ne rend jamais le secret d'une autre machine. C'est `jetonDetenu`, et
+  // elle sert désormais à l'étape d'appairage — donc à ce que la fiche AFFICHE.
   let gardien = GardienEnMemoire()
   let modele = ModeleApp(gardien: gardien)
   modele.remplacerServeursPourEssai([distant, autreDistant])
@@ -126,12 +131,11 @@ func jetonDeLaMachineAffichee() {
   modele.choisir(distant)
   modele.definirJeton(jetonUn)  // le jeton de la CIBLE
 
-  // La page de l'AUTRE machine ne doit pas montrer ce secret.
-  #expect(modele.jeton(pour: autreDistant.adresse).isEmpty)
-  #expect(!modele.jetonDisponible(pour: autreDistant.adresse))
+  // L'AUTRE machine ne doit pas montrer ce secret.
+  #expect(modele.jetonDetenu(pour: autreDistant.adresse).isEmpty)
 
-  // Et la page de la cible, elle, le montre — c'est bien le même secret.
-  #expect(modele.jeton(pour: distant.adresse) == jetonUn)
+  // Et la cible, elle, le détient — c'est bien le même secret.
+  #expect(modele.jetonDetenu(pour: distant.adresse) == jetonUn)
 }
 
 @MainActor
@@ -168,7 +172,7 @@ func effacerPourUneAutreMachine() {
   modele.effacerJeton(pour: autreDistant.adresse)
 
   #expect(gardien.lire(pour: IdentiteHote.cle(autreDistant.adresse)) == nil)
-  #expect(modele.jeton(pour: distant.adresse) == jetonUn, "le champ de la cible reste")
+  #expect(modele.jetonDetenu(pour: distant.adresse) == jetonUn, "le jeton de la cible reste")
   #expect(modele.jetonSaisi == jetonUn)
 }
 

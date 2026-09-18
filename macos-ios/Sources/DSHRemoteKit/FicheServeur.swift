@@ -26,14 +26,24 @@ import SwiftUI
 ///      visibles (un diagnostic ne cache rien), mais seule celle qui bloque porte
 ///      sa méthode dépliée : c'est la seule exécutable maintenant, et trois jeux
 ///      de commandes noient celle qui compte ;
-///   3. SES RÉGLAGES — jeton d'appoint, suivi, filtre, repliés. Rien de tout cela
-///      n'est une raison d'ouvrir la page ; tout y reste pourtant, parce que
-///      chaque réglage vit à l'endroit qui le rend vrai ;
+///   3. SES RÉGLAGES — suivi et filtre, repliés. Rien de tout cela n'est une
+///      raison d'ouvrir la page ; tout y reste pourtant, parce que chaque réglage
+///      vit à l'endroit qui le rend vrai ;
 ///   4. LE DÉTAIL TECHNIQUE — l'erreur brute, quand elle apprend quelque chose, et
 ///      elle seule : une phrase en français n'est pas un détail technique.
 ///
 /// LES BANDES 3 ET 4 N'EXISTENT PAS EN MODE AJOUT : il n'y a pas encore de
-/// machine dont on puisse régler le jeton ni lire l'erreur.
+/// machine dont on puisse régler le suivi ni lire l'erreur.
+///
+/// LA BANDE 3 A PERDU SON CHAMP DE JETON, ET C'EST UNE DEMANDE DU PROPRIÉTAIRE :
+/// « le jeton d'appareil de cet hôte ne correspond plus au contexte actuel des
+/// réglages […] quitte à la supprimer ». Il avait raison sur les trois points :
+/// le bloc s'appelait « à la main » alors que l'appairage est devenu le chemin
+/// normal, il redisait le refus que l'étape 5 dit MIEUX (« c'est celui d'une autre
+/// machine. Appairez à nouveau. »), et il vivait dans des « réglages » alors qu'un
+/// jeton n'est pas un réglage mais une RÉPARATION — dont le geste est l'appairage.
+/// Le suivi et le filtre, eux, restent : ils portent bien sur la connexion à
+/// cette machine-là, et c'est le propriétaire qui les y a mis.
 struct FicheServeur: View {
   @Bindable var modele: ModeleApp
   /// La machine affichée. `nil` = la page « Ajouter un serveur ».
@@ -86,6 +96,28 @@ struct FicheServeur: View {
     // l'autre, et `T` rend un `Text` — les deux ne se rencontrent pas dans un
     // `??`. Les deux helpers lisent la même table.
     .navigationTitle(serveur?.nom ?? L("Ajouter un serveur"))
+    // ── OUVRIR LA PAGE REPOSE LA QUESTION — ET C'ÉTAIT NÉCESSAIRE ─────────────
+    //
+    // Demande du propriétaire : « le diagnostic se met à jour à chaque fois qu'on
+    // recharge la page ? Ce serait nécessaire ». Il ne l'était pas, et le défaut
+    // était visible : on installe le plugin `dsh-remote` sur MacMini, la machine ne
+    // change pas d'état sur le tailnet, l'empreinte de sonde reste identique — et
+    // la page continue d'afficher « 4. Le plugin est installé : à faire » alors que
+    // c'est fait. Ni rouvrir la page, ni changer de machine puis revenir ne
+    // relançaient la sonde : il fallait quitter l'application, ou penser à
+    // « Revérifier ».
+    //
+    // LE DÉLAI DE GARDE VIT DANS LE MODÈLE, PAS ICI : la barre latérale montre le
+    // même diagnostic et doit appliquer le même délai. Une vue qui déciderait
+    // seule combien de requêtes un aller-retour mérite ferait diverger les deux
+    // surfaces dès le premier ajustement.
+    //
+    // LE MODE AJOUT N'EST PAS CONCERNÉ : il n'y a pas de machine à sonder, et
+    // `sonderLesServeurs` laisse alors la liste vide tranquille.
+    .task(id: serveur?.id) {
+      guard serveur != nil else { return }
+      await modele.sonderSiLeDelaiEstPasse()
+    }
     #if os(iOS)
       .navigationBarTitleDisplayMode(.inline)
     #endif
@@ -211,19 +243,15 @@ struct FicheServeur: View {
 
   // MARK: - 3. Les réglages de cette machine
 
-  /// REPLIÉS, MAIS SUR CETTE PAGE. Deux règles se rencontrent ici : un réglage
-  /// vit à l'endroit qui le rend vrai — le jeton est propre à chaque hôte, le
-  /// suivi décide si l'on interroge CE serveur —, et rien de tout cela n'est une
-  /// raison d'ouvrir la page. Un bloc replié satisfait les deux : il est là sans
-  /// s'interposer entre l'adresse et le verdict.
+  /// REPLIÉS, MAIS SUR CETTE PAGE. Un réglage vit à l'endroit qui le rend vrai —
+  /// le suivi décide si l'on interroge CE serveur, le filtre ce qu'on affiche de
+  /// SA liste —, et rien de tout cela n'est une raison d'ouvrir la page. Un bloc
+  /// replié satisfait les deux : il est là sans s'interposer entre l'adresse et le
+  /// verdict.
   private func reglagesDeLaMachine(_ serveur: ServeurMac) -> some View {
     DisclosureGroup {
-      VStack(alignment: .leading, spacing: 16) {
-        jeton(serveur)
-        Divider()
-        suiviEtFiltre(serveur)
-      }
-      .padding(.top, 10)
+      suiviEtFiltre(serveur)
+        .padding(.top, 10)
     } label: {
       Label { T("Réglages de cette machine") } icon: { Image(systemName: "slider.horizontal.3") }
         .font(.subheadline.weight(.semibold))
@@ -267,139 +295,6 @@ struct FicheServeur: View {
       .font(.caption)
       .foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
-    }
-  }
-
-  /// LE JETON D'APPAREIL, À LA MAIN — le dépannage, plus le chemin principal.
-  ///
-  /// POURQUOI ICI, ET NON DANS LES RÉGLAGES GÉNÉRAUX — mesuré. Le jeton est tiré
-  /// par CHAQUE hôte et rangé dans son coffre : deux Macs qui hébergent le plugin
-  /// ont deux jetons distincts, et celui d'une machine ne vaut pas pour une autre.
-  /// Un réglage « général » qui ne vaut que pour un hôte serait un mensonge
-  /// d'endroit.
-  ///
-  /// ET C'EST LE JETON DE **CETTE** MACHINE, pas celui de la cible. La page peut
-  /// être ouverte sur un hôte auquel on n'est PAS connecté : lire et écrire le
-  /// jeton de la cible faisait alors afficher un secret sous le nom d'un autre, et
-  /// un jeton collé ici partait vers une machine qui n'est pas celle qu'on
-  /// regarde. Toutes les opérations de ce bloc passent donc par `serveur.adresse`.
-  ///
-  /// CE QUI A ÉTÉ RETIRÉ, ET POURQUOI. Ce bloc portait un paragraphe expliquant
-  /// que le jeton ne s'affiche qu'une fois, dans la sortie du harness. C'est vrai,
-  /// et cela n'a plus sa place ICI : le chemin normal est l'appairage — l'étape 5,
-  /// juste au-dessus —, qui remplit l'adresse ET le jeton d'un seul geste. Le
-  /// champ reste pour ce qu'il est devenu : la porte de service, quand on a le
-  /// jeton sous la main et rien d'autre à faire.
-  private func jeton(_ serveur: ServeurMac) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      T("Jeton d'appareil de cet hôte — à la main")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      HStack(spacing: 8) {
-        SecureField(
-          modele.jetonDisponible(pour: serveur.adresse)
-            ? L("déjà enregistré — saisir pour remplacer") : L("jeton d'appareil"),
-          // Guardé dès la frappe POUR CET HÔTE : un jeton collé puis abandonné
-          // serait perdu, alors qu'il vient d'être recopié.
-          text: Binding(
-            get: { modele.jeton(pour: serveur.adresse) },
-            set: { modele.definirJeton($0, pour: serveur.adresse) })
-        )
-        .font(.callout.monospaced())
-        .lineLimit(1)
-        .autocorrectionDisabled()
-        .layoutPriority(1)
-        #if os(iOS)
-          .textInputAutocapitalization(.never)
-        #endif
-        // LE COLLAGE, PAR LE BOUTON SYSTÈME SUR iOS — même raison que dans la
-        // feuille Adresse : lire le presse-papiers sur un appui déclenche la
-        // bannière système, alors que l'utilisateur demande précisément ce
-        // collage. Sur macOS, la lecture sur geste explicite ne se signale pas.
-        #if os(iOS)
-          PasteButton(payloadType: String.self) { chaines in
-            guard let brut = chaines.first else {
-              modele.signaler(ModeleApp.messageJetonIllisible)
-              return
-            }
-            modele.adopterJeton(brut, pour: serveur.adresse)
-          }
-          .labelStyle(.iconOnly)
-          .buttonStyle(.borderless)
-          .cibleTactile()
-          .accessibilityLabel(T("Coller le jeton depuis le presse-papier"))
-        #else
-          Button {
-            // UN COLLAGE REFUSÉ SE DIT : un presse-papiers vide ne doit pas
-            // produire un appui sans effet.
-            if !modele.collerLeJeton(pour: serveur.adresse) {
-              modele.signaler(ModeleApp.messageJetonIllisible)
-            }
-          } label: {
-            Image(systemName: "doc.on.clipboard")
-          }
-          .buttonStyle(.borderless)
-          .cibleTactile()
-          .accessibilityLabel(T("Coller le jeton depuis le presse-papier"))
-        #endif
-        if modele.jetonDisponible(pour: serveur.adresse) {
-          Button {
-            modele.effacerJeton(pour: serveur.adresse)
-          } label: {
-            Image(systemName: "xmark.circle")
-          }
-          .buttonStyle(.borderless)
-          .cibleTactile()
-          .accessibilityLabel(T("Effacer le jeton"))
-        }
-      }
-
-      // ON NE JUGE QUE CE QUI A ÉTÉ SAISI. « jeton incomplet : 0 caractères au
-      // lieu de 43 » s'affichait sur une page où RIEN n'avait été tapé : un
-      // reproche pour un champ vide, avant même le premier mot sur la machine.
-      if modele.jetonDisponible(pour: serveur.adresse) {
-        let complet = modele.jetonBienForme(pour: serveur.adresse)
-        Label(
-          complet
-            ? L("jeton complet (43 caractères)")
-            : L("jeton incomplet :") + " \(modele.longueurJeton(pour: serveur.adresse)) " + L("caractères au lieu de 43"),
-          systemImage: complet ? "checkmark.seal" : EtatVisuel.attention.symbole
-        )
-        .font(.caption)
-        .foregroundStyle((complet ? EtatVisuel.pret : .attention).couleur)
-      }
-
-      // Un `401` propose l'action qui RÉPARE, à portée de pouce : le champ est
-      // juste au-dessus. Le rappel n'apparaît que pour cette cause-là — une
-      // adresse injoignable ne se règle pas ici, et une machine ÉTEINTE non plus
-      // — ET SEULEMENT SUR LA PAGE DE LA MACHINE VISÉE : un `401` parle de la
-      // connexion en cours, pas d'une fiche qu'on consulte.
-      if modele.jetonRefuseParLeService, ModeleApp.vise(modele.adresse, serveur) {
-        VStack(alignment: .leading, spacing: 8) {
-          Label { T("Le service a refusé ce jeton. Collez celui de CET hôte : chaque machine a le sien.") } icon: { Image(systemName: "key") }
-          .font(.caption)
-          .foregroundStyle(EtatVisuel.attention.couleur)
-          .fixedSize(horizontal: false, vertical: true)
-
-          // LE COFFRE EN SAIT PARFOIS PLUS QUE LE CHAMP. Quand le jeton détenu
-          // n'est PAS celui du coffre de cette machine, l'application le DIT et
-          // propose de l'essayer — sans jamais montrer ni recopier le secret.
-          // C'est la sortie de secours qui manquait : un jeton étranger refusé
-          // laissait l'application bloquée, sans autre issue qu'un recollage.
-          if modele.jetonDuCoffreDiffert(pour: serveur.adresse) {
-            T("Le coffre du harness de cette machine contient un AUTRE jeton.")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .fixedSize(horizontal: false, vertical: true)
-            Button(L("Essayer le jeton du coffre")) {
-              modele.adopterLeJetonDuCoffre(pour: serveur.adresse)
-              Task { await modele.choisirEtConnecter(serveur) }
-            }
-            .buttonStyle(.bordered)
-            .font(.caption)
-          }
-        }
-      }
     }
   }
 

@@ -42,9 +42,10 @@ func leMarqueurRecuNeTrompePlus() {
   modele.remplacerServeursPourEssai([machine("MacMini", "macmini.exemple.ts.net", local: true)])
 
   #expect(modele.estHoteLocal("http://macmini.exemple.ts.net") == false)
-  // ET LA CONSÉQUENCE DIRECTE : aucun jeton n'est proposé pour lui — donc aucun
-  // n'est envoyé. `jeton(pour:)` ne lit le coffre QUE si `estHoteLocal` est vrai.
-  #expect(modele.jeton(pour: "http://macmini.exemple.ts.net").isEmpty)
+  // ET LA CONSÉQUENCE DIRECTE : aucun jeton de CE Mac n'est détenu pour lui —
+  // donc aucun ne peut partir. `jetonDetenu` ne lit le coffre QUE si
+  // `estHoteLocal` est vrai.
+  #expect(modele.jetonDetenu(pour: "http://macmini.exemple.ts.net").isEmpty)
 }
 
 @MainActor
@@ -91,26 +92,29 @@ func leFaitLocalSurvitALaListeDeLHote() {
 }
 
 @MainActor
-@Test("Aucun jeton du coffre n'est PROPOSÉ pour un hôte distant — le remède faux")
+@Test("Aucun jeton du coffre n'est DÉTENU pour un hôte distant — le remède faux")
 func aucunRemedeFauxPourUnHoteDistant() {
   // LA CONSÉQUENCE VISIBLE DU DÉFAUT, ET CE QUE LE PROPRIÉTAIRE A VU. Sur la page
   // de MacMini, l'application annonçait « Le coffre du harness de cette machine
   // contient un AUTRE jeton » et proposait de l'essayer. C'est FAUX : ce coffre est
-  // celui de CE Mac. Le bouton copiait donc le jeton local dans le champ de
-  // MacMini, qui le refusait en `401` — le secret avait voyagé pour rien.
+  // celui de CE Mac. Le bouton copiait donc le jeton local, qui était refusé en
+  // `401` — le secret avait voyagé pour rien.
   //
-  // Ce test tient les deux bords SANS coffre et SANS secret : la proposition
-  // n'existe pas, et l'adoption ne change rien.
+  // LE BOUTON A DISPARU AVEC LE CHAMP DE JETON DE LA FICHE (demande du
+  // propriétaire). LA RÈGLE, ELLE, N'A PAS DISPARU : c'est `jetonDetenu` qui
+  // décide ce qu'on détient pour une machine, et elle est désormais la SEULE
+  // lecture — celle qui alimente l'étape d'appairage. Ce que ce test tient est
+  // donc ce qui reste vrai : pour un hôte distant, la lecture rend SON jeton ou
+  // rien, jamais celui du coffre de ce Mac.
   let modele = modeleDeTest()
   modele.remplacerServeursPourEssai([machine("MacMini", "macmini.exemple.ts.net", local: true)])
   let jetonFictif = "JETONFICTIF-de-macmini-00000000000000000000"
   modele.enregistrerJeton(jetonFictif, pour: "http://macmini.exemple.ts.net")
 
   #expect(
-    modele.jetonDuCoffreDiffert(pour: "http://macmini.exemple.ts.net") == false,
+    modele.estHoteLocal("http://macmini.exemple.ts.net") == false,
     "aucun coffre de CE Mac ne fait autorité pour un autre Mac")
-  modele.adopterLeJetonDuCoffre(pour: "http://macmini.exemple.ts.net")
   #expect(
-    modele.jeton(pour: "http://macmini.exemple.ts.net") == jetonFictif,
-    "le jeton de l'hôte distant n'est pas remplacé par un secret local")
+    modele.jetonDetenu(pour: "http://macmini.exemple.ts.net") == jetonFictif,
+    "le seul jeton détenu pour cet hôte est le sien, jamais un secret local")
 }

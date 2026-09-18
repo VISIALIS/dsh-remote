@@ -550,6 +550,14 @@ public final class ModeleApp {
     // en DEBUG seulement, permettent d'ÉPROUVER les invariants sans réseau.
     func remplacerSondePourEssai(_ valeur: EtatSonde) { sonde = valeur }
     func remplacerConnexionPourEssai(_ valeur: EtatConnexion) { connexion = valeur }
+    /// RECULER LA DATE DE LA DERNIÈRE SONDE, pour éprouver le délai de garde sans
+    /// attendre cinq secondes réelles. La règle porte sur une DURÉE ; c'est donc
+    /// la durée qu'on avance, et rien d'autre — l'horloge du test n'est pas
+    /// simulée, elle est simplement contournée là où elle n'apporte rien.
+    func reculerLaDerniereSondePourEssai(secondes: TimeInterval) {
+      guard let date = dateDerniereSonde else { return }
+      dateDerniereSonde = date.addingTimeInterval(-secondes)
+    }
     /// La liste des machines découvertes, pour éprouver les transitions de la
     /// cible sans dépendre de Tailscale.
     func remplacerServeursPourEssai(_ valeur: [ServeurMac]) { serveurs = valeur }
@@ -609,6 +617,20 @@ public final class ModeleApp {
   /// LE REFUS PASSE AVANT LA PRÉSENCE. Un jeton bien formé mais refusé n'est pas
   /// un appairage : c'est un secret étranger rangé sous le nom de cette machine,
   /// et le dire « appairé » enverrait chercher la panne ailleurs.
+  ///
+  /// CE QUI COMPTE EST LE JETON **RANGÉ POUR CETTE MACHINE**, et rien d'autre. La
+  /// question se lisait dans un champ de saisie de la fiche — un champ qui a été
+  /// RETIRÉ : l'appairage remplit le trousseau, et le coffre du harness sert la
+  /// machine locale ; un champ à remplir à la main ne décrivait plus rien de vrai,
+  /// et sa valeur MÉMORISÉE en mémoire (`jetonSaisi`) ne survivait pas à un
+  /// changement de cible. On lit donc la seule source qui soit par hôte et qui
+  /// persiste : ce que l'on détient (`jetonDetenu`).
+  ///
+  /// ET ON EXIGE SA **FORME**, pas seulement sa présence : « un secret est rangé »
+  /// n'est pas « on est appairé ». Un jeton tronqué — collé à moitié dans la
+  /// feuille « Adresse » — échouerait en `401`, et l'annoncer « appairé »
+  /// enverrait chercher la panne ailleurs. C'est la règle d'avant, et elle
+  /// n'avait aucune raison de changer avec la source.
   public func etatAppairage(pour serveur: ServeurMac) -> EtapesServeur.EtatAppairage {
     if serveurVise?.id == serveur.id, jetonRefuseParLeService { return .refuse }
     return jetonBienForme(pour: serveur.adresse) ? .appaire : .absent
@@ -617,7 +639,8 @@ public final class ModeleApp {
   /// L'appairage de la machine VISÉE — pour les surfaces qui n'affichent pas une
   /// fiche mais l'état courant (vignettes, panneau).
   public var appairageDeLaCible: EtapesServeur.EtatAppairage {
-    serveurVise.map { etatAppairage(pour: $0) } ?? (jetonBienForme(pour: adresse) ? .appaire : .absent)
+    serveurVise.map { etatAppairage(pour: $0) }
+      ?? (jetonBienForme(pour: adresse) ? .appaire : .absent)
   }
 
 
@@ -689,6 +712,34 @@ public final class ModeleApp {
   /// explicite (« Revérifier ») appelle `sonderLesServeurs` directement et n'est
   /// donc pas concerné.
   var empreinteSondee: String?
+
+  /// QUAND LA SONDE EST PARTIE POUR LA DERNIÈRE FOIS — la mesure du délai de garde.
+  ///
+  /// POURQUOI CETTE DATE EXISTE. L'empreinte ci-dessus ne rouvre la question que
+  /// si l'ENSEMBLE DES MACHINES EN LIGNE change. Or c'est le cas le plus fréquent
+  /// qui l'empêche : on installe le plugin sur MacMini, la machine ne bouge pas,
+  /// l'empreinte est identique — et la page continue d'afficher « 4. Le plugin
+  /// dsh-remote est installé : à faire » alors que c'est fait. Recharger la page
+  /// ne sondait rien, et il fallait quitter l'application ou appuyer sur
+  /// « Revérifier ».
+  ///
+  /// La date permet donc une SECONDE porte, indépendante de la première : une
+  /// re-sonde demandée par l'AFFICHAGE (ouverture d'une fiche, retour au premier
+  /// plan), throttlée pour qu'un aller-retour dans la liste ne déclenche pas trois
+  /// vagues de requêtes.
+  var dateDerniereSonde: Date?
+
+  /// LE DÉLAI DE GARDE DE LA RE-SONDE, en secondes.
+  ///
+  /// CINQ SECONDES, et c'est un ordre de grandeur, pas une mesure : une sonde
+  /// coûte 16 ms sur une machine saine (mesuré), 2,5 s au pire sur une machine
+  /// muette — le délai borne donc le PIRE cas, pas le coût courant. Il est assez
+  /// court pour qu'un geste humain (« je viens d'installer le plugin, je rouvre
+  /// la page ») passe, et assez long pour absorber un aller-retour dans la liste.
+  ///
+  /// `nonisolated` POUR LA MÊME RAISON QUE LA RÈGLE, juste en dessous : la
+  /// constante appartient à la règle, pas à l'acteur.
+  public nonisolated static let seuilDeResondage: TimeInterval = 5
 
   /// Suivi automatique de la liste : rafraîchit les statuts en continu.
   ///
@@ -1666,6 +1717,23 @@ public final class ModeleApp {
     definirAdresse("http://" + hote)
     enregistrerJeton(secret)
     Trace.siActive("[appairage] applique vers \(hote), jeton de \(secret.count) caracteres")
+    // ── L'APPAIRAGE CHANGE LE VERDICT : ON LE REMESURE TOUT DE SUITE ─────────
+    //
+    // Demande du propriétaire : « le diagnostic se met à jour à chaque fois qu'on
+    // recharge la page ? Ce serait nécessaire. » Après un appairage, il ne l'était
+    // pas : la machine n'a pas changé d'état sur le tailnet, donc l'empreinte de
+    // sonde était identique, et la cinquième étape de la fiche pouvait rester à
+    // « Cet appareil est appairé : à faire » une fois le jeton rangé. La sonde sait
+    // pourtant la mesurer — elle part SANS porteur, exprès, et compte un `401`
+    // comme « DSH est là ».
+    //
+    // ON FORCE, sans délai de garde : on vient de changer un secret, et il n'y a
+    // pas de mesure plus fraîche à protéger. L'appel est LANCÉ et non attendu —
+    // l'appelant enchaîne sur `connecter()`, qui est le geste que l'utilisateur
+    // attend, et une sonde de 16 ms n'a pas à retarder le remplissage des
+    // sessions. Deux mesures indépendantes, donc : ni l'une ni l'autre ne dépend
+    // du résultat de l'autre.
+    Task { await sonderLesServeurs(enIgnorantLeDelai: true) }
     return true
   }
 
@@ -1833,68 +1901,20 @@ public final class ModeleApp {
 
 
 
-  /// LE JETON D'UNE MACHINE NOMMÉE — ce que son champ doit afficher.
+  /// LA FORME DU JETON DÉTENU POUR CETTE MACHINE — la seule lecture qui reste.
   ///
-  /// POURQUOI ELLE PREND L'ADRESSE. `jetonSaisi` ne décrit QUE la cible : il est
-  /// sa valeur la plus fraîche (un collage qui n'est pas encore enregistré, une
-  /// amorce de fichier), et il n'a rien à dire d'une autre machine. Le lire pour
-  /// toutes les pages faisait afficher le jeton d'une machine sous le nom d'une
-  /// autre.
-  public func jeton(pour adresse: String) -> String {
-    let cle = IdentiteHote.cle(adresse)
-    if cle == IdentiteHote.cle(cible.adresse), !jetonSaisi.isEmpty { return jetonSaisi }
-    if let garde = gardien.lire(pour: cle), !garde.isEmpty { return garde }
-    guard estHoteLocal(adresse) else { return "" }
-    return CoffreDuHarness.jetonDeLaMachine() ?? ""
-  }
-
-  /// Vrai si un jeton est disponible POUR CETTE MACHINE, sans le révéler.
-  public func jetonDisponible(pour adresse: String) -> Bool { !jeton(pour: adresse).isEmpty }
-
-  /// Longueur du jeton de CETTE machine. Jamais le jeton lui-même.
-  public func longueurJeton(pour adresse: String) -> Int { jeton(pour: adresse).count }
-
-  /// La forme du jeton de CETTE machine.
+  /// ELLE SERVAIT UN CHAMP DONT ELLE ÉTAIT LE VERDICT : le bloc « Jeton d'appareil
+  /// de cet hôte » affichait « jeton complet (43 caractères) » ou « il manque trois
+  /// caractères ». Ce champ a été retiré, et cette fonction a failli partir avec
+  /// lui — mais `etatAppairage` en dépend : c'est elle qui distingue « un jeton est
+  /// rangé » de « un jeton UTILISABLE est rangé », et la cinquième étape du
+  /// parcours se lit là.
+  ///
+  /// LA RÈGLE EST CELLE DE CE QU'ON DÉTIENT : le gardien pour cet hôte, ou le
+  /// coffre du harness quand la machine EST celle-ci. Ce qui a été appairé survit
+  /// à un redémarrage ; ce qui traînait dans un champ n'y survivait pas.
   public func jetonBienForme(pour adresse: String) -> Bool {
-    ModeleApp.jetonBienForme(jeton(pour: adresse))
-  }
-
-  /// LE COFFRE DE CETTE MACHINE PROPOSE-T-IL UN AUTRE JETON QUE LE CHAMP ?
-  ///
-  /// POURQUOI. Mesure du 13 septembre : une instance de l'application présentait
-  /// un jeton de 43 caractères que le service refusait (`401`), alors que le
-  /// coffre de la machine contenait le bon — l'application restait donc bloquée
-  /// sur un secret étranger, sans rien pour en sortir qu'un recollage manuel.
-  ///
-  /// La comparaison se fait PAR EMPREINTE, jamais par valeur : on veut seulement
-  /// savoir si les deux diffèrent, et c'est exactement ce pour quoi `Empreinte`
-  /// existe (le jeton n'est ni affiché, ni journalisé, ni recopié ailleurs).
-  public func jetonDuCoffreDiffert(pour adresse: String) -> Bool {
-    guard estHoteLocal(adresse),
-      let duCoffre = CoffreDuHarness.jetonDeLaMachine(), !duCoffre.isEmpty
-    else { return false }
-    return !ModeleApp.memeJeton(duCoffre, jeton(pour: adresse))
-  }
-
-  /// Adopte le jeton du coffre pour cette machine — sans jamais le montrer.
-  ///
-  /// N'est proposé que là où le coffre fait autorité : la machine locale, celle
-  /// qui exécute le harness. Le coffre d'un AUTRE Mac n'est pas lisible d'ici, et
-  /// prétendre le contraire serait une devinette.
-  public func adopterLeJetonDuCoffre(pour adresse: String) {
-    guard estHoteLocal(adresse), let duCoffre = CoffreDuHarness.jetonDeLaMachine(),
-      !duCoffre.isEmpty
-    else { return }
-    enregistrerJeton(duCoffre, pour: adresse)
-  }
-
-  /// Deux jetons sont-ils le MÊME, sans les révéler ?
-  ///
-  /// Fonction pure, pour que la règle qui décide d'afficher « essayer le jeton du
-  /// coffre » soit éprouvable sans coffre, sans réseau et sans secret.
-  public nonisolated static func memeJeton(_ gauche: String, _ droite: String) -> Bool {
-    guard !gauche.isEmpty, !droite.isEmpty else { return false }
-    return Empreinte.de(gauche) == Empreinte.de(droite)
+    ModeleApp.jetonBienForme(jetonDetenu(pour: adresse))
   }
 
   /// CETTE ADRESSE EST-ELLE CELLE DE LA MACHINE QUI HÉBERGE LE HARNESS ?

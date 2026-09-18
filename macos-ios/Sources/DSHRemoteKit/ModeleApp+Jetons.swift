@@ -66,8 +66,8 @@ extension ModeleApp {
   /// POURQUOI LE COFFRE N'EST CONSULTÉ QU'ICI. `~/.dsh/.credentials.yaml`
   /// contient le jeton émis par l'hôte LOCAL, et rien d'autre. Le proposer pour
   /// une autre machine, c'était lui envoyer le secret d'une autre — et un refus
-  /// qui ne dit pas son nom. Quand on ne sait pas, on ne devine pas : le champ
-  /// de jeton est sur la page, à portée.
+  /// qui ne dit pas son nom. Quand on ne sait pas, on ne devine pas : l'appairage
+  /// est le geste, et il a son étape (la cinquième) sur la fiche de la machine.
   public func jetonDeLaCible() -> String {
     // ── LE CHAMP D'ABORD, ET C'EST UNE CORRECTION ──────────────────────────
     //
@@ -83,23 +83,45 @@ extension ModeleApp {
       return jetonSaisi
     }
     let cle = IdentiteHote.cle(cible.adresse)
-    if let garde = jetonGarde(pour: cible.adresse) {
+    let detenu = jetonDetenu(pour: cible.adresse)
+    if detenu.isEmpty {
+      Trace.siActive("[jeton] AUCUN jeton pour \(cle)")
+    } else {
       Trace.siActive(
-        "[jeton] gardien de l'hote : longueur=\(garde.count) empreinte=\(Empreinte.de(garde).prefix(8))")
-      return garde
+        "[jeton] detenu pour l'hote : longueur=\(detenu.count) empreinte=\(Empreinte.de(detenu).prefix(8))")
     }
+    return detenu
+  }
+
+  /// LE JETON QUE L'ON DÉTIENT POUR UNE MACHINE — les deux sources qui restent.
+  ///
+  /// POURQUOI CETTE FONCTION EXISTE, ET CE QU'ELLE A REMPLACÉ. La fiche d'une
+  /// machine portait un champ « Jeton d'appareil de cet hôte », et tout ce qui
+  /// décrivait l'appairage se lisait DANS CE CHAMP. Le champ a été retiré : il
+  /// faisait doublon avec l'étape d'appairage, juste au-dessus, qui pose le même
+  /// secret sans le montrer ni le recopier. Restent donc les DEUX sources que le
+  /// champ recouvrait, et une troisième qui n'existe plus :
+  ///
+  ///   1. **le gardien** — ce qui a été appairé, ou saisi dans la feuille
+  ///      « Adresse », pour CET hôte précisément ;
+  ///   2. **le coffre du harness** — mais UNIQUEMENT si la machine interrogée est
+  ///      celle qui exécute le harness (`estHoteLocal`). Le coffre local ne détient
+  ///      que SON jeton, et le proposer pour un Mac distant lui enverrait le secret
+  ///      d'un autre ;
+  ///   3. ~~le champ de la fiche~~ — supprimé. Sa valeur vivait en mémoire
+  ///      (`jetonSaisi`), ne survivait pas à un changement de cible, et faisait
+  ///      afficher le jeton d'une machine sous le nom d'une autre.
+  ///
+  /// ELLE SERT DEUX FOIS, ET C'EST VOULU : `jetonDeLaCible` en fait le jeton qu'on
+  /// ENVOIE, et `jetonBienForme(pour:)` en fait l'appairage qu'on AFFICHE. Une
+  /// seule lecture pour les deux : ce qui est montré est ce qui part.
+  func jetonDetenu(pour adresse: String) -> String {
+    if let garde = jetonGarde(pour: adresse), !garde.isEmpty { return garde }
     // LE JETON DU COFFRE NE VA QU'À CETTE MACHINE. Le test est `estHoteLocal`, et
     // non `serveurVise?.estLocal` : le second lisait le marqueur d'une liste reçue,
     // donc envoyait le secret local à l'hôte distant qui s'était marqué lui-même.
-    guard estHoteLocal(cible.adresse) else {
-      Trace.siActive("[jeton] AUCUN jeton pour \(cle)")
-      return ""
-    }
-    let duCoffre = CoffreDuHarness.jetonDeLaMachine() ?? ""
-    Trace.siActive(
-      "[jeton] coffre du harness : longueur=\(duCoffre.count) empreinte=\(duCoffre.isEmpty ? "aucun" : String(Empreinte.de(duCoffre).prefix(8)))"
-    )
-    return duCoffre
+    guard estHoteLocal(adresse) else { return "" }
+    return CoffreDuHarness.jetonDeLaMachine() ?? ""
   }
 
   /// Le jeton saisi pour l'hôte VISÉ, gardé DÈS LA FRAPPE.
