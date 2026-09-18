@@ -97,6 +97,7 @@ TRADUCTIONS = {
     "serveur courant": "current server",
     "serveur actif": "active server",
     "Serveurs": "Servers",
+    "Sélectionne ce serveur": "Selects this server",
     "Ouvre la page de ce serveur": "Opens this server's page",
     "Ouvrir la page": "Open page",
     "Affiche ce serveur": "Shows this server",
@@ -373,8 +374,10 @@ TRADUCTIONS.update({
     "Serveur sélectionné": "Server selected",
     "Sélectionne cette machine ; un second appui ouvre sa page":
         "Selects this machine; a second tap opens its page",
-    "Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page.":
-        "Its sessions and workspaces are on the left. Tap its icon again to open its page.",
+    "Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa carte pour ouvrir sa page.":
+        "Its sessions and workspaces are on the left. Tap its card again to open its page.",
+    "Ses sessions et ses espaces de travail sont à gauche. Cliquez à nouveau sur sa carte pour ouvrir sa page.":
+        "Its sessions and workspaces are on the left. Click its card again to open its page.",
 
     # L'appairage : ce que le panneau est, et où il est.
     "Le panneau « Appairer un appareil » de l'interface DSH affiche un QR code et le texte qui va avec : le scanner (ou le collage) remplit l'adresse ET le jeton d'un seul geste, puis se connecte.":

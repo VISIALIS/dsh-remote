@@ -165,20 +165,10 @@ func libelleDuneMachine() {
       == "MacMini, " + L("jeton refusé"))
 }
 
-@Test("Le carrousel et la carte large annoncent le serveur actif et l'index de pagination")
-func annoncesDuCarrouselEtDeLaCarte() {
+@Test("Le libellé accessible d'une carte de serveur")
+func libelleDeLaCarteDeServeur() {
   let serveur = ServeurMac(nom: "MacMini", nomDNS: "macmini.local", enLigne: true)
   let libelleMachine = EtatMachine.libelleAccessible(
     nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: true, estLocal: false, appairage: .appaire)
   #expect(libelleMachine == "MacMini, DSH")
-
-  // L'annonce de position du carrousel paginé
-  let annoncePosition = "\(serveur.nom), 1 " + L("sur") + " 3"
-  #expect(annoncePosition.contains("1"))
-  #expect(annoncePosition.contains(L("sur")))
-  #expect(annoncePosition.contains("3"))
-
-  // Le suffixe du serveur actif
-  let valeurAccessibleCarte = "DSH, " + L("serveur actif")
-  #expect(valeurAccessibleCarte.contains(L("serveur actif")))
 }

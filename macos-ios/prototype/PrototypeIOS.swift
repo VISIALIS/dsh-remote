@@ -301,23 +301,7 @@ struct EcranPrincipal: View {
             .listRowSeparator(.hidden)
           }
         } header: {
-          HStack {
-            Entete("Serveurs", detail: serveurs.isEmpty ? nil : "\(serveurs.filter(\.enLigne).count) en ligne")
-            if serveurs.count == 1 {
-              Spacer()
-              Button {
-                ajoutOuvert = true
-              } label: {
-                Image(systemName: "plus")
-                  .font(.subheadline.weight(.semibold))
-                  .foregroundStyle(Color.accentColor)
-                  .frame(minWidth: 44, minHeight: 44)
-                  .contentShape(Rectangle())
-              }
-              .buttonStyle(.plain)
-              .accessibilityLabel("Ajouter un serveur")
-            }
-          }
+          Entete("Serveurs", detail: serveurs.isEmpty ? nil : "\(serveurs.filter(\.enLigne).count) en ligne")
         }
 
         Section {
@@ -541,12 +525,12 @@ struct CarteTailscale: View {
 /// - Pager `ScrollView(.horizontal)` sous iOS 17 avec `.scrollTargetBehavior(.viewAligned)`
 ///   et `.scrollPosition(id: $pageVisible)`.
 /// - Dépassement visuel (*peek*) de 14 pt pour enseigner le geste de balayage.
-/// - Hauteur 100% intrinsèque sans `.frame(height: 104)` figé.
+/// - Hauteur intrinsèque et composition verticale aux tailles d'accessibilité.
 /// - Découplage de la page affichée et de la sélection effective (debounce de 350 ms pour Option A).
-/// - Clic sur la carte ou son chevron ouvrant la fiche détaillée du serveur (suppression du no-op).
+/// - Premier appui sur une autre carte : sélection ; second appui : fiche détaillée.
 /// - Suppression du badge redondant « Actif » sur la carte pour libérer l'espace du titre.
 /// - Cibles tactiles 44×44 pt sur chaque indicateur et sur le bouton « + ».
-/// - Indicateurs masqués si `serveurs.count <= 1`.
+/// - Barre conservée avec un serveur afin que le bouton « + » garde sa place.
 struct CarrouselServeurs: View {
   let serveurs: [ServeurDemo]
   @Binding var choix: String?
@@ -565,6 +549,13 @@ struct CarrouselServeurs: View {
             CarteServeurDemo(
               serveur: serveur,
               actif: (pageVisible ?? choix) == serveur.id,
+              surToucher: {
+                if choix == serveur.id {
+                  surOuvrirFiche(serveur)
+                } else {
+                  choix = serveur.id
+                }
+              },
               surOuvrirFiche: { surOuvrirFiche(serveur) }
             )
             .id(serveur.id)
@@ -582,9 +573,12 @@ struct CarrouselServeurs: View {
       .scrollBounceBehavior(serveurs.count > 1 ? .always : .basedOnSize)
       .contentMargins(.horizontal, 14, for: .scrollContent)
       .onChange(of: pageVisible) { _, nouvellePage in
+        // Annulée à CHAQUE règlement, y compris un retour au choix courant :
+        // sans ça, un aller-retour A→B→A laisse partir la sélection de B
+        // 350 ms plus tard, alors que l'écran est revenu sur A.
+        tacheDebounce?.cancel()
         guard let nouvellePage, nouvellePage != choix else { return }
         // Option A debouncée : 350 ms pour éviter d'enchaîner 3 reconnexions lors d'un balayage rapide
-        tacheDebounce?.cancel()
         tacheDebounce = Task {
           try? await Task.sleep(for: .milliseconds(350))
           guard !Task.isCancelled else { return }
@@ -615,15 +609,19 @@ struct CarrouselServeurs: View {
         @unknown default:
           nouvelIndex = indexCourant
         }
+        guard nouvelIndex != indexCourant else { return }
         let cible = serveurs[nouvelIndex].id
+        tacheDebounce?.cancel()
         withAnimation {
-          pageVisible = cible
           choix = cible
         }
       }
+      .onDisappear {
+        tacheDebounce?.cancel()
+      }
 
-      // 2. Indicateurs personnalisés : uniquement si plus d'un serveur
-      if serveurs.count > 1 {
+      // 2. La barre conserve le bouton « + » même avec une seule machine.
+      if !serveurs.isEmpty {
         IndicateursServeursDemo(
           serveurs: serveurs,
           choix: $choix,
@@ -648,72 +646,35 @@ struct CarteServeurDemo: View {
 
   let serveur: ServeurDemo
   let actif: Bool
+  var surToucher: () -> Void = {}
   var surOuvrirFiche: () -> Void = {}
 
   private var diametrePastille: CGFloat { min(cotePastille, 64) }
 
   var body: some View {
-    Button {
-      surOuvrirFiche()
-    } label: {
-      HStack(spacing: 14) {
-        // Glyphe matériel dans une pastille circulaire
-        ZStack {
-          Circle()
-            .fill(
-              serveur.enLigne
-                ? LinearGradient(
-                    colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing)
-                : LinearGradient(
-                    colors: [Color.secondary.opacity(0.4), Color.secondary.opacity(0.2)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing)
-            )
-            .frame(width: diametrePastille, height: diametrePastille)
-
-          Image(systemName: serveur.symbole)
-            .font(.system(size: diametrePastille * 0.46, weight: .regular))
-            .foregroundStyle(.white)
-        }
-
-        VStack(alignment: .leading, spacing: 4) {
-          Text(serveur.nom)
-            .font(.headline)
-            .foregroundStyle(Color.primary)
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-
-          Text(serveur.nomDNS)
-            .font(.caption)
-            .foregroundStyle(Color.secondary)
-            .lineLimit(1)
-
-          HStack(spacing: 5) {
-            Circle()
-              .fill(serveur.enLigne ? Color.green : Color.gray)
-              .frame(width: 7, height: 7)
-            Text(serveur.enLigne ? "En ligne · DSH actif" : "Hors ligne")
-              .font(.caption2.weight(.medium))
-              .foregroundStyle(serveur.enLigne ? Color.green : Color.secondary)
-            if serveur.estLocal {
-              Text("· hôte").font(.caption2).foregroundStyle(.tertiary)
+    Button(action: surToucher) {
+      Group {
+        if dynamicTypeSize.isAccessibilitySize {
+          VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+              glypheMateriel
+              identiteServeur(limiteNom: 3, limiteDNS: 2)
+              Spacer(minLength: 4)
+              if actif { chevron }
             }
+            statutServeur(formeCompacte: false)
           }
-          .padding(.horizontal, 7)
-          .padding(.vertical, 2.5)
-          .background(
-            serveur.enLigne ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12),
-            in: Capsule()
-          )
-          .fixedSize(horizontal: false, vertical: true)
+        } else {
+          HStack(spacing: 14) {
+            glypheMateriel
+            VStack(alignment: .leading, spacing: 4) {
+              identiteServeur(limiteNom: 1, limiteDNS: 1)
+              statutServeur(formeCompacte: true)
+            }
+            Spacer(minLength: 4)
+            if actif { chevron }
+          }
         }
-
-        Spacer(minLength: 4)
-
-        // Le chevron annonce l'ouverture de la fiche détaillée
-        Image(systemName: "chevron.right")
-          .font(.footnote.weight(.semibold))
-          .foregroundStyle(.tertiary)
-          .padding(.trailing, 2)
       }
       .padding(14)
       .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
@@ -730,9 +691,72 @@ struct CarteServeurDemo: View {
     .accessibilityElement(children: .combine)
     .accessibilityLabel(serveur.nom)
     .accessibilityValue(descriptionAccessible)
-    .accessibilityHint("Toucher pour ouvrir la fiche détaillée de ce serveur")
+    .accessibilityHint(
+      actif ? "Ouvre la fiche détaillée de ce serveur" : "Sélectionne ce serveur")
     .accessibilityAction(named: "Ouvrir la fiche") { surOuvrirFiche() }
     .accessibilityAddTraits(actif ? [.isSelected] : [])
+  }
+
+  private var glypheMateriel: some View {
+    ZStack {
+      Circle()
+        .fill(
+          serveur.enLigne
+            ? LinearGradient(
+                colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                startPoint: .topLeading, endPoint: .bottomTrailing)
+            : LinearGradient(
+                colors: [Color.secondary.opacity(0.4), Color.secondary.opacity(0.2)],
+                startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .frame(width: diametrePastille, height: diametrePastille)
+      Image(systemName: serveur.symbole)
+        .font(.system(size: diametrePastille * 0.46, weight: .regular))
+        .foregroundStyle(.white)
+    }
+  }
+
+  private func identiteServeur(limiteNom: Int, limiteDNS: Int) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(serveur.nom)
+        .font(.headline)
+        .foregroundStyle(Color.primary)
+        .lineLimit(limiteNom)
+      Text(serveur.nomDNS)
+        .font(.caption)
+        .foregroundStyle(Color.secondary)
+        .lineLimit(limiteDNS)
+    }
+  }
+
+  private func statutServeur(formeCompacte: Bool) -> some View {
+    let teinte = serveur.enLigne ? Color.green : Color.secondary
+    return HStack(spacing: 5) {
+      Circle().fill(teinte).frame(width: 7, height: 7)
+      Text(serveur.enLigne ? "En ligne · DSH actif" : "Hors ligne")
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(teinte)
+      if serveur.estLocal {
+        Text("· hôte").font(.caption2).foregroundStyle(.tertiary)
+      }
+    }
+    .padding(.horizontal, 7)
+    .padding(.vertical, 2.5)
+    .background {
+      if formeCompacte {
+        Capsule().fill(teinte.opacity(0.12))
+      } else {
+        RoundedRectangle(cornerRadius: 8, style: .continuous).fill(teinte.opacity(0.12))
+      }
+    }
+    .fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var chevron: some View {
+    Image(systemName: "chevron.forward")
+      .font(.footnote.weight(.semibold))
+      .foregroundStyle(.tertiary)
+      .padding(.trailing, 2)
   }
 
   private var descriptionAccessible: String {
@@ -768,7 +792,6 @@ struct IndicateursServeursDemo: View {
           let estActif = (pageVisible ?? choix) == serveur.id
           Button {
             withAnimation(.easeInOut(duration: 0.25)) {
-              pageVisible = serveur.id
               choix = serveur.id
             }
           } label: {

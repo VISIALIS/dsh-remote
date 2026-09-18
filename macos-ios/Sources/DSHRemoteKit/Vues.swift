@@ -247,6 +247,15 @@ public struct VuePrincipale: View {
           sessionSelectionnee = nil
           ajoutOuvert = false
           Task { await modele.toucher(serveur) }
+        },
+        // LE PAGER ET LES PUCES NE SONT PAS LA CARTE : un balayage réglé ou une
+        // puce touchée SÉLECTIONNENT toujours, sans jamais passer par
+        // `GesteSurServeur` — un contrôle de pagination ne doit pas ouvrir de
+        // fiche selon que la machine visée était déjà la cible ou non.
+        surChangerServeur: { serveur in
+          sessionSelectionnee = nil
+          ajoutOuvert = false
+          Task { await modele.choisirEtConnecter(serveur) }
         })
     } detail: {
       // LA RÈGLE VIT DANS `DetailAffiche`, ET ELLE EST ÉPROUVÉE LÀ-BAS. Ce bloc ne
@@ -278,7 +287,13 @@ public struct VuePrincipale: View {
         // premier appui vient de faire (ses sessions sont à gauche), et ce que le
         // second fera. C'est la règle des deux temps, rendue lisible.
         ContentUnavailableView {
-          Label { Text(serveur.nom) } icon: { Image(systemName: "checkmark.circle") }
+          // L'ICÔNE N'EST PLUS UNE COCHE. Une coche affirme « validé », y compris
+          // pour une machine hors ligne — constaté sur capture : le glyphe de
+          // succès surmontait la phrase « … est hors ligne sur le tailnet ». Le
+          // châssis de la machine (`serveur.symbole`, celui de sa carte et de sa
+          // fiche) ne prétend rien : il dit juste QUELLE machine est sélectionnée,
+          // ce que ce texte a d'ailleurs pour seul rôle.
+          Label { Text(serveur.nom) } icon: { Image(systemName: serveur.symbole) }
         } description: {
           // L'ERREUR SE DIT ICI, ET C'EST UNE CORRECTION. Elle ouvrait la page à
           // la place : sélectionner une machine qui refuse la connexion (un `401`
@@ -290,7 +305,14 @@ public struct VuePrincipale: View {
           if let erreur = modele.erreur {
             Text(erreur)
           } else {
-            T("Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page.")
+            // LE VOCABULAIRE SUIT LA PLATEFORME. « Vignette » et « touchez » sont
+            // restés d'avant le carrousel de cartes larges (voir `CarteServeur`),
+            // et macOS n'a jamais eu de vignettes tactiles : on y clique.
+            #if os(macOS)
+              T("Ses sessions et ses espaces de travail sont à gauche. Cliquez à nouveau sur sa carte pour ouvrir sa page.")
+            #else
+              T("Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa carte pour ouvrir sa page.")
+            #endif
           }
         }
         .accessibilityLabel(T("Serveur sélectionné"))
@@ -435,6 +457,11 @@ struct VueListeSessions: View {
   var surAjout: () -> Void
   /// Appelé quand une machine est touchée : la page de droite devient la sienne.
   var surSelectionServeur: (ServeurMac) -> Void
+  /// Appelé par le pager ou les puces du carrousel : toujours une sélection,
+  /// jamais une ouverture de fiche. Distinct de `surSelectionServeur`, qui
+  /// porte la double sémantique de la carte (toucher sélectionne, retoucher
+  /// ouvre) — un contrôle de pagination n'a pas cette seconde intention.
+  var surChangerServeur: (ServeurMac) -> Void
 
   /// Espaces de travail dépliés, par identifiant.
   ///
@@ -499,7 +526,8 @@ struct VueListeSessions: View {
             .sansSeparateurMac()
         } else {
           CarrouselServeurs(
-            modele: modele, surSelectionServeur: surSelectionServeur, surAjout: surAjout)
+            modele: modele, surSelectionServeur: surSelectionServeur,
+            surChangerServeur: surChangerServeur, surAjout: surAjout)
             .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 6, trailing: 0))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
@@ -514,35 +542,7 @@ struct VueListeSessions: View {
         // utilisable, et l'annoncer la faisait passer pour tel. Le nombre est
         // donc celui des machines EN LIGNE **ET** dont DSH répond — la liste,
         // elle, continue de toutes les montrer, avec leurs états.
-        HStack {
-          EnteteSection(L("Serveur DeepSeek Harness"), detail: resumeServeurs)
-          if modele.serveursAffiches.count == 1, modele.rechercheServeursPossible {
-            #if os(iOS)
-              NavigationLink(value: PageAjoutServeur()) {
-                Image(systemName: "plus")
-                  .font(.subheadline.weight(.semibold))
-                  .foregroundStyle(Color.accentColor)
-                  .frame(minWidth: 44, minHeight: 44)
-                  .contentShape(Rectangle())
-              }
-              .buttonStyle(.plain)
-              .simultaneousGesture(TapGesture().onEnded { surAjout() })
-              .accessibilityLabel(T("Ajouter un serveur"))
-            #else
-              Button {
-                surAjout()
-              } label: {
-                Image(systemName: "plus")
-                  .font(.subheadline.weight(.semibold))
-                  .foregroundStyle(Color.accentColor)
-                  .frame(minWidth: 44, minHeight: 44)
-                  .contentShape(Rectangle())
-              }
-              .buttonStyle(.plain)
-              .accessibilityLabel(T("Ajouter un serveur"))
-            #endif
-          }
-        }
+        EnteteSection(L("Serveur DeepSeek Harness"), detail: resumeServeurs)
       }
 
       // ── Ce qui est PARTI sur la page du serveur ──────────────────────────
@@ -590,7 +590,14 @@ struct VueListeSessions: View {
       // latérale EST l'écran principal, et l'action utile y est ainsi à un appui.
       //
       // C'EST LA MÊME VUE QUE CELLE DE LA FICHE (`DiagnosticDuServeur`), et c'est
-      // délibéré : deux dessins des mêmes cinq constats auraient divergé.
+      // délibéré : deux dessins des mêmes cinq constats auraient divergé — SAUF
+      // sur macOS. Là, un panneau de détail large affiche DÉJÀ la fiche complète
+      // de la machine choisie, cinq constats compris : les redessiner aussi dans
+      // la barre latérale saturait une colonne étroite d'un contenu que l'œil
+      // vient de lire trente points plus loin. Constaté sur capture — les deux
+      // panneaux montraient MOT POUR MOT le même diagnostic. Sur iPhone, où la
+      // barre latérale est l'unique écran, rien de tel ne se produit : le
+      // diagnostic garde donc sa place entière.
       if modele.serveurChoisiSansAppairage, let machine = modele.serveurChoisi {
         // LA CONCLUSION D'ABORD, parce que la barre n'a pas la bande « verdict »
         // de la fiche : sans elle, cinq constats s'affichent sans que rien ne
@@ -604,10 +611,15 @@ struct VueListeSessions: View {
             .fixedSize(horizontal: false, vertical: true)
             .sansSeparateurMac()
 
-          DiagnosticDuServeur(modele: modele, serveur: machine)
-            .sansSeparateurMac()
+          #if !os(macOS)
+            DiagnosticDuServeur(modele: modele, serveur: machine)
+              .sansSeparateurMac()
+          #endif
         } header: {
-          EnteteSection(L("Diagnostic"), surtitre: machine.nom)
+          // PAS DE SURTITRE AVEC LE NOM : la carte juste au-dessus le montre
+          // déjà, à quelques points de là — le répéter ici est le genre de
+          // doublon que cette section a justement pour but d'éviter ailleurs.
+          EnteteSection(L("Diagnostic"))
         }
       } else if modele.aQuelqueChoseADireDUneMachine {
 
@@ -959,6 +971,31 @@ struct EnteteSection: View {
 
 // MARK: - Serveurs
 
+/// Décisions pures du pager, séparées de SwiftUI pour éprouver les bornes et
+/// empêcher qu'une synchronisation du modèle soit prise pour un nouveau geste.
+enum NavigationCarrousel {
+  static func selectionApresBalayage(page: String?, choix: String?) -> String? {
+    guard let page, page != choix else { return nil }
+    return page
+  }
+
+  static func indexAjuste(_ index: Int, direction: AccessibilityAdjustmentDirection, total: Int)
+    -> Int?
+  {
+    guard total > 1 else { return nil }
+    let destination: Int
+    switch direction {
+    case .increment:
+      destination = min(index + 1, total - 1)
+    case .decrement:
+      destination = max(index - 1, 0)
+    @unknown default:
+      return nil
+    }
+    return destination == index ? nil : destination
+  }
+}
+
 /// Les serveurs en carrousel de cartes larges avec pagination à glissement.
 ///
 /// POURQUOI DES CARTES LARGES PLUTÔT QUE DES VIGNETTES. La majorité des
@@ -972,16 +1009,19 @@ struct EnteteSection: View {
 /// - Pager `ScrollView(.horizontal)` sous iOS 17 / macOS 14 avec `.scrollTargetBehavior(.viewAligned)`
 ///   et `.scrollPosition(id: $pageVisible)`.
 /// - Dépassement visuel (*peek*) de 14 pt sur chaque bord pour enseigner l'affordance de balayage.
-/// - Hauteur 100% intrinsèque pour un comportement Dynamic Type irréprochable.
+/// - Hauteur intrinsèque et composition verticale aux tailles Dynamic Type d'accessibilité.
 /// - Découplage de la page affichée et de la connexion effective : debounce de 350 ms
 ///   évitant d'enchaîner des reconnexions réseau intempestives lors d'un balayage rapide (Option A).
-/// - Ouverture de la fiche détaillée (`FicheServeur`) par appui sur la carte ou son chevron.
-/// - Indicateurs de matériel sous forme d'icônes avec cible tactile 44×44 pt, masqués
-///   si la liste ne compte qu'un seul serveur.
+/// - Un premier appui sélectionne une autre machine ; un second ouvre sa fiche détaillée.
+/// - Indicateurs de matériel sous forme d'icônes avec cible tactile 44×44 pt ; la barre
+///   reste présente avec une seule machine afin d'y conserver le bouton d'ajout.
 struct CarrouselServeurs: View {
   @Bindable var modele: ModeleApp
-  /// Touché ou sélectionné une machine : la page de droite devient la sienne.
+  /// Touché la carte : sélectionne, ou ouvre sa fiche si elle l'est déjà.
   var surSelectionServeur: (ServeurMac) -> Void
+  /// Balayage réglé ou puce touchée : sélectionne, TOUJOURS — jamais d'ouverture
+  /// de fiche. Un contrôle de pagination ne connaît que « une autre page ».
+  var surChangerServeur: (ServeurMac) -> Void
   /// Touché « Ajouter » : la page qui dit comment faire naître un serveur.
   var surAjout: () -> Void
 
@@ -1002,8 +1042,14 @@ struct CarrouselServeurs: View {
                 surSelectionServeur(serveur)
               },
               surOuvrirFiche: {
+                // `ouvrirPage` est le DERNIER appel, délibérément : passer par
+                // `toucher` avant l'aurait défait quand la carte n'est pas déjà
+                // la cible (`.selectionner` appelle `fermerPage()`), ce qui
+                // ouvrait la fiche pour la refermer aussitôt.
+                if modele.serveurChoisi?.id != serveur.id {
+                  Task { await modele.choisirEtConnecter(serveur) }
+                }
                 modele.ouvrirPage(serveur)
-                surSelectionServeur(serveur)
               }
             )
             .id(serveur.id)
@@ -1021,15 +1067,24 @@ struct CarrouselServeurs: View {
       .scrollBounceBehavior(modele.serveursAffiches.count > 1 ? .always : .basedOnSize)
       .contentMargins(.horizontal, 14, for: .scrollContent)
       .onChange(of: pageVisible) { _, nouvellePage in
-        guard let nouvellePage, nouvellePage != modele.serveurChoisi?.id else { return }
-        guard let serveur = modele.serveursAffiches.first(where: { $0.id == nouvellePage }) else { return }
-        // Option A debouncée : 350 ms pour éviter d'enchaîner des connexions lors d'un balayage rapide
+        // ANNULÉE À CHAQUE RÈGLEMENT DE PAGE, y compris un retour au choix
+        // courant. Sans ce `cancel()` inconditionnel, un aller-retour A→B→A
+        // laissait `selectionApresBalayage` rendre `nil` pour le retour (la
+        // page rejoint le choix courant) et sortait par le `guard` SANS annuler
+        // la tâche programmée pour B : elle partait quand même, 350 ms plus
+        // tard, vers une machine que l'écran ne montrait plus.
         tacheDebounce?.cancel()
+        guard
+          let identifiant = NavigationCarrousel.selectionApresBalayage(
+            page: nouvellePage, choix: modele.serveurChoisi?.id),
+          let serveur = modele.serveursAffiches.first(where: { $0.id == identifiant })
+        else { return }
+        // Option A debouncée : 350 ms pour éviter d'enchaîner des connexions lors d'un balayage rapide
         tacheDebounce = Task {
           try? await Task.sleep(for: .milliseconds(350))
           guard !Task.isCancelled else { return }
           await MainActor.run {
-            surSelectionServeur(serveur)
+            surChangerServeur(serveur)
           }
         }
       }
@@ -1048,34 +1103,41 @@ struct CarrouselServeurs: View {
       .accessibilityLabel(L("Serveurs"))
       .accessibilityValue(valeurAccessiblePager)
       .accessibilityAdjustableAction { direction in
-        guard modele.serveursAffiches.count > 1 else { return }
         let indexCourant = modele.serveursAffiches.firstIndex(where: { $0.id == (pageVisible ?? modele.serveurChoisi?.id) }) ?? 0
-        let nouvelIndex: Int
-        switch direction {
-        case .increment:
-          nouvelIndex = min(indexCourant + 1, modele.serveursAffiches.count - 1)
-        case .decrement:
-          nouvelIndex = max(indexCourant - 1, 0)
-        @unknown default:
-          nouvelIndex = indexCourant
-        }
+        guard let nouvelIndex = NavigationCarrousel.indexAjuste(
+          indexCourant, direction: direction, total: modele.serveursAffiches.count)
+        else { return }
         let cible = modele.serveursAffiches[nouvelIndex]
+        tacheDebounce?.cancel()
         withAnimation(.easeInOut(duration: 0.25)) {
-          pageVisible = cible.id
-          surSelectionServeur(cible)
+          surChangerServeur(cible)
         }
       }
+      .onDisappear {
+        tacheDebounce?.cancel()
+      }
 
-      // 2. Indicateurs personnalisés : uniquement si plus d'un serveur
-      if modele.serveursAffiches.count > 1 {
+      // 2. La barre reste à sa place avec une seule machine : le bouton « + »
+      // n'émigre pas dans l'en-tête et l'interface ne change pas de structure.
+      if !modele.serveursAffiches.isEmpty {
         IndicateursServeurs(
           serveurs: modele.serveursAffiches,
           choix: modele.serveurChoisi?.id,
           pageVisible: $pageVisible,
           surSelection: { serveur in
+            // Une puce n'est PAS une carte : la toucher déjà active ne doit rien
+            // faire, pas ouvrir sa fiche — un contrôle de pagination ne navigue
+            // pas. C'est pourquoi cette fermeture appelle `surChangerServeur`
+            // (toujours une sélection) et non `surSelectionServeur` (qui, sur la
+            // machine déjà choisie, passerait par `GesteSurServeur.ouvrirLaPage`).
+            guard serveur.id != modele.serveurChoisi?.id else { return }
+            // Une interaction directe ne passe PAS par le debounce du balayage.
+            // Surtout, elle ne pré-écrit pas `pageVisible` : le modèle publie le
+            // choix, puis l'autre `onChange` aligne le pager. Sinon l'écriture de
+            // page programmerait une seconde sélection 350 ms plus tard.
+            tacheDebounce?.cancel()
             withAnimation(.easeInOut(duration: 0.25)) {
-              pageVisible = serveur.id
-              surSelectionServeur(serveur)
+              surChangerServeur(serveur)
             }
           },
           surAjout: surAjout,
@@ -1105,6 +1167,17 @@ struct CarteServeur: View {
 
   private var diametrePastille: CGFloat { min(cotePastille, 64) }
 
+  /// La cible RÉELLE du modèle — distincte de `actif`, qui suit `pageVisible`
+  /// pendant le débounce du balayage (bordure, chevron, `.isSelected` : un
+  /// retour visuel immédiat, avant que la connexion n'ait rattrapé le geste).
+  ///
+  /// LE MÉCANISME DE NAVIGATION, LUI, NE DOIT PAS SUIVRE LE PEEK. Un tap sur la
+  /// carte pendant les ~350 ms où `actif` est déjà vrai mais `serveurChoisi` ne
+  /// l'est pas encore poussait une fiche que la sélection différée refermait
+  /// aussitôt (`GesteSurServeur.selectionner` appelle `fermerPage()`) — un
+  /// aller « ouvre / referme » que l'utilisateur n'avait pas demandé.
+  private var estLaCible: Bool { modele.serveurChoisi?.id == serveur.id }
+
   private var descriptionEtat: EtatMachine.Description {
     EtatMachine.decrire(
       enLigne: serveur.enLigne,
@@ -1116,93 +1189,80 @@ struct CarteServeur: View {
   }
 
   var body: some View {
+    interactionCarte
+    .contextMenu { menuDeMachine(serveur) }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(serveur.nom)
+    .accessibilityValue(descriptionAccessible)
+    .accessibilityHint(
+      estLaCible ? L("Ouvre la page de ce serveur") : L("Sélectionne ce serveur"))
+    .accessibilityAction(named: L("Ouvrir la page")) { surOuvrirFiche() }
+    .accessibilityAddTraits(actif ? [.isSelected] : [])
+  }
+
+  /// Sur iPhone, seule la carte DÉJÀ CIBLE (`estLaCible`, pas `actif`) devient un
+  /// lien : le premier appui doit rester dans la liste pour charger les
+  /// sessions du nouveau serveur — et pendant le débounce d'un balayage,
+  /// `actif` peut être vrai avant que la cible ne le soit, ce qui pousserait un
+  /// lien vers une machine que la sélection n'a pas encore rejointe.
+  /// Sur macOS, le modèle remplace lui-même le volet de détail au second appui.
+  @ViewBuilder
+  private var interactionCarte: some View {
     #if os(iOS)
-      NavigationLink(value: serveur) {
-        contenuCarte
+      if estLaCible {
+        NavigationLink(value: serveur) {
+          contenuCarte
+        }
+        .buttonStyle(StyleCartePressee())
+        .simultaneousGesture(TapGesture().onEnded { surSelection() })
+      } else {
+        Button(action: surSelection) {
+          contenuCarte
+        }
+        .buttonStyle(StyleCartePressee())
       }
-      .buttonStyle(StyleCartePressee())
-      .simultaneousGesture(TapGesture().onEnded {
-        surSelection()
-      })
-      .contextMenu { menuDeMachine(serveur) }
-      .accessibilityElement(children: .combine)
-      .accessibilityLabel(serveur.nom)
-      .accessibilityValue(descriptionAccessible)
-      .accessibilityHint(L("Ouvre la page de ce serveur"))
-      .accessibilityAction(named: L("Ouvrir la page")) { surOuvrirFiche() }
-      .accessibilityAddTraits(actif ? [.isSelected] : [])
     #else
-      Button {
-        surOuvrirFiche()
-      } label: {
+      Button(action: surSelection) {
         contenuCarte
       }
       .buttonStyle(StyleCartePressee())
-      .contextMenu { menuDeMachine(serveur) }
-      .accessibilityElement(children: .combine)
-      .accessibilityLabel(serveur.nom)
-      .accessibilityValue(descriptionAccessible)
-      .accessibilityHint(L("Ouvre la page de ce serveur"))
-      .accessibilityAction(named: L("Ouvrir la page")) { surOuvrirFiche() }
-      .accessibilityAddTraits(actif ? [.isSelected] : [])
     #endif
   }
 
+  @ViewBuilder
   private var contenuCarte: some View {
-    let desc = descriptionEtat
-    return HStack(spacing: 14) {
-      // Pastille circulaire avec glyphe du châssis matériel
-      ZStack {
-        Circle()
-          .fill(
-            serveur.enLigne
-              ? LinearGradient(
-                  colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
-                  startPoint: .topLeading, endPoint: .bottomTrailing)
-              : LinearGradient(
-                  colors: [Color.secondary.opacity(0.4), Color.secondary.opacity(0.2)],
-                  startPoint: .topLeading, endPoint: .bottomTrailing)
-          )
-          .frame(width: diametrePastille, height: diametrePastille)
-
-        Image(systemName: serveur.symbole)
-          .font(.system(size: diametrePastille * 0.46, weight: .regular))
-          .foregroundStyle(.white)
-      }
-
-      VStack(alignment: .leading, spacing: 4) {
-        Text(serveur.nom)
-          .font(.headline)
-          .foregroundStyle(Color.primary)
-          .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-
-        Text(serveur.nomDNS)
-          .font(.caption)
-          .foregroundStyle(Color.secondary)
-          .lineLimit(1)
-
-        // Statut véridique déduit d'EtatMachine
-        HStack(spacing: 5) {
-          Circle()
-            .fill(desc.ton.couleur)
-            .frame(width: 7, height: 7)
-          Text(desc.texte)
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(desc.ton.couleur)
+    Group {
+      // LE CHEVRON EST UNE CONVENTION IOS, ET SEULEMENT ELLE : il annonce un
+      // écran empilé dans un `NavigationStack` — exactement ce que `actif`
+      // pousse via `NavigationLink` ci-dessus (`interactionCarte`). Dans la
+      // barre latérale d'un `NavigationSplitView` macOS, la carte pilote la
+      // colonne de détail voisine, sans empilement à annoncer : le chevron y
+      // était un vestige, affiché à côté d'un bouton qui ne pousse rien.
+      if dynamicTypeSize.isAccessibilitySize {
+        VStack(alignment: .leading, spacing: 10) {
+          HStack(alignment: .top, spacing: 12) {
+            glypheMateriel
+            identiteServeur(limiteNom: 3, limiteDNS: 2)
+            Spacer(minLength: 4)
+            #if os(iOS)
+              if actif { chevron }
+            #endif
+          }
+          statutServeur(formeCompacte: false)
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 2.5)
-        .background(desc.ton.couleur.opacity(0.12), in: Capsule())
-        .fixedSize(horizontal: false, vertical: true)
+      } else {
+        HStack(spacing: 14) {
+          glypheMateriel
+          VStack(alignment: .leading, spacing: 4) {
+            identiteServeur(limiteNom: 1, limiteDNS: 1)
+            statutServeur(formeCompacte: true)
+          }
+          Spacer(minLength: 4)
+          #if os(iOS)
+            if actif { chevron }
+          #endif
+        }
       }
-
-      Spacer(minLength: 4)
-
-      // Le chevron annonce l'accès à la fiche détaillée
-      Image(systemName: "chevron.right")
-        .font(.footnote.weight(.semibold))
-        .foregroundStyle(.tertiary)
-        .padding(.trailing, 2)
     }
     .padding(14)
     .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -1214,6 +1274,82 @@ struct CarteServeur: View {
         )
     }
     .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+  }
+
+  /// LE CHÂSSIS PORTE LA MÊME COULEUR QUE LE BADGE D'ÉTAT, EN DESSOUS.
+  ///
+  /// Il distinguait « en ligne » (accent) de « hors ligne » (gris) — un
+  /// troisième classement, en plus de celui du badge (`EtatVisuel.ton`, vert /
+  /// orange / gris) qui vit vingt points plus bas sur la même carte. Constaté
+  /// sur capture : une machine hors ligne montrait un châssis GRIS et un badge
+  /// ORANGE — deux couleurs pour un seul fait. `EtatVisuel` existe justement
+  /// pour qu'un état ne se code qu'à un seul endroit (voir son commentaire) ;
+  /// le châssis reprend donc `descriptionEtat.ton`, comme le badge et la
+  /// pastille de la fiche (`PastilleDeMachine`).
+  ///
+  /// LE BLANC SUR GRIS CLAIR MANQUAIT AUSSI DE CONTRASTE : le fond gris de
+  /// l'ancien état « hors ligne » (`secondary.opacity(0.2–0.4)`) était trop pâle
+  /// pour l'icône blanche qu'il portait. Les couleurs de `EtatVisuel` sont
+  /// toutes assez soutenues pour rester lisibles en dessous.
+  private var glypheMateriel: some View {
+    let ton = descriptionEtat.ton.couleur
+    return ZStack {
+      Circle()
+        .fill(
+          LinearGradient(
+            colors: [ton, ton.opacity(0.75)],
+            startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .frame(width: diametrePastille, height: diametrePastille)
+
+      Image(systemName: serveur.symbole)
+        .font(.system(size: diametrePastille * 0.46, weight: .regular))
+        .foregroundStyle(.white)
+    }
+  }
+
+  private func identiteServeur(limiteNom: Int, limiteDNS: Int) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(serveur.nom)
+        .font(.headline)
+        .foregroundStyle(Color.primary)
+        .lineLimit(limiteNom)
+      Text(serveur.nomDNS)
+        .font(.caption)
+        .foregroundStyle(Color.secondary)
+        .lineLimit(limiteDNS)
+    }
+  }
+
+  private func statutServeur(formeCompacte: Bool) -> some View {
+    let desc = descriptionEtat
+    return HStack(spacing: 5) {
+      Circle()
+        .fill(desc.ton.couleur)
+        .frame(width: 7, height: 7)
+      Text(desc.texte)
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(desc.ton.couleur)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(.horizontal, 7)
+    .padding(.vertical, 2.5)
+    .background {
+      if formeCompacte {
+        Capsule().fill(desc.ton.couleur.opacity(0.12))
+      } else {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(desc.ton.couleur.opacity(0.12))
+      }
+    }
+  }
+
+  private var chevron: some View {
+    // `.forward`, pas `.right` : il suit le sens de lecture en RTL.
+    Image(systemName: "chevron.forward")
+      .font(.footnote.weight(.semibold))
+      .foregroundStyle(.tertiary)
+      .padding(.trailing, 2)
   }
 
   private var descriptionAccessible: String {
@@ -1302,6 +1438,14 @@ struct IndicateursServeurs: View {
         }
 
         // Bouton "+" pour ajouter un serveur
+        //
+        // SANS FOND PERMANENT, COMME LES AUTRES ICÔNES INACTIVES. Un cercle gris
+        // fixe autour du « + » le faisait paraître en permanence sélectionné ou
+        // encadré, alors que les machines inactives n'ont ici AUCUN fond — seule
+        // la machine `estActif` en gagne un, en accent. Le « + » suit la même
+        // règle : rien au repos, un cadre seulement si un jour il devient l'état
+        // courant (ce qu'il n'est jamais, mais la cohérence visuelle avec les
+        // autres icônes prime sur une distinction qu'il n'a pas besoin de porter).
         if recherchePossible {
           #if os(iOS)
             NavigationLink(value: PageAjoutServeur()) {
@@ -1309,7 +1453,6 @@ struct IndicateursServeurs: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(Color.secondary)
                 .frame(width: 24, height: 24)
-                .background(Color.secondary.opacity(0.1), in: Circle())
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
             }
@@ -1325,7 +1468,6 @@ struct IndicateursServeurs: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(Color.secondary)
                 .frame(width: 24, height: 24)
-                .background(Color.secondary.opacity(0.1), in: Circle())
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
             }

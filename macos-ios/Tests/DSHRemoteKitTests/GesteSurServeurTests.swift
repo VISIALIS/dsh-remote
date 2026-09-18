@@ -40,6 +40,30 @@ func identiteEtPasValeurs() {
   #expect(GesteSurServeur.pour(memeHoteAutreEtat, choisi: mini) == .ouvrirLaPage)
 }
 
+// ── Le pager ne transforme pas une synchronisation en second geste ───────────
+
+@Test("Un balayage vers une autre page demande une sélection")
+func balayageDemandeUneSelection() {
+  #expect(
+    NavigationCarrousel.selectionApresBalayage(page: mini.id, choix: air.id) == mini.id)
+}
+
+@Test("Aligner le pager sur le choix courant ne redéclenche aucune sélection")
+func synchronisationDuPagerSansSecondGeste() {
+  #expect(
+    NavigationCarrousel.selectionApresBalayage(page: mini.id, choix: mini.id) == nil)
+  #expect(NavigationCarrousel.selectionApresBalayage(page: nil, choix: mini.id) == nil)
+}
+
+@Test("Le réglage VoiceOver s'arrête aux bornes sans retoucher la machine courante")
+func bornesDuReglageAccessible() {
+  #expect(NavigationCarrousel.indexAjuste(0, direction: .decrement, total: 3) == nil)
+  #expect(NavigationCarrousel.indexAjuste(2, direction: .increment, total: 3) == nil)
+  #expect(NavigationCarrousel.indexAjuste(0, direction: .increment, total: 3) == 1)
+  #expect(NavigationCarrousel.indexAjuste(2, direction: .decrement, total: 3) == 1)
+  #expect(NavigationCarrousel.indexAjuste(0, direction: .increment, total: 1) == nil)
+}
+
 // ── Et ce que le modèle en fait ───────────────────────────────────────────────
 
 /// Un transport qui échoue TOUT DE SUITE : la règle s'éprouve sans réseau, et

@@ -1,7 +1,7 @@
 /* Table française — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   218 clés. */
+   220 clés. */
 
 "%d jeton(s) d'appareil effacé(s)" = "%d jeton(s) d'appareil effacé(s)";
 "%d préférence(s) oubliée(s)" = "%d préférence(s) oubliée(s)";
@@ -30,8 +30,8 @@
 "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond." = "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond.";
 "Aucun événement" = "Aucun événement";
 "aucune préférence à oublier" = "aucune préférence à oublier";
-"aucune session" = "aucune session";
 "Aucune session" = "Aucune session";
+"aucune session" = "aucune session";
 "Aucune session en mémoire" = "Aucune session en mémoire";
 "Aucune session ouverte" = "Aucune session ouverte";
 "Caméra indisponible" = "Caméra indisponible";
@@ -181,7 +181,8 @@
 "Serveur DeepSeek Harness" = "Serveur DeepSeek Harness";
 "Serveur sélectionné" = "Serveur sélectionné";
 "Serveurs" = "Serveurs";
-"Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page." = "Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page.";
+"Ses sessions et ses espaces de travail sont à gauche. Cliquez à nouveau sur sa carte pour ouvrir sa page." = "Ses sessions et ses espaces de travail sont à gauche. Cliquez à nouveau sur sa carte pour ouvrir sa page.";
+"Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa carte pour ouvrir sa page." = "Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa carte pour ouvrir sa page.";
 "Si vous préférez vérifier vous-même, depuis ce Mac : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal)." = "Si vous préférez vérifier vous-même, depuis ce Mac : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal).";
 "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse." = "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse.";
 "Son port 80 doit être publié par `tailscale serve` — sans quoi rien ne répond à son adresse." = "Son port 80 doit être publié par `tailscale serve` — sans quoi rien ne répond à son adresse.";
@@ -192,6 +193,7 @@
 "sur le Mac" = "sur le Mac";
 "Sur le Mac : le bouton « DSH Remote », en bas de la barre latérale — il ouvre un QR code et son texte, valables deux minutes." = "Sur le Mac : le bouton « DSH Remote », en bas de la barre latérale — il ouvre un QR code et son texte, valables deux minutes.";
 "Sur le Mac qui héberge DSH — pas sur cet appareil : ouvrez une session DSH sur ce Mac, et collez-lui ceci :" = "Sur le Mac qui héberge DSH — pas sur cet appareil : ouvrez une session DSH sur ce Mac, et collez-lui ceci :";
+"Sélectionne ce serveur" = "Sélectionne ce serveur";
 "Tailscale est connecté sur cet appareil" = "Tailscale est connecté sur cet appareil";
 "Tailscale n'a pas pu être ouvert sur cet appareil." = "Tailscale n'a pas pu être ouvert sur cet appareil.";
 "Terminé" = "Terminé";
