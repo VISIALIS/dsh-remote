@@ -149,3 +149,59 @@ func aucunCandidat() async {
   #expect(verdict.serventDsh.isEmpty)
   #expect(verdict.causes.isEmpty)
 }
+
+/// Un client qui ne répond JAMAIS — la configuration réseau réelle
+/// (`waitsForConnectivity` + un plancher de 120 s sur `timeoutIntervalForResource`,
+/// voir `ConfigurationReseau.pourRequetes`) peut laisser une machine sortie du
+/// tailnet dans cet état pendant deux minutes. `Task.sleep` répond à
+/// l'annulation, comme `URLSession.data(for:)` le fait pour une vraie requête —
+/// c'est ce que la course de `sonderUnCandidat` doit couper.
+private struct ClientQuiNeRepondJamais: ClientDSH {
+  func verifierSante() async throws -> Sante {
+    try await Task.sleep(for: .seconds(999))
+    fatalError("annulée avant d'arriver ici")
+  }
+  func echangerAppairage(nom: String) async throws -> AppareilAppaire {
+    throw ErreurRemote.reponseInattendue(code: 500)
+  }
+  func listerSessions(limite: Int?) async throws -> ListeSessions {
+    throw ErreurRemote.reponseInattendue(code: 500)
+  }
+  func listerServeurs() async throws -> ListeServeurs {
+    throw ErreurRemote.reponseInattendue(code: 500)
+  }
+  func listerEspaces() async throws -> ListeEspaces {
+    throw ErreurRemote.reponseInattendue(code: 500)
+  }
+  func lireSession(_ identifiant: String, demande: DemandeJournal) async throws -> JournalSession {
+    throw ErreurRemote.reponseInattendue(code: 500)
+  }
+  func envoyerPrompt(_ identifiant: String, demande: DemandePrompt) async throws -> ReponsePrompt {
+    throw ErreurRemote.reponseInattendue(code: 500)
+  }
+  func annuler(_ identifiant: String) async throws -> ReponseAnnulation {
+    throw ErreurRemote.reponseInattendue(code: 500)
+  }
+}
+
+private let muetteSansFin = ServeurMac(nom: "Cinq", nomDNS: "cinq.exemple.ts.net", enLigne: true)
+
+@Test(
+  "Un candidat qui ne répond jamais ne retient pas le verdict des autres au-delà du délai promis")
+func candidatSansFinNeRetientPasLesAutres() async {
+  let fabrique: Connexion.Fabrique = { adresse, _, _ in
+    adresse == servie.adresse ? ClientParAdresse(.success(santeValide())) : ClientQuiNeRepondJamais()
+  }
+  let sonde = Sonde(fabrique: fabrique)
+
+  let depart = ContinuousClock.now
+  let verdict = await sonde.interroger([servie, muetteSansFin])
+  let duree = depart.duration(to: ContinuousClock.now)
+
+  #expect(
+    duree < .seconds(Sonde.delai * 2),
+    "le candidat muet a retenu le verdict bien au-delà des \(Sonde.delai) s promises")
+  #expect(verdict.serventDsh.contains(servie.id), "le candidat qui répond ne doit pas pâtir de l'autre")
+  #expect(!verdict.serventDsh.contains(muetteSansFin.id))
+  #expect(verdict.causes[muetteSansFin.id] == nil, "le silence n'est pas une cause connue")
+}

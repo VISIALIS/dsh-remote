@@ -65,25 +65,7 @@ public struct Sonde: Sendable {
     return await withTaskGroup(of: (String, Bool, CauseSansDsh?).self) { groupe in
       for serveur in candidats {
         groupe.addTask {
-          // Le porteur VIDE est ce qui fait que `RemoteClient` ne pose aucun
-          // en-tête `Authorization` (voir sa méthode `requete`).
-          guard let client = try? fabrique(serveur.adresse, "", Sonde.delai) else {
-            return (serveur.id, false, nil)
-          }
-          // `verifierSante` ne rend aucune donnée de session : c'est la poignée
-          // de main. Deux réponses disent que DSH est LÀ : un `200`, et un `401`
-          // — car un jeton refusé PROUVE que le service a répondu. Toute autre
-          // erreur (délai, connexion refusée, DNS) veut dire « rien au bout ».
-          do {
-            _ = try await client.verifierSante()
-            return (serveur.id, true, nil)
-          } catch ErreurRemote.jetonRefuse {
-            return (serveur.id, true, nil)
-          } catch {
-            // ON RETIENT LA CAUSE, pas seulement l'échec : c'est elle qui permet
-            // à la page de cette machine de dire quoi faire.
-            return (serveur.id, false, (error as? ErreurRemote)?.causeSansDsh)
-          }
+          await Sonde.sonderUnCandidat(serveur, fabrique: fabrique)
         }
       }
       var verdict = Verdict()
@@ -95,6 +77,64 @@ public struct Sonde: Sendable {
         }
       }
       return verdict
+    }
+  }
+
+  /// Sonde UN candidat, borné à `Sonde.delai` — QUELLE QUE SOIT LA CONFIGURATION
+  /// RÉSEAU.
+  ///
+  /// POURQUOI CETTE COURSE EXISTE, ET CE QU'ELLE CORRIGE. `ConfigurationReseau
+  /// .pourRequetes` pose `waitsForConnectivity = true` et un PLANCHER de 120 s
+  /// sur `timeoutIntervalForResource`, pensés pour `Connexion` — une adresse qui
+  /// n'a provisoirement AUCUNE route (Wi-Fi qui bascule, radio qui se réveille)
+  /// mérite d'attendre. `Sonde.delai` (2,5 s) et le délai de requête
+  /// (`timeoutIntervalForRequest`) ne bornent PAS cette attente : mesuré, une
+  /// machine sortie du tailnet (dans `tailscale status`, mais encore comptée
+  /// « en ligne » par la découverte) a fait tenir `interroger` 120 secondes,
+  /// pour DEUX candidats dont l'un répondait en 12 ms — le verdict du second
+  /// retenait le premier en otage, le temps que `URLSession` cesse d'espérer une
+  /// connectivité qui ne revient pas.
+  ///
+  /// La course locale rend donc vraie la promesse du commentaire ci-dessus
+  /// (« borné à 2,5 s ») : passé ce délai, le candidat compte comme muet, et sa
+  /// requête réseau est annulée avec le reste de la course.
+  private static func sonderUnCandidat(
+    _ serveur: ServeurMac, fabrique: @escaping Connexion.Fabrique
+  ) async -> (String, Bool, CauseSansDsh?) {
+    await withTaskGroup(of: (String, Bool, CauseSansDsh?).self) { course in
+      course.addTask {
+        // Le porteur VIDE est ce qui fait que `RemoteClient` ne pose aucun
+        // en-tête `Authorization` (voir sa méthode `requete`).
+        guard let client = try? fabrique(serveur.adresse, "", Sonde.delai) else {
+          return (serveur.id, false, nil)
+        }
+        // `verifierSante` ne rend aucune donnée de session : c'est la poignée
+        // de main. Deux réponses disent que DSH est LÀ : un `200`, et un `401`
+        // — car un jeton refusé PROUVE que le service a répondu. Toute autre
+        // erreur (délai, connexion refusée, DNS) veut dire « rien au bout ».
+        do {
+          _ = try await client.verifierSante()
+          return (serveur.id, true, nil)
+        } catch ErreurRemote.jetonRefuse {
+          return (serveur.id, true, nil)
+        } catch {
+          // ON RETIENT LA CAUSE, pas seulement l'échec : c'est elle qui permet
+          // à la page de cette machine de dire quoi faire.
+          return (serveur.id, false, (error as? ErreurRemote)?.causeSansDsh)
+        }
+      }
+      course.addTask {
+        try? await Task.sleep(for: .seconds(Sonde.delai))
+        // Aucune cause : le silence n'en est pas une, il dit seulement qu'on a
+        // cessé d'attendre.
+        return (serveur.id, false, nil)
+      }
+      // Le PREMIER des deux gagne — la vraie réponse, ou l'horloge — et l'autre
+      // est annulé : une requête réseau en vol se voit notifiée de l'annulation
+      // (`URLSession.data(for:)` l'observe), elle ne continue pas en silence.
+      let premier = await course.next()!
+      course.cancelAll()
+      return premier
     }
   }
 }
