@@ -628,14 +628,26 @@ extension ModeleApp {
     // TRACE TEMPORAIRE : ou passe le temps au demarrage.
     let debutConnexion = Date()
     let adresseVisee = adresse
+    // CAPTURÉE ICI, AVANT LE PREMIER `await` : c'est la seule position qui
+    // rend la garde utile. `depart` capturée APRÈS `transport.joindre` (comme
+    // c'était le cas) vaut toujours la génération COURANTE au moment de la
+    // lire — la garde ne gardait donc rien. Un choix plus récent (`viser`,
+    // appelé par `choisir`) incrémente `generation` PENDANT l'attente
+    // réseau ; cette tentative devient alors une réponse partie vers
+    // l'ancienne machine, qui ne doit rien écrire sous la nouvelle (voir
+    // l'en-tête de ce fichier).
+    let depart = generationDuDepart()
     // Le jeton n'est confié au trousseau qu'ici, une fois la saisie terminée.
     enregistrerJeton(jeton)
-    await executer {
+    await executer(depuisGeneration: depart) {
       // DEUX DÉLAIS POUR DEUX QUESTIONS, et l'ordre qui va avec : la brève
       // d'abord. C'est la politique de `Connexion`, éprouvée là-bas.
       let jonction = try await self.transport.joindre(adresse: self.adresse, jeton: jeton)
+      // LA CIBLE A PEUT-ÊTRE CHANGÉ PENDANT L'ATTENTE : cette réponse, alors,
+      // ne décrit plus la machine visée — on la jette, sans toucher à l'état
+      // que la tentative plus récente est en train d'écrire.
+      guard self.reponseEncoreValable(depart) else { return }
       self.client = jonction.client
-      let depart = self.generationDuDepart()
       self.appliquerSessions(
         ListeSessions(protocole: 1, racine: nil, total: jonction.reponses,
           sessions: jonction.sessions, erreur: nil),
@@ -644,6 +656,12 @@ extension ModeleApp {
       // capacités, nombre de sessions rendues, et « joint » en découlent.
       self.connexion = .jointe(jonction.sante, reponses: jonction.reponses)
     }
+    // MÊME GARDE POUR LA SUITE : sans elle, une tentative périmée relirait
+    // `erreur`/`capacites` de la tentative FRAÎCHE (variables partagées par la
+    // classe) et rejouerait `consigner`/`demarrerSuivi`/`chargerServeursDeLhote`
+    // pour la mauvaise machine, ou consignerait un échec qui ne la concerne
+    // plus.
+    guard reponseEncoreValable(depart) else { return }
     Trace.siActive("[demarrage] connecter \(adresseVisee) : \(Int(Date().timeIntervalSince(debutConnexion) * 1000)) ms, erreur=\(erreur == nil ? "non" : "OUI")")
     if erreur == nil {
       // La cible a répondu : plus rien ne justifie de basculer ailleurs.

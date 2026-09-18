@@ -2233,20 +2233,31 @@ public final class ModeleApp {
     appliquerEspaces(liste, vu: generationDuDepart())
   }
 
-  func executer(_ travail: @escaping () async throws -> Void) async {
+  /// - Parameter depuisGeneration: la génération capturée AU DÉPART de la
+  ///   tentative (`generationDuDepart()`), avant le premier `await` de
+  ///   `travail`. Omise, l'échec s'écrit toujours — c'est le comportement
+  ///   d'avant, gardé pour les appelants qui ne visent pas une cible mouvante.
+  ///   Fournie, un échec dont la génération a bougé entre-temps est TU : c'est
+  ///   la réponse d'une tentative que l'utilisateur a déjà quittée (choix d'une
+  ///   autre machine pendant l'attente), et elle ne doit rien écrire sous la
+  ///   nouvelle — la même règle que `appliquerSessions`, `appliquerEspaces`,
+  ///   etc., étendue à l'échec, qui n'en bénéficiait pas encore.
+  func executer(depuisGeneration depart: Int? = nil, _ travail: @escaping () async throws -> Void) async {
     enChargement = true
     do {
       try await travail()
       // Le succès est posé par la fermeture : elle seule connaît la réponse
       // (ses capacités, son nombre de sessions). On ne l'écrase pas ici.
     } catch {
-      // L'échec est centralisé ici, donc l'état aussi : une seule règle, un seul
-      // endroit. L'erreur est TYPÉE, et son texte en découle — les deux ne
-      // peuvent plus dire des choses différentes, ce qui est arrivé quand la
-      // classification cherchait un code dans un texte.
-      let message = String(describing: error)
-      connexion = .echec(error as? ErreurRemote ?? .transport(message))
-      journaliserDiagnostic(adresse: adresse, message: message)
+      if depart == nil || reponseEncoreValable(depart!) {
+        // L'échec est centralisé ici, donc l'état aussi : une seule règle, un
+        // seul endroit. L'erreur est TYPÉE, et son texte en découle — les deux
+        // ne peuvent plus dire des choses différentes, ce qui est arrivé quand
+        // la classification cherchait un code dans un texte.
+        let message = String(describing: error)
+        connexion = .echec(error as? ErreurRemote ?? .transport(message))
+        journaliserDiagnostic(adresse: adresse, message: message)
+      }
     }
     enChargement = false
   }
