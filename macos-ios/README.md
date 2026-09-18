@@ -389,7 +389,7 @@ qui ne dit rien — et le candidat suivant est essayé. Mesuré, même code et m
 **DEPUIS, LA RÈGLE A CHANGÉ, ET CES COMPTES AVEC ELLE.** La découverte ne retenait que
 les machines `macOS` ; elle retient maintenant **toutes celles qui peuvent héberger
 DSH** — macOS, Windows, Linux — et écarte iOS et Android, qui n'exécutent pas de
-processus. Le même tailnet en rend donc **4** : les trois Macs et `MiBook` (`OS`
+processus. Le même tailnet en rend donc **4** : les trois Macs et un **PC Windows** (`OS`
 `windows`), mesuré par `dsh-remote-ctl serveurs`. Le motif est écrit plus bas, dans
 « Un PC Windows est un serveur DSH légitime ».
 
@@ -437,7 +437,7 @@ Machines sur le tailnet : 4
   en ligne    MacBook Air de Camille
   en ligne    MacMini
   hors ligne  MacBook Pro de Camille
-  hors ligne  MiBook                    ← OS `windows`, absent avant la correction
+  hors ligne  <PC Windows>              ← OS `windows`, absent avant la correction
 ```
 
 L'iPhone (`OS` `iOS`) reste écarté, et c'est la seule exclusion qui subsiste — celle qui
@@ -461,11 +461,13 @@ la seule ligne écrite pour un Mac :
 **CE QUI N'A PAS ÉTÉ ÉPROUVÉ, ET QUI EST ÉCRIT COMME TEL** : aucun hôte Windows n'a
 chargé ce plugin ici. Le chemin du CLI, les candidats et `homedir()` sont écrits d'après
 la documentation des plateformes, pas mesurés ; ce qui EST mesuré, c'est que `OS ==
-"windows"` est retenu par les deux découvertes, et que la liste réelle gagne `MiBook`.
+"windows"` est retenu par les deux découvertes, et que la liste réelle gagne un **PC
+Windows**. Son nom est **lu** à l'exécution, jamais recopié ici : c'est `tailscale status`
+qui le donne, et un document n'a rien à en garder.
 
 **Et le code du plugin n'est pas rechargé à chaud** : la correction de la règle ne prend
 effet qu'au **redémarrage du harness** (`dsh web`). La découverte locale du client, elle,
-suffit à voir `MiBook` dès la reconstruction de l'application.
+suffit à voir ce PC dès la reconstruction de l'application.
 
 ### Une machine éteinte n'est pas une panne réseau
 
@@ -3310,7 +3312,7 @@ rallumerait tout seul une seconde plus tard.
 | **La décision attendue devient un point orange** | chaîne mesurée sur une charge utile RÉELLE : `attendReponse: true` → `EtatSession.attendReponse` (la valeur que la pastille rend), pendant qu'une question d'un tool est en attente |
 | **Le flux alimente l'écran ouvert** | la même capture passe de 41 à 48 enregistrements pendant qu'une autre session écrit |
 | **Le composeur est rendu** | capture du simulateur : champ « Écrire à cette session… », sélecteur de mode, bouton d'envoi |
-| **L'hôte publie la liste des machines du tailnet** | `dsh-remote-ctl serveurs` → 4 machines : les 3 Macs **et `MiBook` (OS `windows`)** ; l'iPhone (`OS` `iOS`) est écarté |
+| **L'hôte publie la liste des machines du tailnet** | `dsh-remote-ctl serveurs` → 4 machines : les 3 Macs **et un PC Windows (`OS` `windows`)** ; l'iPhone (`OS` `iOS`) est écarté |
 | **Les espaces viennent du registre de l'hôte** | `dsh-remote-ctl <adresse> espaces` → 7 espaces, du plus récent au plus ancien, avec leur nombre de sessions |
 | **Espaces par création, sessions par activité** | 3 tests : un espace ancien mais très actif reste sous un espace récent ; dans un espace, la session la plus active passe devant ; départage stable à date égale |
 | **Un espace vide est représenté** | 6 tests sur les charges utiles de l'hôte : espace sans session marqué `sansSession`, appartenance par identifiant et non par chemin, « Sans espace » en dernier, repli sur `cwd` sans registre |

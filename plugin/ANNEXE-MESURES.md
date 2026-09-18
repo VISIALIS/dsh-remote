@@ -285,7 +285,7 @@ l'invalidation par la date, l'éviction LRU et le journal trop gros pour le plaf
 | Une route nommée échappe à l'authentification navigateur | `200` sans cookie sur `/dsh-remote-probe/ping` (sonde), là où `/` répond `401` |
 | Le tailnet atteint la route | `200` via le nom MagicDNS du Mac (`tailscale serve`) |
 | L'hôte publie la liste du tailnet | instance neuve : `GET /v1/serveurs` → 3 Macs, `local: true` sur celui qui répond, et **NI** l'iPhone (iOS ne peut pas héberger DSH) |
-| Un PC Windows EST proposé | `analyserTailnet` sur la sortie réelle de `tailscale status --json` : `MiBook` (`OS: windows`) apparaît, l'iPhone (`OS: iOS`) non — règle corrigée le 13 septembre 2026, voir « Découverte des serveurs » |
+| Un PC Windows EST proposé | `analyserTailnet` sur la sortie réelle de `tailscale status --json` : un **PC Windows** (`OS: windows`) apparaît, l'iPhone (`OS: iOS`) non — règle corrigée le 13 septembre 2026, voir « Découverte des serveurs ». Le **nom** de la machine est lu à l'exécution : un document n'a rien à en garder |
 | L'hôte publie ses espaces de travail | instance neuve : `GET /v1/espaces` → 7 espaces, du plus récent au plus ancien (`creeLe` décroissant), avec l'appartenance des sessions |
 | La découverte ne lit rien avant l'authentification | sur cette route : `401` sans jeton, `403` avec `Origin`, `405` en `POST` |
 | Le CHEMIN du binaire décide du succès | `/usr/local/bin/tailscale` (lien symbolique) échoue « The current bundleIdentifier is unknown to the registry » ; `/Applications/Tailscale.app/Contents/MacOS/Tailscale` rend l'état complet |
