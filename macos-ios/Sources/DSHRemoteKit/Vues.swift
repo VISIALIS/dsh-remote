@@ -514,7 +514,35 @@ struct VueListeSessions: View {
         // utilisable, et l'annoncer la faisait passer pour tel. Le nombre est
         // donc celui des machines EN LIGNE **ET** dont DSH répond — la liste,
         // elle, continue de toutes les montrer, avec leurs états.
-        EnteteSection(L("Serveur DeepSeek Harness"), detail: resumeServeurs)
+        HStack {
+          EnteteSection(L("Serveur DeepSeek Harness"), detail: resumeServeurs)
+          if modele.serveursAffiches.count == 1, modele.rechercheServeursPossible {
+            #if os(iOS)
+              NavigationLink(value: PageAjoutServeur()) {
+                Image(systemName: "plus")
+                  .font(.subheadline.weight(.semibold))
+                  .foregroundStyle(Color.accentColor)
+                  .frame(minWidth: 44, minHeight: 44)
+                  .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              .simultaneousGesture(TapGesture().onEnded { surAjout() })
+              .accessibilityLabel(T("Ajouter un serveur"))
+            #else
+              Button {
+                surAjout()
+              } label: {
+                Image(systemName: "plus")
+                  .font(.subheadline.weight(.semibold))
+                  .foregroundStyle(Color.accentColor)
+                  .frame(minWidth: 44, minHeight: 44)
+                  .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel(T("Ajouter un serveur"))
+            #endif
+          }
+        }
       }
 
       // ── Ce qui est PARTI sur la page du serveur ──────────────────────────
@@ -931,260 +959,279 @@ struct EnteteSection: View {
 
 // MARK: - Serveurs
 
-/// Les serveurs en carrousel d'icônes, comme des icônes d'applications.
+/// Les serveurs en carrousel de cartes larges avec pagination à glissement.
 ///
-/// POURQUOI CE RENDU PLUTÔT QU'UNE LISTE DE LIGNES. Une liste de lignes dit
-/// « réglage » ; un carrousel d'icônes dit « appareil ». Or c'est bien de cela
-/// qu'il s'agit : chaque icône EST une machine, avec son icône de châssis, son
-/// état, et son nom raccourci au premier mot — la forme sous laquelle on
-/// reconnaît un appareil.
+/// POURQUOI DES CARTES LARGES PLUTÔT QUE DES VIGNETTES. La majorité des
+/// utilisateurs ne disposent que d'un seul serveur DSH. Les vignettes carrées
+/// gaspillaient la largeur de l'écran tout en comprimant le nom et le statut
+/// sur deux lignes tronquées. La carte large offre une surface lisible dès le
+/// premier regard : nom complet, nom DNS, état DSH sincère, et pastille de
+/// châssis.
 ///
-/// Le défilement est un `ScrollView` et non un `TabView` : avec quatre Macs ou
-/// plus, un carrousel paginé cacherait la moitié des machines derrière un geste
-/// que rien n'annonce.
+/// PRINCIPES VALIDÉS PAR AUDIT :
+/// - Pager `ScrollView(.horizontal)` sous iOS 17 / macOS 14 avec `.scrollTargetBehavior(.viewAligned)`
+///   et `.scrollPosition(id: $pageVisible)`.
+/// - Dépassement visuel (*peek*) de 14 pt sur chaque bord pour enseigner l'affordance de balayage.
+/// - Hauteur 100% intrinsèque pour un comportement Dynamic Type irréprochable.
+/// - Découplage de la page affichée et de la connexion effective : debounce de 350 ms
+///   évitant d'enchaîner des reconnexions réseau intempestives lors d'un balayage rapide (Option A).
+/// - Ouverture de la fiche détaillée (`FicheServeur`) par appui sur la carte ou son chevron.
+/// - Indicateurs de matériel sous forme d'icônes avec cible tactile 44×44 pt, masqués
+///   si la liste ne compte qu'un seul serveur.
 struct CarrouselServeurs: View {
   @Bindable var modele: ModeleApp
-  /// Touché une machine : la page de droite devient la sienne.
+  /// Touché ou sélectionné une machine : la page de droite devient la sienne.
   var surSelectionServeur: (ServeurMac) -> Void
   /// Touché « Ajouter » : la page qui dit comment faire naître un serveur.
   var surAjout: () -> Void
 
-  /// LE CÔTÉ D'UNE VIGNETTE, MIS À L'ÉCHELLE DU TEXTE DE L'APPAREIL.
-  ///
-  /// POURQUOI `@ScaledMetric`. La vignette portait un glyphe de 27 points et un
-  /// cadre de 68 **en dur** : à la taille de texte d'accessibilité, ils ne
-  /// grandissaient pas d'un point, alors que le nom et la légende — sémantiques,
-  /// eux — grossissaient : le texte finissait par ne plus tenir dans un cadre
-  /// prévu pour lui. C'est le défaut que l'audit a relevé sous le nom de
-  /// « Dynamic Type cassé », et il touchait le composant signature de l'écran.
-  ///
-  /// POURQUOI UN PLAFOND, ET POURQUOI IL EST ASSUMÉ. Au-delà de 96 points, une
-  /// vignette cesse d'être une vignette : trois machines ne tiennent plus dans la
-  /// colonne, et le carrousel perd ce pour quoi il existe — voir d'un coup d'œil
-  /// quelles machines répondent. Le texte, lui, continue de grandir jusqu'au bout.
-  @ScaledMetric(relativeTo: .caption2) private var coteMiseALEchelle: CGFloat = 62
-  private var cote: CGFloat { min(coteMiseALEchelle, 96) }
-
-  /// LES LIBELLÉS DE LA LISTE ENTIÈRE, calculés une fois par rendu.
-  ///
-  /// POURQUOI ICI, ET NON DANS LA VIGNETTE. Deux machines peuvent partager leur
-  /// premier mot : c'est la comparaison entre elles qui décide si un mot suffit.
-  /// Voir `NomsCourts`. La liste est celle de l'AFFICHAGE : les libellés sont
-  /// calculés sur l'ENSEMBLE des machines, donc l'ordre ne les change pas — mais
-  /// une seule liste circule dans la vue.
-  private var libelles: [String: String] { NomsCourts.libelles(pour: modele.serveursAffiches) }
+  @State private var pageVisible: String?
+  @State private var tacheDebounce: Task<Void, Never>?
 
   var body: some View {
-    // LES INDICATEURS DE DÉFILEMENT SONT CEUX DU SYSTÈME. Ils étaient masqués
-    // (`showsIndicators: false`) : avec quatre machines, la quatrième apparaît
-    // COUPÉE au bord de la colonne sans que rien n'annonce qu'on peut faire
-    // défiler — constaté sur capture. La barre discrète du système est
-    // précisément l'affordance qui manquait, et elle ne s'affiche que pendant le
-    // geste.
-    ScrollView(.horizontal) {
-      HStack(alignment: .top, spacing: 16) {
-        // L'ORDRE EST CELUI DE L'AFFICHAGE : joignables d'abord, prêtes en premier
-        // (voir `ModeleApp.serveursAffiches`) — et il ne dépend PAS de la sélection.
-        // Il en a dépendu : la vignette touchée sautait en tête, le contenu se
-        // décalait sous le doigt, et la barre de défilement s'agitait à chaque
-        // connexion. Une liste qu'on parcourt du doigt ne bouge pas parce qu'on
-        // l'a touchée.
-        ForEach(modele.serveursAffiches) { serveur in
-          // ── TOUCHER UNE MACHINE OUVRE SA PAGE ET S'Y CONNECTE ─────────────
-          //
-          // Deux effets pour un geste, et c'est délibéré : on touche une machine
-          // pour s'y connecter, et la page est ce qui EXPLIQUE le résultat —
-          // état, adresse, jeton, remèdes. Ce qui a changé par rapport au début
-          // n'est pas le geste, c'est l'ENDROIT du diagnostic : il s'affichait
-          // dans la colonne de gauche, au milieu des sessions ; il vit
-          // maintenant sur la page de la machine concernée.
-          vignette(serveur)
-            // L'APPUI LONG EST LE RECOURS DE CE QUI N'EST PAS UN APPUI : clavier
-            // externe, VoiceOver, souris. Il porte les mêmes actions que la page,
-            // à l'endroit où l'on désigne la machine.
-            .contextMenu { menuDeMachine(serveur) }
+    VStack(spacing: 8) {
+      // 1. Pager horizontal natif avec peek
+      ScrollView(.horizontal, showsIndicators: false) {
+        LazyHStack(spacing: 12) {
+          ForEach(modele.serveursAffiches) { serveur in
+            CarteServeur(
+              serveur: serveur,
+              modele: modele,
+              actif: (pageVisible ?? modele.serveurChoisi?.id) == serveur.id,
+              surSelection: {
+                surSelectionServeur(serveur)
+              },
+              surOuvrirFiche: {
+                modele.ouvrirPage(serveur)
+                surSelectionServeur(serveur)
+              }
+            )
+            .id(serveur.id)
+            // Peek de 14 pt de chaque côté pour suggérer le balayage si plusieurs machines
+            .containerRelativeFrame(.horizontal) { longueur, _ in
+              modele.serveursAffiches.count > 1 ? max(longueur - 28, 260) : longueur
+            }
+          }
         }
-        // « Rafraîchir » n'est proposé QUE là où le rafraîchissement peut
-        // réellement rendre des machines : sur le Mac par la découverte locale,
-        // sur iPhone par l'hôte une fois qu'un serveur est joint. Ailleurs, le
-        // bouton ne produirait ni succès ni erreur — et un bouton sans effet est
-        // un mensonge d'interface.
-        // LE BOUTON EN POINTILLÉS CHERCHE, IL NE RAFRAÎCHIT PLUS.
-        //
-        // La liste se rafraîchit toute seule (voir `synchroniserServeurs`), donc
-        // un bouton « Rafraîchir » n'avait plus de raison d'être. En revanche,
-        // « chercher un Mac » en a une, et c'est la seule façon d'en AJOUTER un
-        // sur iPhone : la découverte locale y est impossible, et l'hôte joint ne
-        // republie sa liste que si on le lui demande.
-        if modele.rechercheServeursPossible {
-          // LA VIGNETTE MÈNE À LA PAGE, elle ne lance plus une recherche. Sur un
-          // iPhone où rien n'est encore installé, une recherche ne peut rien
-          // trouver et n'apprend rien : ni ce qui manque, ni sur quelle machine,
-          // ni dans quel ordre. La recherche reste offerte DANS la page.
-          #if os(iOS)
-            NavigationLink(value: PageAjoutServeur()) {
-              ContenuAjouter(enRecherche: modele.synchronisationEnCours, cote: cote)
-            }
-            .buttonStyle(.plain)
-            .simultaneousGesture(TapGesture().onEnded { surAjout() })
-          #else
-            Button {
-              surAjout()
-            } label: {
-              ContenuAjouter(enRecherche: modele.synchronisationEnCours, cote: cote)
-            }
-            .buttonStyle(.plain)
-          #endif
+        .scrollTargetLayout()
+      }
+      .scrollTargetBehavior(.viewAligned)
+      .scrollPosition(id: $pageVisible)
+      .scrollDisabled(modele.serveursAffiches.count < 2)
+      .scrollBounceBehavior(modele.serveursAffiches.count > 1 ? .always : .basedOnSize)
+      .contentMargins(.horizontal, 14, for: .scrollContent)
+      .onChange(of: pageVisible) { _, nouvellePage in
+        guard let nouvellePage, nouvellePage != modele.serveurChoisi?.id else { return }
+        guard let serveur = modele.serveursAffiches.first(where: { $0.id == nouvellePage }) else { return }
+        // Option A debouncée : 350 ms pour éviter d'enchaîner des connexions lors d'un balayage rapide
+        tacheDebounce?.cancel()
+        tacheDebounce = Task {
+          try? await Task.sleep(for: .milliseconds(350))
+          guard !Task.isCancelled else { return }
+          await MainActor.run {
+            surSelectionServeur(serveur)
+          }
         }
       }
-      .padding(.horizontal, 20)
-      .padding(.vertical, 4)
-      // LE RETOUR HAPTIQUE DIT CE QUE L'ŒIL PEUT MANQUER. Choisir une machine
-      // déclenche une connexion de plusieurs secondes : sur un téléphone tenu à
-      // une main, la coche de la vignette peut être hors du regard, et rien ne
-      // confirmerait que l'appui a été pris en compte. Le retour ne se produit
-      // que si la machine courante CHANGE — pas à chaque rendu.
+      .onChange(of: modele.serveurChoisi?.id, initial: true) { _, nouveauChoix in
+        if pageVisible != nouveauChoix {
+          withAnimation(.easeInOut(duration: 0.25)) {
+            pageVisible = nouveauChoix
+          }
+        }
+      }
+      // LE RETOUR HAPTIQUE confirme la sélection lors du changement de serveur
       .sensoryFeedback(trigger: modele.serveurChoisi?.id) { ancien, nouveau in
         ancien == nouveau ? nil : .selection
       }
-    }
-    .scrollClipDisabled()
-  }
-
-  /// UNE VIGNETTE DE MACHINE, dans ses deux mécanismes de navigation.
-  ///
-  /// POURQUOI ELLE EST UNE FONCTION À PART. Le menu contextuel doit s'appliquer à
-  /// la vignette sur les DEUX plateformes, alors que la navigation, elle, diffère
-  /// — `NavigationLink` qui empile sur iPhone, `Button` qui remplace le contenu de
-  /// droite sur macOS. Un `#if` au milieu d'une chaîne de modificateurs ne se
-  /// compile pas, et dupliquer le menu l'aurait fait diverger d'une plateforme à
-  /// l'autre : c'est précisément ce que la vue partagée évite partout ailleurs.
-  ///
-  /// DEUX MÉCANISMES, PARCE QUE LES PLATEFORMES DIFFÈRENT. Sur macOS, les deux
-  /// colonnes sont visibles : la page remplace le contenu de droite. Sur iPhone,
-  /// la colonne de détail n'existe pas : il faut EMPILER la page
-  /// (`NavigationLink`), sinon l'appui ne montre rien — et un appui qui ne montre
-  /// rien est un appui cassé.
-  @ViewBuilder
-  private func vignette(_ serveur: ServeurMac) -> some View {
-    #if os(iOS)
-      // ── LE MÉCANISME SUIT LA RÈGLE, ET C'EST LA CORRECTION ─────────────────
-      //
-      // DÉFAUT MESURÉ : la vignette était TOUJOURS un `NavigationLink`, qui
-      // empile la page à CHAQUE appui — quoi que dise `GesteSurServeur`. Le
-      // premier appui ne pouvait donc pas se contenter de sélectionner : pour
-      // voir la liste d'à côté, il fallait ouvrir une fiche puis revenir en
-      // arrière, et l'infobulle (« un second appui ouvre sa page ») mentait.
-      //
-      // C'est le MÉCANISME qui obéit maintenant : un lien quand la page doit
-      // s'ouvrir, un bouton quand la machine doit être sélectionnée — et l'on
-      // reste alors sur la liste, le temps que SES sessions et SES espaces de
-      // travail se rechargent.
-      let geste = GesteSurServeur.pour(serveur, choisi: modele.serveurChoisi)
-      let icone = IconeServeur(
-        serveur: serveur,
-        libelle: libelles[serveur.id] ?? serveur.premierMot,
-        cote: cote,
-        choisi: modele.serveurChoisi == serveur,
-        sertDsh: modele.sertDsh(serveur),
-        appairage: modele.etatAppairage(pour: serveur))
-      // Le `Group` n'est pas décoratif : les modificateurs d'accessibilité qui
-      // suivent (libellé, infobulle, action nommée) s'appliquent à un TYPE DE VUE,
-      // et un `if` n'en est pas un — mesuré : « no exact matches in call to
-      // instance method 'accessibilityLabel' ». Le `Group` rend les deux branches
-      // habillables d'un seul jeu de modificateurs, donc d'un seul libellé.
-      Group {
-        if geste == .ouvrirLaPage {
-          NavigationLink(value: serveur) { icone }
-            .buttonStyle(.plain)
-            // Le lien EMPILE la page ; ce geste simultané dit au modèle laquelle
-            // est ouverte (pour que la vignette l'indique).
-            .simultaneousGesture(TapGesture().onEnded { surSelectionServeur(serveur) })
-        } else {
-          Button {
-            surSelectionServeur(serveur)
-          } label: {
-            icone
-          }
-          .buttonStyle(.plain)
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel(L("Serveurs"))
+      .accessibilityValue(valeurAccessiblePager)
+      .accessibilityAdjustableAction { direction in
+        guard modele.serveursAffiches.count > 1 else { return }
+        let indexCourant = modele.serveursAffiches.firstIndex(where: { $0.id == (pageVisible ?? modele.serveurChoisi?.id) }) ?? 0
+        let nouvelIndex: Int
+        switch direction {
+        case .increment:
+          nouvelIndex = min(indexCourant + 1, modele.serveursAffiches.count - 1)
+        case .decrement:
+          nouvelIndex = max(indexCourant - 1, 0)
+        @unknown default:
+          nouvelIndex = indexCourant
+        }
+        let cible = modele.serveursAffiches[nouvelIndex]
+        withAnimation(.easeInOut(duration: 0.25)) {
+          pageVisible = cible.id
+          surSelectionServeur(cible)
         }
       }
-      .accessibilityLabel(
-        EtatMachine.libelleAccessible(
-          nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
-          estLocal: serveur.estLocal, appairage: modele.etatAppairage(pour: serveur))
-      )
-      // ── LA CONNEXION DEVIENT UNE ACTION NOMMÉE, ET C'EST UNE CORRECTION ────
-      //
-      // POURQUOI. Sur iPhone, la vignette est un LIEN doublé d'un geste parallèle :
-      // c'est le GESTE qui agit. Or VoiceOver, le clavier externe, Voice Control
-      // et les interrupteurs activent le LIEN — ils ouvraient donc la page d'une
-      // machine sans la sélectionner, et rien ne le disait. Une action nommée rend
-      // le geste atteignable par les mêmes moyens que le reste : c'est le chemin
-      // canonique, et il ne demande aucune refonte de la navigation.
-      //
-      // L'INFOBULLE DIT CE QUE L'ACTIVATION SIMPLE FAIT VRAIMENT — sélectionner,
-      // et ouvrir la page au second appui —, et c'est désormais exact : le
-      // mécanisme suit la règle (voir plus haut).
-      //
-      // SUR macOS, RIEN À AJOUTER : la vignette y est un `Button` dont l'action
-      // suit la même règle, et son menu contextuel porte « Se connecter ».
-      .accessibilityHint(T("Sélectionne cette machine ; un second appui ouvre sa page"))
-      .accessibilityAction(named: T("Se connecter")) {
-        surSelectionServeur(serveur)
+
+      // 2. Indicateurs personnalisés : uniquement si plus d'un serveur
+      if modele.serveursAffiches.count > 1 {
+        IndicateursServeurs(
+          serveurs: modele.serveursAffiches,
+          choix: modele.serveurChoisi?.id,
+          pageVisible: $pageVisible,
+          surSelection: { serveur in
+            withAnimation(.easeInOut(duration: 0.25)) {
+              pageVisible = serveur.id
+              surSelectionServeur(serveur)
+            }
+          },
+          surAjout: surAjout,
+          recherchePossible: modele.rechercheServeursPossible
+        )
       }
+    }
+  }
+
+  private var valeurAccessiblePager: String {
+    let index = modele.serveursAffiches.firstIndex(where: { $0.id == (pageVisible ?? modele.serveurChoisi?.id) }) ?? 0
+    let nom = modele.serveursAffiches.first(where: { $0.id == (pageVisible ?? modele.serveurChoisi?.id) })?.nom ?? ""
+    return "\(nom), \(index + 1) " + L("sur") + " \(modele.serveursAffiches.count)"
+  }
+}
+
+/// Carte large d'un serveur : châssis, nom complet, DNS, statut sincère et chevron ouvrant la fiche.
+struct CarteServeur: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @ScaledMetric(relativeTo: .title) private var cotePastille: CGFloat = 46
+
+  let serveur: ServeurMac
+  @Bindable var modele: ModeleApp
+  let actif: Bool
+  var surSelection: () -> Void
+  var surOuvrirFiche: () -> Void
+
+  private var diametrePastille: CGFloat { min(cotePastille, 64) }
+
+  private var descriptionEtat: EtatMachine.Description {
+    EtatMachine.decrire(
+      enLigne: serveur.enLigne,
+      sertDsh: modele.sertDsh(serveur),
+      estLocal: serveur.estLocal,
+      appairage: modele.etatAppairage(pour: serveur),
+      court: false
+    )
+  }
+
+  var body: some View {
+    #if os(iOS)
+      NavigationLink(value: serveur) {
+        contenuCarte
+      }
+      .buttonStyle(StyleCartePressee())
+      .simultaneousGesture(TapGesture().onEnded {
+        surSelection()
+      })
+      .contextMenu { menuDeMachine(serveur) }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(serveur.nom)
+      .accessibilityValue(descriptionAccessible)
+      .accessibilityHint(L("Ouvre la page de ce serveur"))
+      .accessibilityAction(named: L("Ouvrir la page")) { surOuvrirFiche() }
+      .accessibilityAddTraits(actif ? [.isSelected] : [])
     #else
       Button {
-        // SÉLECTIONNER, OU OUVRIR LA PAGE — la règle est dans le modèle.
-        //
-        // L'historique de ce geste vaut d'être gardé : il a d'abord ouvert la page
-        // seule (« il fallait ensuite viser “Se connecter” »), puis les deux à la
-        // fois (« toucher une machine, c'est vouloir s'y connecter »). Il fait
-        // maintenant ce que l'usage demande : un appui SÉLECTIONNE — on reste sur
-        // la liste, avec les sessions de la nouvelle machine — et un second appui
-        // ouvre sa fiche.
-        surSelectionServeur(serveur)
+        surOuvrirFiche()
       } label: {
-        IconeServeur(
-          serveur: serveur,
-          libelle: libelles[serveur.id] ?? serveur.premierMot,
-          cote: cote,
-          choisi: modele.serveurChoisi == serveur,
-          sertDsh: modele.sertDsh(serveur),
-          appairage: modele.etatAppairage(pour: serveur))
+        contenuCarte
       }
-      .buttonStyle(.plain)
-      .accessibilityLabel(
-        EtatMachine.libelleAccessible(
-          nom: serveur.nom, enLigne: serveur.enLigne, sertDsh: modele.sertDsh(serveur),
-          estLocal: serveur.estLocal, appairage: modele.etatAppairage(pour: serveur))
-      )
+      .buttonStyle(StyleCartePressee())
+      .contextMenu { menuDeMachine(serveur) }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(serveur.nom)
+      .accessibilityValue(descriptionAccessible)
+      .accessibilityHint(L("Ouvre la page de ce serveur"))
+      .accessibilityAction(named: L("Ouvrir la page")) { surOuvrirFiche() }
+      .accessibilityAddTraits(actif ? [.isSelected] : [])
     #endif
   }
 
-  /// CE QU'UN APPUI LONG PROPOSE SUR UNE MACHINE.
-  ///
-  /// POURQUOI « OUblier » N'EST PAS OFFERT PARTOUT. `oublierServeur()` oublie
-  /// l'adresse MÉMORISÉE — celle de la machine courante —, et vide la liste venue
-  /// de son hôte. L'offrir sur une autre vignette agirait donc sur une machine
-  /// que l'utilisateur n'a pas désignée : un bouton qui agit ailleurs, exactement
-  /// ce que la page d'un serveur a déjà corrigé pour « Tester ». L'entrée
-  /// n'apparaît donc que sur la machine courante.
+  private var contenuCarte: some View {
+    let desc = descriptionEtat
+    return HStack(spacing: 14) {
+      // Pastille circulaire avec glyphe du châssis matériel
+      ZStack {
+        Circle()
+          .fill(
+            serveur.enLigne
+              ? LinearGradient(
+                  colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                  startPoint: .topLeading, endPoint: .bottomTrailing)
+              : LinearGradient(
+                  colors: [Color.secondary.opacity(0.4), Color.secondary.opacity(0.2)],
+                  startPoint: .topLeading, endPoint: .bottomTrailing)
+          )
+          .frame(width: diametrePastille, height: diametrePastille)
+
+        Image(systemName: serveur.symbole)
+          .font(.system(size: diametrePastille * 0.46, weight: .regular))
+          .foregroundStyle(.white)
+      }
+
+      VStack(alignment: .leading, spacing: 4) {
+        Text(serveur.nom)
+          .font(.headline)
+          .foregroundStyle(Color.primary)
+          .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+
+        Text(serveur.nomDNS)
+          .font(.caption)
+          .foregroundStyle(Color.secondary)
+          .lineLimit(1)
+
+        // Statut véridique déduit d'EtatMachine
+        HStack(spacing: 5) {
+          Circle()
+            .fill(desc.ton.couleur)
+            .frame(width: 7, height: 7)
+          Text(desc.texte)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(desc.ton.couleur)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 2.5)
+        .background(desc.ton.couleur.opacity(0.12), in: Capsule())
+        .fixedSize(horizontal: false, vertical: true)
+      }
+
+      Spacer(minLength: 4)
+
+      // Le chevron annonce l'accès à la fiche détaillée
+      Image(systemName: "chevron.right")
+        .font(.footnote.weight(.semibold))
+        .foregroundStyle(.tertiary)
+        .padding(.trailing, 2)
+    }
+    .padding(14)
+    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .strokeBorder(
+          actif ? Color.accentColor.opacity(0.35) : Color.secondary.opacity(0.15),
+          lineWidth: actif ? 1.5 : 1
+        )
+    }
+    .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+  }
+
+  private var descriptionAccessible: String {
+    let desc = descriptionEtat
+    if actif {
+      return "\(desc.texte), " + L("serveur actif")
+    }
+    return desc.texte
+  }
+
+  /// Actions contextuelles disponibles au clic droit / appui long.
   @ViewBuilder
   private func menuDeMachine(_ serveur: ServeurMac) -> some View {
     Button {
-      // « SE CONNECTER » EST UNE ACTION NOMMÉE, DONC ELLE CONNECTE — elle ne
-      // décide d'aucune page. C'est `ModeleApp.toucher` qui porte la règle de
-      // l'appui sur la vignette (sélectionner, ou ouvrir si c'est déjà la cible),
-      // et la mêler ici rendrait le menu imprévisible : on ne saurait plus si
-      // « Se connecter » ouvre une fiche ou change de machine.
-      //
-      // La branche `#if os(macOS)` qui vivait ici a disparu avec elle : le menu
-      // fait la même chose sur les deux plateformes.
       Task { await modele.choisirEtConnecter(serveur) }
     } label: {
       Label(
-        modele.serveurChoisi == serveur ? "Reconnecter" : "Se connecter",
+        modele.serveurChoisi == serveur ? L("Reconnecter") : L("Se connecter"),
         systemImage: "bolt.horizontal")
     }
     Button {
@@ -1203,231 +1250,95 @@ struct CarrouselServeurs: View {
   }
 }
 
-/// Une icône de serveur : la vignette, la pastille d'état, le nom d'un mot.
-struct IconeServeur: View {
-  let serveur: ServeurMac
-  /// LE LIBELLÉ DE LA VIGNETTE — un mot, ou deux quand un seul ne distingue pas.
-  ///
-  /// POURQUOI IL VIENT DU DEHORS. Deux machines d'un même tailnet peuvent partager
-  /// leur premier mot — « Portable Un » et « Portable Deux » s'affichaient toutes
-  /// deux « Portable » —, et l'appui CHANGE la connexion. Le calcul appartient
-  /// donc à la LISTE (`NomsCourts`) : c'est la comparaison entre machines qui dit
-  /// si un mot suffit, et une vignette seule ne peut pas le savoir.
-  let libelle: String
-  /// LE CÔTÉ DE LA VIGNETTE, DÉJÀ MIS À L'ÉCHELLE DU TEXTE.
-  ///
-  /// POURQUOI UN SEUL CÔTÉ, ET NON CINQ. Le dessin est proportionné : le glyphe,
-  /// la pastille, la coche et la largeur des deux lignes se déduisent tous du
-  /// côté. Cinq `@ScaledMetric` indépendants auraient pu diverger et casser
-  /// l'alignement — celui, surtout, que la vignette partage avec le bouton
-  /// « Ajouter ».
-  let cote: CGFloat
-  /// Le serveur CONNECTÉ, donc celui dont la page est ouverte : une coche.
-  ///
-  /// POURQUOI UN SEUL SIGNAL. J'avais ajouté un anneau bleu autour de la vignette
-  /// lue, pour distinguer « connecté » de « page ouverte ». Le propriétaire l'a
-  /// fait retirer : depuis que l'appui CONNECTE, les deux états coïncident
-  /// toujours, et la coche du coin suffit. Un signal qui ne dit jamais rien de
-  /// plus qu'un autre est du bruit.
-  let choisi: Bool
-
-  /// Le Mac sert-il DSH ? `nil` = pas encore su.
-  ///
-  /// POURQUOI CE TROISIÈME ÉTAT EXISTE. La découverte liste tous les Macs du
-  /// tailnet, mais seuls ceux qui publient DSH peuvent répondre. Tant que la
-  /// sonde n'a pas rendu son verdict, l'icône ne doit RIEN affirmer : c'est un
-  /// « je ne sais pas », pas un « non ».
-  let sertDsh: Bool?
-
-  /// OÙ EN EST L'APPAIRAGE DE CET APPAREIL AVEC CETTE MACHINE.
-  ///
-  /// POURQUOI LA VIGNETTE EN A BESOIN. Une machine qui sert DSH mais dont cet
-  /// appareil n'a pas le jeton était annoncée « pas de DSH » : le mot accusait la
-  /// machine d'un manque qui est ici. La légende dit maintenant lequel des deux
-  /// manque — et c'est la seule chose qui décide du geste à faire.
-  let appairage: EtapesServeur.EtatAppairage
-
-  /// Le côté du CADRE : la vignette, plus la marge qui la sépare des autres.
-  private var cadre: CGFloat { cote + 6 }
-  private var coteGlyphe: CGFloat { cote * 0.4355 }
-  private var cotePastille: CGFloat { cote * 0.242 }
-  private var coteCoche: CGFloat { cote * 0.3065 }
-
-  var body: some View {
-    VStack(spacing: 6) {
-      ZStack {
-        RoundedRectangle(cornerRadius: cote * 0.242, style: .continuous)
-          .fill(
-            LinearGradient(
-              colors: serveur.enLigne
-                ? [Color.accentColor.opacity(0.95), Color.accentColor.opacity(0.65)]
-                : [Color.secondary.opacity(0.45), Color.secondary.opacity(0.28)],
-              startPoint: .topLeading, endPoint: .bottomTrailing)
-          )
-          .frame(width: cote, height: cote)
-          .overlay {
-            Image(systemName: serveur.symbole)
-              .font(.system(size: coteGlyphe, weight: .regular))
-              .foregroundStyle(.white)
-          }
-        // La sélection est une COCHE, dans le coin, et non un contour : sur une
-        // vignette déjà colorée, un anneau de 2 points se confond avec ses
-        // propres bords — mesuré sur le prototype, le serveur choisi ne se
-        // distinguait pas des autres. Le coin haut-gauche est libre : la
-        // pastille d'état occupe le coin bas-droit.
-        if choisi {
-          Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: coteCoche))
-            .foregroundStyle(.white, Color.accentColor)
-            .offset(x: -(cote / 2) + 2, y: -(cote / 2) + 2)
-        }
-      }
-      .frame(width: cote, height: cote)
-      .overlay(alignment: .bottomTrailing) {
-        // Vert : en ligne ET DSH vérifié. Orange : en ligne, mais la sonde n'a
-        // pas encore répondu. Gris : hors ligne, ou DSH absent — dans les deux
-        // cas, appuyer ne donnera rien.
-        Circle()
-          .fill(couleurPastille)
-          .frame(width: cotePastille, height: cotePastille)
-          .overlay { Circle().strokeBorder(.background, lineWidth: 2.5) }
-          .offset(x: 3, y: 3)
-      }
-      .frame(width: cadre, height: cadre)
-      // Une vignette SANS DSH est atténuée : c'est ce qui se voit d'un coup
-      // d'œil, avant même de lire la légende.
-      .opacity(sertDsh == false ? 0.55 : 1)
-
-      Text(libelle)
-        .font(.caption2)
-        .lineLimit(1)
-        .foregroundStyle(choisi ? Color.primary : Color.secondary)
-        .frame(width: cadre)
-      // La légende dit l'état RÉEL : « hôte » pour la machine interrogée, et
-      // « pas de DSH » pour celle dont la sonde a montré qu'elle ne répondra
-      // pas. Réservée en place (`opacity`) pour que les icônes restent alignées.
-      //
-      // ELLE EST EN `.caption2`, ET NON EN 9 POINTS. Neuf points est sous le
-      // minimum que la directive donne pour du texte utile — onze sur iOS, dix sur
-      // macOS —, et c'est la SEULE ligne qui dit « pas de DSH » : la rendre
-      // illisible revient à ne pas la dire. Deux lignes sont autorisées parce que
-      // la vignette fait 68 points de large, et qu'un mot long vaut mieux coupé
-      // que rapetissé.
-      Text(legende)
-        .font(.caption2)
-        .multilineTextAlignment(.center)
-        .lineLimit(2)
-        .foregroundStyle(.tertiary)
-        .frame(width: cadre)
-        .opacity(legende.isEmpty ? 0 : 1)
-    }
-  }
-
-  /// Le POINT dit si la MACHINE répond ; la LÉGENDE dit si DSH y répond.
-  ///
-  /// POURQUOI LES SÉPARER — c'est une distinction que le propriétaire a
-  /// lui-même formulée : « savoir si le serveur est en ligne est une chose,
-  /// savoir s'il est DSH joignable en est une autre ». La version précédente
-  /// les confondait : le même point GRIS servait à « machine éteinte » et à
-  /// « machine allumée, mais rien n'écoute ». Or les deux n'appellent pas la
-  /// même action — allumer un Mac, ou y publier DSH avec `tailscale serve`.
-  ///
-  /// Le cas qui a rendu le défaut visible : MacMini répond au ping en 7 ms
-  /// (`en ligne`) et ses ports 80, 443 et 3080 sont tous fermés (`pas de DSH`).
-  /// Il affichait pourtant le même point qu'un Mac éteint depuis 206 jours.
-  private var couleurPastille: Color {
-    // Vert : la machine répond. Gris : elle ne répond pas — inutile d'aller
-    // plus loin, et la légende n'ajoutera rien.
-    serveur.enLigne ? .green : .gray
-  }
-
-  /// Légende sous le nom : ce qui RESTE à savoir après l'état de la machine.
-  ///
-  /// LES MOTS VIENNENT D'`EtatMachine`, comme ceux de la pastille de la page : les
-  /// deux endroits disaient le même fait avec des mots différents — « hors ligne »
-  /// ici, « hors ligne sur le tailnet » là —, et deux vocabulaires pour un fait
-  /// obligent le lecteur à traduire. Ici la forme est ABRÉGÉE : la vignette tient
-  /// en 68 points.
-  private var legende: String {
-    EtatMachine.decrire(
-      enLigne: serveur.enLigne, sertDsh: sertDsh, estLocal: serveur.estLocal,
-      appairage: appairage, court: true
-    ).texte
+/// Style avec retour d'enfoncement discret pour la carte de serveur.
+struct StyleCartePressee: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .opacity(configuration.isPressed ? 0.75 : 1.0)
+      .scaleEffect(configuration.isPressed ? 0.99 : 1.0)
+      .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
   }
 }
 
-/// Le bouton « Ajouter », à la même place qu'une icône de serveur.
-///
-/// POURQUOI « AJOUTER » ET NON « RAFRAÎCHIR ». La liste se rafraîchit
-/// automatiquement toutes les quinze secondes ; un bouton de rafraîchissement
-/// manuel ferait donc double emploi. Mais sur iPhone, la découverte locale est
-/// IMPOSSIBLE : la seule façon de faire apparaître un Mac que l'hôte ne
-/// connaissait pas encore est de le lui demander. C'est cela que ce bouton fait,
-/// et son libellé le dit.
-///
-/// POURQUOI IL EST UNE VUE À PART, ET POURQUOI L'ALIGNEMENT EST EXPLICITE. Deux
-/// captures du Mac ont montré le bouton DÉCALÉ VERS LE BAS par rapport aux
-/// serveurs, pour des raisons cumulées :
-///
-///   1. son cadre faisait 68 points de haut, alors qu'une icône de serveur en
-///      fait 68 **plus** son nom **plus** la ligne « hôte » ;
-///   2. son icône était centrée dans le carré en pointillés, quand l'icône de
-///      châssis d'un serveur est centrée dans SA vignette — les deux dessins ne
-///      tombaient donc pas à la même hauteur ;
-///   3. et surtout : un `HStack` aligne ses éléments sur leur LIGNE DE BASE, pas
-///      sur leur haut. Le bloc « vignette + nom » d'un serveur a sa ligne de base
-///      SOUS le nom, celui du bouton l'a sous « Rafraîchir » : les hauteurs
-///      égales ne suffisaient pas, il fallait aligner les SOMMETS.
-///
-/// La vue reprend donc la structure exacte d'`IconeServeur` — même vignette de
-/// 62 points, même cadre de 68, mêmes espacements, même ligne de légende — et le
-/// carrousel est aligné en haut.
-/// Le CONTENU de la vignette « Ajouter » : un carré en pointillés, et sa légende.
-///
-/// POURQUOI LE CONTENU EST SÉPARÉ DU GESTE. Sur iPhone, la vignette est un
-/// `NavigationLink` (elle EMPILE la page) ; sur macOS, un `Button` (la page
-/// remplace le contenu de droite). Le dessin est le même — c'est la façon de
-/// naviguer qui diffère, et elle seule.
-struct ContenuAjouter: View {
-  /// Vrai pendant une recherche : le carré en pointillés se remplit d'un
-  /// indicateur, pour qu'un appui ne reste jamais sans réponse visible.
-  let enRecherche: Bool
-  /// Le côté de la vignette, mis à l'échelle du texte par le carrousel.
-  ///
-  /// IL VIENT DU DEHORS, ET C'EST LA CONDITION DE L'ALIGNEMENT : les deux dessins
-  /// — une machine et « Ajouter » — doivent partager la même cote au point près,
-  /// sinon l'un descend pendant que l'autre monte. Deux `@ScaledMetric` auraient
-  /// été deux sources de vérité pour une seule cote.
-  let cote: CGFloat
-
-  private var cadre: CGFloat { cote + 6 }
+/// Indicateurs de pagination avec icônes de matériel et zone tactile 44×44 pt.
+struct IndicateursServeurs: View {
+  let serveurs: [ServeurMac]
+  let choix: String?
+  @Binding var pageVisible: String?
+  var surSelection: (ServeurMac) -> Void
+  var surAjout: () -> Void
+  var recherchePossible: Bool
 
   var body: some View {
-    VStack(spacing: 6) {
-      RoundedRectangle(cornerRadius: cote * 0.242, style: .continuous)
-        .strokeBorder(
-          Color.secondary.opacity(0.45),
-          style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
-        )
-        .frame(width: cote, height: cote)
-        .overlay {
-          if enRecherche {
-            ProgressView().controlSize(.small)
-          } else {
-            Image(systemName: "plus")
-              .font(.system(size: cote * 0.387, weight: .light))
-              .foregroundStyle(Color.secondary)
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 4) {
+        ForEach(serveurs) { serveur in
+          let estActif = (pageVisible ?? choix) == serveur.id
+          Button {
+            surSelection(serveur)
+          } label: {
+            ZStack {
+              if estActif {
+                Capsule()
+                  .fill(Color.accentColor.opacity(0.18))
+                  .overlay {
+                    Capsule().strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1)
+                  }
+                  .frame(width: 36, height: 24)
+              }
+              Image(systemName: serveur.symbole)
+                .font(.system(size: 13, weight: estActif ? .semibold : .regular))
+                .foregroundStyle(estActif ? Color.accentColor : Color.secondary)
+            }
+            .frame(width: 36, height: 24)
+            // Zone tactile minimale Apple 44×44 pt
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
           }
+          .buttonStyle(.plain)
+          .accessibilityLabel(serveur.nom)
+          .accessibilityHint(L("Affiche ce serveur"))
+          .accessibilityAddTraits(estActif ? [.isSelected] : [])
         }
-        // Le cadre, comme la vignette d'un serveur : c'est lui qui place les
-        // deux dessins à la même hauteur.
-        .frame(width: cadre, height: cadre)
 
-      T("Ajouter")
-        .font(.caption2)
-        .foregroundStyle(Color.secondary)
-        .frame(width: cadre)
+        // Bouton "+" pour ajouter un serveur
+        if recherchePossible {
+          #if os(iOS)
+            NavigationLink(value: PageAjoutServeur()) {
+              Image(systemName: "plus")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color.secondary)
+                .frame(width: 24, height: 24)
+                .background(Color.secondary.opacity(0.1), in: Circle())
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .simultaneousGesture(TapGesture().onEnded { surAjout() })
+            .accessibilityLabel(T("Ajouter un serveur"))
+            .accessibilityHint(L("Ouvre la page d'ajout et d'appairage"))
+          #else
+            Button {
+              surAjout()
+            } label: {
+              Image(systemName: "plus")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Color.secondary)
+                .frame(width: 24, height: 24)
+                .background(Color.secondary.opacity(0.1), in: Circle())
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(T("Ajouter un serveur"))
+            .accessibilityHint(L("Ouvre la page d'ajout et d'appairage"))
+          #endif
+        }
+      }
+      .padding(.horizontal, 16)
     }
+    .scrollBounceBehavior(.basedOnSize)
+    .padding(.top, 2)
   }
 }
 

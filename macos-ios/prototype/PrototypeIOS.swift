@@ -230,9 +230,11 @@ struct EcranPrincipal: View {
   @State private var recherche = ""
   @State private var plies: Set<String> = ["dsh-plugins"]
   @State private var reglagesOuverts: Bool
+  @State private var serveurPourFiche: ServeurDemo?
+  @State private var ajoutOuvert = false
 
   /// Les états de la maquette, dans l'ordre de l'appui sur le titre.
-  static let ecrans = ["complet", "carte", "sans-mac", "reglages"]
+  static let ecrans = ["complet", "un-mac", "carte", "sans-mac", "reglages"]
 
   init(ecran: String) {
     _ecran = State(initialValue: ecran)
@@ -251,7 +253,9 @@ struct EcranPrincipal: View {
   }
 
   private var serveurs: [ServeurDemo] {
-    ecran == "sans-mac" ? [] : DonneesDemo.serveurs
+    if ecran == "sans-mac" { return [] }
+    if ecran == "un-mac" { return Array(DonneesDemo.serveurs.prefix(1)) }
+    return DonneesDemo.serveurs
   }
 
   private var etatTailscale: EtatTailscale {
@@ -286,13 +290,34 @@ struct EcranPrincipal: View {
           if serveurs.isEmpty {
             ListeVide()
           } else {
-            CarrouselServeurs(serveurs: serveurs, choix: $serveurChoisi)
-              .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 6, trailing: 0))
-              .listRowBackground(Color.clear)
-              .listRowSeparator(.hidden)
+            CarrouselServeurs(
+              serveurs: serveurs,
+              choix: $serveurChoisi,
+              surOuvrirFiche: { serveur in serveurPourFiche = serveur },
+              surAjout: { ajoutOuvert = true }
+            )
+            .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 6, trailing: 0))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
           }
         } header: {
-          Entete("Serveurs", detail: serveurs.isEmpty ? nil : "\(serveurs.filter(\.enLigne).count) en ligne")
+          HStack {
+            Entete("Serveurs", detail: serveurs.isEmpty ? nil : "\(serveurs.filter(\.enLigne).count) en ligne")
+            if serveurs.count == 1 {
+              Spacer()
+              Button {
+                ajoutOuvert = true
+              } label: {
+                Image(systemName: "plus")
+                  .font(.subheadline.weight(.semibold))
+                  .foregroundStyle(Color.accentColor)
+                  .frame(minWidth: 44, minHeight: 44)
+                  .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel("Ajouter un serveur")
+            }
+          }
         }
 
         Section {
@@ -370,6 +395,12 @@ struct EcranPrincipal: View {
       .sheet(isPresented: $reglagesOuverts) {
         FeuilleReglages(serveurChoisi: $serveurChoisi)
       }
+      .sheet(item: $serveurPourFiche) { serveur in
+        VueFicheServeurDemo(serveur: serveur)
+      }
+      .sheet(isPresented: $ajoutOuvert) {
+        VueAjoutServeurDemo()
+      }
       .safeAreaInset(edge: .bottom, spacing: 0) {
         BarreRecherche(texte: $recherche)
       }
@@ -379,10 +410,11 @@ struct EcranPrincipal: View {
   /// Nom lisible de l'écran courant, affiché sous le titre.
   private var libelleEcran: String {
     switch ecran {
+    case "un-mac": return "1 seul serveur"
     case "carte": return "tailscale à installer"
     case "sans-mac": return "aucun Mac"
     case "reglages": return "réglages"
-    default: return "connecté"
+    default: return "connecté (multi-serveurs)"
     }
   }
 }
@@ -502,92 +534,364 @@ struct CarteTailscale: View {
 /// état, et son nom raccourci au premier mot — la forme sous laquelle on
 /// reconnaît un appareil sur un bureau.
 ///
-/// Le défilement horizontal est `ScrollView` et non `TabView` : avec quatre Macs
-/// ou plus, un carrousel paginé cacherait la moitié des machines derrière un
-/// geste que rien n'annonce.
+/// Évolution en cartes larges avec pagination à glissement et indicateurs de matériel.
+/// Évolution en cartes larges avec pagination à glissement et indicateurs de matériel.
+///
+/// RECOMMANDATIONS DE L'AUDIT APPLIQUÉES :
+/// - Pager `ScrollView(.horizontal)` sous iOS 17 avec `.scrollTargetBehavior(.viewAligned)`
+///   et `.scrollPosition(id: $pageVisible)`.
+/// - Dépassement visuel (*peek*) de 14 pt pour enseigner le geste de balayage.
+/// - Hauteur 100% intrinsèque sans `.frame(height: 104)` figé.
+/// - Découplage de la page affichée et de la sélection effective (debounce de 350 ms pour Option A).
+/// - Clic sur la carte ou son chevron ouvrant la fiche détaillée du serveur (suppression du no-op).
+/// - Suppression du badge redondant « Actif » sur la carte pour libérer l'espace du titre.
+/// - Cibles tactiles 44×44 pt sur chaque indicateur et sur le bouton « + ».
+/// - Indicateurs masqués si `serveurs.count <= 1`.
 struct CarrouselServeurs: View {
   let serveurs: [ServeurDemo]
   @Binding var choix: String?
+  var surOuvrirFiche: (ServeurDemo) -> Void = { _ in }
+  var surAjout: () -> Void = {}
+
+  @State private var pageVisible: String?
+  @State private var tacheDebounce: Task<Void, Never>?
 
   var body: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
-      HStack(alignment: .top, spacing: 16) {
-        ForEach(serveurs) { serveur in
-          Button {
-            choix = serveur.id
-          } label: {
-            IconeServeur(serveur: serveur, choisi: choix == serveur.id)
+    VStack(spacing: 8) {
+      // 1. Pager horizontal natif iOS 17 avec peek
+      ScrollView(.horizontal, showsIndicators: false) {
+        LazyHStack(spacing: 12) {
+          ForEach(serveurs) { serveur in
+            CarteServeurDemo(
+              serveur: serveur,
+              actif: (pageVisible ?? choix) == serveur.id,
+              surOuvrirFiche: { surOuvrirFiche(serveur) }
+            )
+            .id(serveur.id)
+            // Peek de 14 pt de chaque côté pour montrer la carte adjacente
+            .containerRelativeFrame(.horizontal) { longueur, _ in
+              serveurs.count > 1 ? max(longueur - 28, 260) : longueur
+            }
           }
-          .buttonStyle(.plain)
-          .accessibilityLabel(
-            "\(serveur.nom), \(serveur.enLigne ? "en ligne" : "hors ligne")\(serveur.estLocal ? ", hôte interrogé" : "")")
+        }
+        .scrollTargetLayout()
+      }
+      .scrollTargetBehavior(.viewAligned)
+      .scrollPosition(id: $pageVisible)
+      .scrollDisabled(serveurs.count < 2)
+      .scrollBounceBehavior(serveurs.count > 1 ? .always : .basedOnSize)
+      .contentMargins(.horizontal, 14, for: .scrollContent)
+      .onChange(of: pageVisible) { _, nouvellePage in
+        guard let nouvellePage, nouvellePage != choix else { return }
+        // Option A debouncée : 350 ms pour éviter d'enchaîner 3 reconnexions lors d'un balayage rapide
+        tacheDebounce?.cancel()
+        tacheDebounce = Task {
+          try? await Task.sleep(for: .milliseconds(350))
+          guard !Task.isCancelled else { return }
+          await MainActor.run {
+            choix = nouvellePage
+          }
         }
       }
-      .padding(.horizontal, 20)
-      .padding(.vertical, 4)
+      .onChange(of: choix, initial: true) { _, nouveauChoix in
+        if pageVisible != nouveauChoix {
+          withAnimation(.easeInOut(duration: 0.25)) {
+            pageVisible = nouveauChoix
+          }
+        }
+      }
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel("Serveurs")
+      .accessibilityValue(valeurAccessiblePager)
+      .accessibilityAdjustableAction { direction in
+        guard serveurs.count > 1 else { return }
+        let indexCourant = serveurs.firstIndex(where: { $0.id == (pageVisible ?? choix) }) ?? 0
+        let nouvelIndex: Int
+        switch direction {
+        case .increment:
+          nouvelIndex = min(indexCourant + 1, serveurs.count - 1)
+        case .decrement:
+          nouvelIndex = max(indexCourant - 1, 0)
+        @unknown default:
+          nouvelIndex = indexCourant
+        }
+        let cible = serveurs[nouvelIndex].id
+        withAnimation {
+          pageVisible = cible
+          choix = cible
+        }
+      }
+
+      // 2. Indicateurs personnalisés : uniquement si plus d'un serveur
+      if serveurs.count > 1 {
+        IndicateursServeursDemo(
+          serveurs: serveurs,
+          choix: $choix,
+          pageVisible: $pageVisible,
+          surAjout: surAjout
+        )
+      }
     }
-    .scrollClipDisabled()
+  }
+
+  private var valeurAccessiblePager: String {
+    let index = serveurs.firstIndex(where: { $0.id == (pageVisible ?? choix) }) ?? 0
+    let nom = serveurs.first(where: { $0.id == (pageVisible ?? choix) })?.nom ?? ""
+    return "\(nom), \(index + 1) sur \(serveurs.count)"
   }
 }
 
-/// Une icône de serveur : la vignette, la pastille d'état, le nom d'un mot.
-struct IconeServeur: View {
+/// Carte large d'un serveur : châssis, nom complet, DNS, statut DSH et chevron ouvrant la fiche.
+struct CarteServeurDemo: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @ScaledMetric(relativeTo: .title) private var cotePastille: CGFloat = 46
+
   let serveur: ServeurDemo
-  let choisi: Bool
+  let actif: Bool
+  var surOuvrirFiche: () -> Void = {}
+
+  private var diametrePastille: CGFloat { min(cotePastille, 64) }
 
   var body: some View {
-    VStack(spacing: 6) {
-      ZStack {
-        RoundedRectangle(cornerRadius: 15, style: .continuous)
-          .fill(
-            LinearGradient(
-              colors: serveur.enLigne
-                ? [Color.accentColor.opacity(0.95), Color.accentColor.opacity(0.65)]
-                : [Color.secondary.opacity(0.45), Color.secondary.opacity(0.28)],
-              startPoint: .topLeading, endPoint: .bottomTrailing)
-          )
-          .frame(width: 62, height: 62)
-          .overlay {
-            Image(systemName: serveur.symbole)
-              .font(.system(size: 27, weight: .regular))
-              .foregroundStyle(.white)
+    Button {
+      surOuvrirFiche()
+    } label: {
+      HStack(spacing: 14) {
+        // Glyphe matériel dans une pastille circulaire
+        ZStack {
+          Circle()
+            .fill(
+              serveur.enLigne
+                ? LinearGradient(
+                    colors: [Color.accentColor, Color.accentColor.opacity(0.75)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing)
+                : LinearGradient(
+                    colors: [Color.secondary.opacity(0.4), Color.secondary.opacity(0.2)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing)
+            )
+            .frame(width: diametrePastille, height: diametrePastille)
+
+          Image(systemName: serveur.symbole)
+            .font(.system(size: diametrePastille * 0.46, weight: .regular))
+            .foregroundStyle(.white)
+        }
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text(serveur.nom)
+            .font(.headline)
+            .foregroundStyle(Color.primary)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+
+          Text(serveur.nomDNS)
+            .font(.caption)
+            .foregroundStyle(Color.secondary)
+            .lineLimit(1)
+
+          HStack(spacing: 5) {
+            Circle()
+              .fill(serveur.enLigne ? Color.green : Color.gray)
+              .frame(width: 7, height: 7)
+            Text(serveur.enLigne ? "En ligne · DSH actif" : "Hors ligne")
+              .font(.caption2.weight(.medium))
+              .foregroundStyle(serveur.enLigne ? Color.green : Color.secondary)
+            if serveur.estLocal {
+              Text("· hôte").font(.caption2).foregroundStyle(.tertiary)
+            }
           }
-        // La sélection est une COCHE, dans le coin, et non un contour : sur une
-        // vignette déjà colorée, un anneau de 2 points se confond avec ses
-        // propres bords — mesuré à l'écran, le serveur choisi ne se distinguait
-        // pas des autres. Le coin haut-gauche est libre : la pastille d'état
-        // occupe le coin bas-droit.
-        if choisi {
-          Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: 19))
-            .foregroundStyle(.white, Color.accentColor)
-            .offset(x: -29, y: -29)
+          .padding(.horizontal, 7)
+          .padding(.vertical, 2.5)
+          .background(
+            serveur.enLigne ? Color.green.opacity(0.12) : Color.secondary.opacity(0.12),
+            in: Capsule()
+          )
+          .fixedSize(horizontal: false, vertical: true)
+        }
+
+        Spacer(minLength: 4)
+
+        // Le chevron annonce l'ouverture de la fiche détaillée
+        Image(systemName: "chevron.right")
+          .font(.footnote.weight(.semibold))
+          .foregroundStyle(.tertiary)
+          .padding(.trailing, 2)
+      }
+      .padding(14)
+      .background(.background.secondary, in: RoundedRectangle(cornerRadius: 16))
+      .overlay {
+        RoundedRectangle(cornerRadius: 16)
+          .strokeBorder(
+            actif ? Color.accentColor.opacity(0.35) : Color.secondary.opacity(0.15),
+            lineWidth: actif ? 1.5 : 1
+          )
+      }
+      .contentShape(RoundedRectangle(cornerRadius: 16))
+    }
+    .buttonStyle(StyleCartePressee())
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(serveur.nom)
+    .accessibilityValue(descriptionAccessible)
+    .accessibilityHint("Toucher pour ouvrir la fiche détaillée de ce serveur")
+    .accessibilityAction(named: "Ouvrir la fiche") { surOuvrirFiche() }
+    .accessibilityAddTraits(actif ? [.isSelected] : [])
+  }
+
+  private var descriptionAccessible: String {
+    var elements: [String] = []
+    elements.append(serveur.enLigne ? "En ligne, DSH actif" : "Hors ligne")
+    if serveur.estLocal { elements.append("hôte interrogé") }
+    if actif { elements.append("serveur actif") }
+    return elements.joined(separator: ", ")
+  }
+}
+
+/// Style avec retour d'enfoncement discret pour la carte
+private struct StyleCartePressee: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .opacity(configuration.isPressed ? 0.75 : 1.0)
+      .scaleEffect(configuration.isPressed ? 0.99 : 1.0)
+      .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+  }
+}
+
+/// Indicateurs de pagination avec icônes de matériel et zone tactile 44×44 pt.
+struct IndicateursServeursDemo: View {
+  let serveurs: [ServeurDemo]
+  @Binding var choix: String?
+  @Binding var pageVisible: String?
+  var surAjout: () -> Void = {}
+
+  var body: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 4) {
+        ForEach(Array(serveurs.enumerated()), id: \.element.id) { index, serveur in
+          let estActif = (pageVisible ?? choix) == serveur.id
+          Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+              pageVisible = serveur.id
+              choix = serveur.id
+            }
+          } label: {
+            ZStack {
+              if estActif {
+                Capsule()
+                  .fill(Color.accentColor.opacity(0.18))
+                  .overlay {
+                    Capsule().strokeBorder(Color.accentColor.opacity(0.35), lineWidth: 1)
+                  }
+                  .frame(width: 36, height: 24)
+              }
+              Image(systemName: serveur.symbole)
+                .font(.system(size: 13, weight: estActif ? .semibold : .regular))
+                .foregroundStyle(estActif ? Color.accentColor : Color.secondary)
+            }
+            .frame(width: 36, height: 24)
+            // Zone tactile minimale Apple 44×44 pt
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel(serveur.nom)
+          .accessibilityHint("Affiche ce serveur")
+          .accessibilityAddTraits(estActif ? [.isSelected] : [])
+        }
+
+        // Bouton "+" pour ajouter un serveur avec zone tactile 44×44 pt
+        Button {
+          surAjout()
+        } label: {
+          Image(systemName: "plus")
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(Color.secondary)
+            .frame(width: 24, height: 24)
+            .background(Color.secondary.opacity(0.1), in: Circle())
+            // Zone tactile minimale Apple 44×44 pt
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Ajouter un serveur")
+        .accessibilityHint("Ouvre la feuille d'ajout et d'appairage")
+      }
+      .padding(.horizontal, 16)
+    }
+    .scrollBounceBehavior(.basedOnSize)
+    .padding(.top, 2)
+  }
+}
+
+/// Feuille de fiche détaillée d'un serveur pour le prototype.
+struct VueFicheServeurDemo: View {
+  let serveur: ServeurDemo
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    NavigationStack {
+      List {
+        Section {
+          HStack(spacing: 14) {
+            Image(systemName: serveur.symbole)
+              .font(.system(size: 32))
+              .foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 3) {
+              Text(serveur.nom).font(.headline)
+              Text(serveur.nomDNS).font(.subheadline).foregroundStyle(.secondary)
+            }
+          }
+        } header: {
+          Text("Machine")
+        }
+
+        Section {
+          HStack {
+            Text("État")
+            Spacer()
+            Text(serveur.enLigne ? "En ligne · DSH joignable" : "Hors ligne")
+              .foregroundStyle(serveur.enLigne ? .green : .secondary)
+          }
+          HStack {
+            Text("Type")
+            Spacer()
+            Text(serveur.estLocal ? "Hôte local" : "Machine distante (Tailscale)")
+              .foregroundStyle(.secondary)
+          }
+        } header: {
+          Text("Diagnostic")
         }
       }
-      .frame(width: 62, height: 62)
-      .overlay(alignment: .bottomTrailing) {
-        // Pastille d'état : verte en ligne, grise hors ligne. Elle est ce qui
-        // distingue « je peux travailler » de « machine éteinte ».
-        Circle()
-          .fill(serveur.enLigne ? Color.green : Color.gray)
-          .frame(width: 15, height: 15)
-          .overlay { Circle().strokeBorder(.background, lineWidth: 2.5) }
-          .offset(x: 3, y: 3)
+      .navigationTitle(serveur.premierMot)
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Fermer") { dismiss() }
+        }
       }
-      .frame(width: 68, height: 68)
+    }
+  }
+}
 
-      Text(serveur.premierMot)
-        .font(.caption2)
-        .lineLimit(1)
-        .foregroundStyle(choisi ? Color.primary : Color.secondary)
-        .frame(width: 68)
-      // « hôte interrogé » : la seule mention qui vient de l'hôte, et non du nom.
-      // `opacity(0)` et non une espace : la place est réservée sans qu'un blanc
-      // soit rendu, ce qui garde les icônes alignées entre elles.
-      Text("hôte")
-        .font(.system(size: 9))
-        .foregroundStyle(.tertiary)
-        .opacity(serveur.estLocal ? 1 : 0)
+/// Feuille d'ajout / appairage pour le prototype.
+struct VueAjoutServeurDemo: View {
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    NavigationStack {
+      List {
+        Section {
+          Text("Scannez le QR code ou collez un lien d'appairage pour ajouter une nouvelle machine.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+        } header: {
+          Text("Appairage")
+        }
+      }
+      .navigationTitle("Ajouter un serveur")
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Fermer") { dismiss() }
+        }
+      }
     }
   }
 }

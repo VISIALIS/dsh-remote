@@ -1,7 +1,7 @@
 /* Table anglaise — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   214 clés. */
+   218 clés. */
 
 "%d jeton(s) d'appareil effacé(s)" = "%d device token(s) erased";
 "%d préférence(s) oubliée(s)" = "%d preference(s) forgotten";
@@ -10,7 +10,7 @@
 "absent" = "absent";
 "Adresse" = "Address";
 "Adresse de la machine" = "Machine address";
-"Ajouter" = "Add";
+"Affiche ce serveur" = "Shows this server";
 "Ajouter un serveur" = "Add a server";
 "Alertes" = "Alerts";
 "Allumez cette machine-là, et vérifiez que Tailscale y est connecté :" = "Turn that machine on, and check that Tailscale is connected there:";
@@ -30,8 +30,8 @@
 "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond." = "No service is listening on that machine's port 80. The tailnet itself works: the machine answers.";
 "Aucun événement" = "No events";
 "aucune préférence à oublier" = "no preference to forget";
-"Aucune session" = "No sessions";
 "aucune session" = "no sessions";
+"Aucune session" = "No sessions";
 "Aucune session en mémoire" = "No sessions in memory";
 "Aucune session ouverte" = "No session open";
 "Caméra indisponible" = "Camera unavailable";
@@ -149,7 +149,10 @@
 "Ou renseignez le texte du QR code" = "Or enter the QR code text";
 "Ou, en ligne de commande :" = "Or, on the command line:";
 "Oublier ce serveur" = "Forget this server";
+"Ouvre la page d'ajout et d'appairage" = "Opens the add and pair page";
+"Ouvre la page de ce serveur" = "Opens this server's page";
 "Ouvrez Tailscale sur cet appareil, et connectez-le au tailnet." = "Open Tailscale on this device, and connect it to the tailnet.";
+"Ouvrir la page" = "Open page";
 "Ouvrir Tailscale" = "Open Tailscale";
 "pas de DSH" = "no DSH";
 "prêt" = "ready";
@@ -173,9 +176,11 @@
 "Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre." = "Without it, no machine on the tailnet can be reached — neither this one nor any other.";
 "Scanner le QR code" = "Scan the QR code";
 "Se connecter" = "Connect";
+"serveur actif" = "active server";
 "serveur courant" = "current server";
 "Serveur DeepSeek Harness" = "DeepSeek Harness server";
 "Serveur sélectionné" = "Server selected";
+"Serveurs" = "Servers";
 "Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page." = "Its sessions and workspaces are on the left. Tap its icon again to open its page.";
 "Si vous préférez vérifier vous-même, depuis ce Mac : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal)." = "If you prefer to check yourself, from that Mac: `401` or `200` means the plugin is answering (`401` = no token, which is normal).";
 "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse." = "Its port 80 must be published by `tailscale serve` for anything to answer at its address.";
@@ -187,7 +192,6 @@
 "sur le Mac" = "on the Mac";
 "Sur le Mac : le bouton « DSH Remote », en bas de la barre latérale — il ouvre un QR code et son texte, valables deux minutes." = "On the Mac: the « DSH Remote » button at the bottom of the sidebar — it opens a QR code and its text, valid for two minutes.";
 "Sur le Mac qui héberge DSH — pas sur cet appareil : ouvrez une session DSH sur ce Mac, et collez-lui ceci :" = "On the Mac hosting DSH — not on this device: open a DSH session on that Mac and paste this into it:";
-"Sélectionne cette machine ; un second appui ouvre sa page" = "Selects this machine; a second tap opens its page";
 "Tailscale est connecté sur cet appareil" = "Tailscale is connected on this device";
 "Tailscale n'a pas pu être ouvert sur cet appareil." = "Tailscale could not be opened on this device.";
 "Terminé" = "Done";
@@ -210,8 +214,8 @@
 "Vérifiez sur cette machine ce qui est publié :" = "Check what is published on this machine:";
 "« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé." = "“Connect” targets this address right away. “Test the address” does not change server: it only reports what it found.";
 "à appairer" = "not paired";
-"à la suite" = "queued";
 "À la suite" = "Queued";
+"à la suite" = "queued";
 "À propos" = "About";
 "à vérifier" = "to check";
 "Écrire à cette session…" = "Write to this session…";

@@ -1,7 +1,7 @@
 /* Table française — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   214 clés. */
+   218 clés. */
 
 "%d jeton(s) d'appareil effacé(s)" = "%d jeton(s) d'appareil effacé(s)";
 "%d préférence(s) oubliée(s)" = "%d préférence(s) oubliée(s)";
@@ -10,7 +10,7 @@
 "absent" = "absent";
 "Adresse" = "Adresse";
 "Adresse de la machine" = "Adresse de la machine";
-"Ajouter" = "Ajouter";
+"Affiche ce serveur" = "Affiche ce serveur";
 "Ajouter un serveur" = "Ajouter un serveur";
 "Alertes" = "Alertes";
 "Allumez cette machine-là, et vérifiez que Tailscale y est connecté :" = "Allumez cette machine-là, et vérifiez que Tailscale y est connecté :";
@@ -30,8 +30,8 @@
 "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond." = "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond.";
 "Aucun événement" = "Aucun événement";
 "aucune préférence à oublier" = "aucune préférence à oublier";
-"Aucune session" = "Aucune session";
 "aucune session" = "aucune session";
+"Aucune session" = "Aucune session";
 "Aucune session en mémoire" = "Aucune session en mémoire";
 "Aucune session ouverte" = "Aucune session ouverte";
 "Caméra indisponible" = "Caméra indisponible";
@@ -149,7 +149,10 @@
 "Ou renseignez le texte du QR code" = "Ou renseignez le texte du QR code";
 "Ou, en ligne de commande :" = "Ou, en ligne de commande :";
 "Oublier ce serveur" = "Oublier ce serveur";
+"Ouvre la page d'ajout et d'appairage" = "Ouvre la page d'ajout et d'appairage";
+"Ouvre la page de ce serveur" = "Ouvre la page de ce serveur";
 "Ouvrez Tailscale sur cet appareil, et connectez-le au tailnet." = "Ouvrez Tailscale sur cet appareil, et connectez-le au tailnet.";
+"Ouvrir la page" = "Ouvrir la page";
 "Ouvrir Tailscale" = "Ouvrir Tailscale";
 "pas de DSH" = "pas de DSH";
 "prêt" = "prêt";
@@ -173,9 +176,11 @@
 "Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre." = "Sans cela, aucune machine du tailnet n'est joignable — ni celui-ci, ni un autre.";
 "Scanner le QR code" = "Scanner le QR code";
 "Se connecter" = "Se connecter";
+"serveur actif" = "serveur actif";
 "serveur courant" = "serveur courant";
 "Serveur DeepSeek Harness" = "Serveur DeepSeek Harness";
 "Serveur sélectionné" = "Serveur sélectionné";
+"Serveurs" = "Serveurs";
 "Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page." = "Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa vignette pour ouvrir sa page.";
 "Si vous préférez vérifier vous-même, depuis ce Mac : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal)." = "Si vous préférez vérifier vous-même, depuis ce Mac : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal).";
 "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse." = "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse.";
@@ -187,7 +192,6 @@
 "sur le Mac" = "sur le Mac";
 "Sur le Mac : le bouton « DSH Remote », en bas de la barre latérale — il ouvre un QR code et son texte, valables deux minutes." = "Sur le Mac : le bouton « DSH Remote », en bas de la barre latérale — il ouvre un QR code et son texte, valables deux minutes.";
 "Sur le Mac qui héberge DSH — pas sur cet appareil : ouvrez une session DSH sur ce Mac, et collez-lui ceci :" = "Sur le Mac qui héberge DSH — pas sur cet appareil : ouvrez une session DSH sur ce Mac, et collez-lui ceci :";
-"Sélectionne cette machine ; un second appui ouvre sa page" = "Sélectionne cette machine ; un second appui ouvre sa page";
 "Tailscale est connecté sur cet appareil" = "Tailscale est connecté sur cet appareil";
 "Tailscale n'a pas pu être ouvert sur cet appareil." = "Tailscale n'a pas pu être ouvert sur cet appareil.";
 "Terminé" = "Terminé";
@@ -210,8 +214,8 @@
 "Vérifiez sur cette machine ce qui est publié :" = "Vérifiez sur cette machine ce qui est publié :";
 "« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé." = "« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé.";
 "à appairer" = "à appairer";
-"à la suite" = "à la suite";
 "À la suite" = "À la suite";
+"à la suite" = "à la suite";
 "À propos" = "À propos";
 "à vérifier" = "à vérifier";
 "Écrire à cette session…" = "Écrire à cette session…";
