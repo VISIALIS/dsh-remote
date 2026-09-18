@@ -434,9 +434,9 @@ pas s'affiche « pas de DSH », ce qui est exactement ce qu'on sait d'elle.
 ```text
 $ dsh-remote-ctl serveurs
 Machines sur le tailnet : 4
-  en ligne    MacBook Air de Camille
-  en ligne    MacMini
-  hors ligne  MacBook Pro de Camille
+  en ligne    <MacBook Air>
+  en ligne    <Mac mini>
+  hors ligne  <MacBook Pro>
   hors ligne  <PC Windows>              ← OS `windows`, absent avant la correction
 ```
 
