@@ -41,7 +41,30 @@
 # pendant ce script échoue sur ce fichier, puis passe dès qu'il a rendu la main.
 # Ce n'est pas une fuite, c'est une course : lancez la vérification APRÈS.
 #
-# Usage : Scripts/construire-app-ios.sh [--simulateur]
+# POURQUOI `--provisionnement` EXISTE, ET POURQUOI IL EST OPT-IN. Construire pour
+# un APPAREIL réclame deux choses que le simulateur ignore : une équipe (lue par
+# `Config/Base.xcconfig` dans `Config/Local.xcconfig`, gitignoré) et un profil de
+# provisionnement. Sans les deux drapeaux de provisionnement, `xcodebuild`
+# s'arrête — et le message change à chaque pièce posée. MESURÉ le 18 septembre
+# 2026, dans cet ordre :
+#
+#   équipe absente  → « Signing for "DSHRemote" requires a development team. »
+#   équipe présente → « No profiles for 'org.example.DSHRemote' were found. »
+#   les deux drapeaux → BUILD SUCCEEDED, paquet signé, installé sur l'iPhone.
+#
+# Les drapeaux ne sont PAS posés par défaut : `-allowProvisioningUpdates` fait
+# PARLER XCODE À APPLE pendant la construction — émission ou renouvellement du
+# certificat de développement, création du profil, enregistrement de l'appareil.
+# Une construction ne doit pas ouvrir cette conversation sans qu'on la demande,
+# et le simulateur, qui ne signe pas, n'en a jamais besoin.
+#
+# Usage :
+#   Scripts/construire-app-ios.sh [--simulateur] [--provisionnement]
+#
+#   --simulateur       construit pour le simulateur (Debug ; ne signe pas)
+#   --provisionnement  construit pour un APPAREIL, en laissant Xcode créer ou
+#                      renouveler certificat et profil. Refusé avec
+#                      `--simulateur`, qui ne signe pas.
 
 set -euo pipefail
 
@@ -50,7 +73,30 @@ source_plist="$racine/App/Info.plist"
 fichier_domaine="$racine/Config/DomaineTailnet"
 PB=/usr/libexec/PlistBuddy
 
-if [[ "${1:-}" == "--simulateur" ]]; then
+simulateur=0
+provisionnement=0
+for argument in "$@"; do
+  case "$argument" in
+    --simulateur) simulateur=1 ;;
+    --provisionnement) provisionnement=1 ;;
+    *)
+      echo "[ios] argument inconnu : $argument" >&2
+      echo "[ios] usage : Scripts/construire-app-ios.sh [--simulateur] [--provisionnement]" >&2
+      exit 2
+      ;;
+  esac
+done
+
+# Le simulateur ne signe pas : demander le provisionnement avec lui serait une
+# demande sans objet. La refuser vaut mieux que la faire taire — un drapeau
+# ignore en silence laisse croire qu'il a agi.
+if [[ $simulateur -eq 1 && $provisionnement -eq 1 ]]; then
+  echo "[ios] --provisionnement ne s'applique qu'a un appareil reel :" >&2
+  echo "[ios]   le simulateur ne signe pas, il n'a donc pas de profil." >&2
+  exit 2
+fi
+
+if [[ $simulateur -eq 1 ]]; then
   # LA DESTINATION EST GÉNÉRIQUE, ET C'EST UNE MESURE. Elle nommait un appareil
   # précis (« iPhone 17 Pro »), et ce nom a cessé de résoudre quand les runtimes
   # installés ont changé : `xcodebuild` refusait la construction avec « Unable to
@@ -68,16 +114,56 @@ else
 fi
 
 construire() {
-  xcodebuild -project "$racine/DSHRemote.xcodeproj" -scheme DSHRemote \
-    -destination "$destination" -configuration "$configuration" \
-    -derivedDataPath "$racine/.build/iphone" build 2>&1 |
+  # La commande est bâtie en tableau, et ce tableau n'est JAMAIS vide : sous
+  # `set -u`, bash 3.2 — celui de macOS — refuse `"${tableau[@]}"` quand il l'est,
+  # et l'affectation est donc séparée de la déclaration.
+  local commande
+  commande=(
+    xcodebuild -project "$racine/DSHRemote.xcodeproj" -scheme DSHRemote
+    -destination "$destination" -configuration "$configuration"
+    -derivedDataPath "$racine/.build/iphone"
+  )
+  if [[ $provisionnement -eq 1 ]]; then
+    echo "[ios] provisionnement automatique : Xcode peut contacter Apple"
+    commande+=(-allowProvisioningUpdates -allowProvisioningDeviceRegistration)
+  fi
+  "${commande[@]}" build 2>&1 |
     grep -E "^/.*error:|BUILD SUCCEEDED|BUILD FAILED" | head -5
+}
+
+# L'installation n'est PAS faite ici : ce script construit. L'identifiant de
+# l'appareil n'est jamais affiché — c'est une donnée personnelle (RÈGLE #0) — et
+# l'identifiant de l'application est LU dans le paquet, jamais supposé, puisque
+# `Config/Local.xcconfig` peut le remplacer (`DSH_BUNDLE_ID`).
+indiquer_installation() {
+  if [[ $simulateur -eq 1 ]]; then
+    return 0
+  fi
+  local identifiant cible
+  identifiant="$($PB -c 'Print :CFBundleIdentifier' "$paquet/Info.plist" 2>/dev/null || true)"
+  # Le repli est construit par un `if`, et NON par `${identifiant:-<…>}` : une
+  # apostrophe dans la forme courte fait parser le reste de la ligne comme une
+  # chaîne entre apostrophes, et `bash -n` échoue — mesuré, pas supposé.
+  if [[ -n "$identifiant" ]]; then
+    cible="$identifiant"
+  else
+    cible="<identifiant d'application>"
+  fi
+  echo
+  echo "[ios] paquet pour appareil : $paquet"
+  echo "[ios] installation (identifiant d'appareil : xcrun devicectl list devices)"
+  echo "  xcrun devicectl device install app --device <identifiant> \"$paquet\""
+  echo "[ios] lancement : iPhone DEVERROUILLE et joignable, sinon :"
+  echo "  ecran verrouille  -> 'Locked'          (mesure du 18 septembre 2026)"
+  echo "  tunnel coupe      -> 'The peer is no longer reachable'"
+  echo "  xcrun devicectl device process launch --device <identifiant> $cible"
 }
 
 if [[ ! -f "$fichier_domaine" ]]; then
   echo "[ios] Config/DomaineTailnet absent : construction SANS exception ATS."
   echo "[ios]   publier en HTTPS (tailscale serve --https 443) supprime ce besoin."
   construire
+  indiquer_installation
   exit 0
 fi
 
@@ -116,3 +202,5 @@ if [[ -f "$paquet/Info.plist" ]]; then
     exit 1
   fi
 fi
+
+indiquer_installation

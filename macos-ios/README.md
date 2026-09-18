@@ -2676,14 +2676,52 @@ c'est ce qui rend l'absence du fichier légitime plutôt que fatale.
 Le chemin complet, du clone à l'application :
 
 ```bash
-Scripts/construire-app-ios.sh --simulateur   # → .build/iphone/…/DSHRemote.app
-Scripts/empaqueter-app-macos.sh              # → .build/macos/DSH Remote.app
-Scripts/empaqueter-app-macos.sh --installer  # remplace /Applications et vérifie
+Scripts/construire-app-ios.sh --simulateur        # → .build/iphone/…/DSHRemote.app
+Scripts/construire-app-ios.sh --provisionnement   # appareil réel : Xcode crée le profil
+Scripts/empaqueter-app-macos.sh                   # → .build/macos/DSH Remote.app
+Scripts/empaqueter-app-macos.sh --installer       # remplace /Applications et vérifie
 ```
 
 Le premier porte l'exception ATS le temps du build et **restaure la source ensuite**,
 même en cas d'échec (trap) : c'est ce qui empêche le nom du tailnet d'entrer dans un
 commit accidentel.
+
+**POUR UN APPAREIL, ET NON LE SIMULATEUR.** `--provisionnement` ajoute les deux drapeaux
+qui manquaient — `-allowProvisioningUpdates -allowProvisioningDeviceRegistration` — et
+il est **opt-in** : ces drapeaux font PARLER XCODE À APPLE (émission du certificat,
+création du profil, enregistrement de l'appareil), ce qu'une construction ne doit pas
+faire sans qu'on le demande. Il est refusé avec `--simulateur`, qui ne signe pas.
+
+Il exige deux choses : une équipe dans `Config/Local.xcconfig` (ci-dessous) et un compte
+Apple connecté dans Xcode (Réglages → Accounts). Mesuré le 18 septembre 2026 — chaque
+pièce manquante a son propre message, et c'est ce qui rend le diagnostic possible :
+
+| Pièce manquante | Message de `xcodebuild` |
+|---|---|
+| l'équipe | `Signing for "DSHRemote" requires a development team.` |
+| le compte Apple | `No Account for Team "…". Add a new account in Accounts settings` |
+| les deux drapeaux | `No profiles for 'org.example.DSHRemote' were found` |
+
+Quand tout est là, Xcode émet le certificat de développement, crée le profil
+`iOS Team Provisioning Profile: org.example.*` — un profil GÉNÉRIQUE, qui couvre tout
+identifiant `org.example.*` et contenait trois appareils après l'opération, valable
+jusqu'au 18 septembre 2027 — puis signe le paquet.
+
+L'installation et le lancement restent deux gestes séparés : le script ne les exécute
+pas, il les affiche avec l'identifiant d'application **lu dans le paquet** (jamais
+supposé, `DSH_BUNDLE_ID` pouvant le remplacer).
+
+```bash
+xcrun devicectl device install app --device <identifiant> \
+  .build/iphone/Build/Products/Release-iphoneos/DSHRemote.app
+xcrun devicectl device process launch --device <identifiant> org.example.DSHRemote
+```
+
+**Le lancement exige un iPhone DÉVERROUILLÉ et joignable**, mesuré le même jour :
+`Unable to launch … because the device was not, or could not be, unlocked` sur un écran
+verrouillé, puis `The peer is no longer reachable` (tunnel CoreDevice `disconnected`) —
+l'installation, elle, passe appareil verrouillé. Ces deux échecs-là ne disent rien de
+l'application.
 
 **POURQUOI PASSER PAR LE SCRIPT, ET NON PAR UN `xcodebuild` DIRECT — mesuré DEUX
 FOIS.** Un `xcodebuild` lancé sur un `-derivedDataPath` RÉUTILISÉ a produit un paquet
@@ -3148,6 +3186,12 @@ rallumerait tout seul une seconde plus tard.
 | **Le verdict ne clignote plus au rafraîchissement** | capture prise **pendant** une sonde (2ᵉ `sonde] debut` du journal) : « DSH · hôte », « pas de DSH » et « hors ligne » restent affichés — l'ancien code les repassait à « vérification… » à chaque sonde |
 | **Un échec devenu faux est effacé et la connexion rejouée** | `relancerSiLaCibleSertDsh` : si la sonde dit que la machine visée sert DSH, l'erreur affichée disparaît et `connecter()` est retenté |
 | **Un `xcodebuild` sur DerivedData réutilisé perd l'exception ATS** | reproduit deux fois : le premier build dans un chemin neuf l'injecte, le second dans le même chemin la perd → tous les serveurs en « pas de DSH » (`-1022`) ; d'où le passage obligatoire par `Scripts/construire-app-ios.sh`, qui vérifie le paquet |
+| **La construction pour un appareil aboutit, et l'application s'installe sur l'iPhone** | 18 septembre 2026 : `Scripts/construire-app-ios.sh --provisionnement` → `BUILD SUCCEEDED`, exception ATS présente dans le paquet, puis `xcrun devicectl device install app` → `App installed: bundleID org.example.DSHRemote` ; l'application figure dans `devicectl device info apps` (« DSH Remote », 0.2, build 3) |
+| **Chaque pièce de signature manquante a son message, et le message change à chaque pièce posée** | mesuré dans l'ordre : `requires a development team` (équipe absente) → `No profiles for 'org.example.DSHRemote' were found` (équipe posée par `Config/Local.xcconfig`) → `No Account for Team "…"` (compte Apple non connecté) → `BUILD SUCCEEDED` avec les deux drapeaux, certificat de développement émis et profil GÉNÉRIQUE `iOS Team Provisioning Profile: org.example.*` (3 appareils, valable jusqu'au 18 septembre 2027) |
+| **Le lancement sur l'iPhone n'échoue que pour l'appareil, jamais pour l'application** | appareil verrouillé → `Locked` ; tunnel CoreDevice coupé → `The peer is no longer reachable` ; l'installation, elle, passe dans les deux cas |
+| **Ouvrir le projet dans Xcode RÉÉCRIT deux fichiers versionnés, et n'y écrit AUCUNE équipe** | 18 septembre 2026, après connexion du compte Apple : `App/Info.plist` reformaté en tabulations et **ses 5 blocs de commentaires supprimés** (17 clés, valeurs identiques — rien d'autre n'a bougé) ; `project.pbxproj` passé de `objectVersion 56` à `60`, groupe `Config` supprimé. Aucune ligne d'équipe ni de profil n'a été écrite : le couple `Base.xcconfig`/`Local.xcconfig` a tenu. Réparé par `git checkout --`, puis construction pour appareil rejouée et vérifiée |
+| **Le `Info.plist` versionné n'est pas un XML strictement valide** | le commentaire de l'ATS contient `tailscale serve --https 443`, or `--` est interdit dans un commentaire XML ; `plutil -lint` rend `OK` et Xcode construit sans broncher, mais `plistlib` refuse le fichier (`not well-formed`) |
+| **Une apostrophe dans `${x:-…}` casse le script** | trouvé en écrivant le repli de l'identifiant d'application : `bash -n` échoue, le reste de la ligne étant pris pour une chaîne entre apostrophes ; le repli est donc bâti par un `if` |
 | La liste vide dit pourquoi | `/v1/serveurs` rend `diagnostic` quand la liste est vide ; 5 tests couvrent les charges utiles de l'hôte |
 | Chaque icône rendue EXISTE | test « Chaque icône rendue est un symbole SF qui existe vraiment » — il a mis en évidence que `macbook.air`, `macbook.pro` et `imac` n'existent pas |
 | Les refus sont respectés | `401` sans jeton, `403` avec `Origin`, `404` sur identifiant inconnu |
