@@ -129,6 +129,20 @@ extension ModeleApp {
     enArrierePlan = false
     await rafraichirSilencieusement()
     await synchroniserServeurs()
+    // ── LA SONDE REPART SANS DÉLAI DE GARDE, ET C'EST LE POINT ───────────────
+    //
+    // Demande du propriétaire : « le diagnostic se met à jour à chaque fois qu'on
+    // recharge la page ? Ce serait nécessaire. » Le cas qui a motivé la question
+    // est celui-ci : on quitte l'application, on installe le plugin sur la machine
+    // d'en face, on revient — et rien n'a été remesuré, parce que la machine n'a
+    // pas changé d'état sur le tailnet (l'empreinte de sonde est identique).
+    //
+    // ICI ON FORCE, au contraire de l'apparition d'une page : revenir au premier
+    // plan EST le geste « montre-moi l'état de maintenant », et l'utilisateur a pu
+    // rester absent longtemps — le délai de garde, lui, se mesure en secondes. Le
+    // laisser s'appliquer ferait exactement le défaut qu'on répare : une mesure
+    // vieille de plusieurs minutes présentée comme actuelle.
+    await sonderLesServeurs(enIgnorantLeDelai: true)
     demarrerSuivi()
     demarrerSuiviServeurs()
     // LE QUOTA EST REMIS À NEUF ICI, ET NON PLUS HAUT : un compteur de

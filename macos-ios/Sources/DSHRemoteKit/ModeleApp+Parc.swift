@@ -92,7 +92,19 @@ extension ModeleApp {
   /// autres. Le délai est court — deux secondes et demie — parce qu'un Mac qui
   /// publie DSH répond en quelques millisecondes sur le tailnet, et qu'un Mac
   /// muet ne mérite pas qu'on l'attende.
-  public func sonderLesServeurs() async {
+  public func sonderLesServeurs(enIgnorantLeDelai: Bool = false) async {
+    // ── LA RE-SONDE DEMANDÉE PAR L'AFFICHAGE PASSE PAR UN DÉLAI DE GARDE ──────
+    //
+    // POURQUOI ICI, ET PAS DANS LA VUE. La règle « on ne repose pas la question
+    // pour rien » est une règle du modèle, et deux surfaces l'appellent (la fiche
+    // d'une machine, le panneau latéral) : la laisser aux appelants, c'est deux
+    // copies d'un même délai — et la seconde oublierait la première.
+    //
+    // ELLE EST INDÉPENDANTE DE `empreinteSondee` : l'empreinte couvre « la liste a
+    // changé », ce délai couvre « on me redemande maintenant ». Les deux portes
+    // mènent à la même sonde, et aucun des deux gestes explicites (« Revérifier »,
+    // retour au premier plan) n'est throttlé — eux SAVENT qu'ils veulent du neuf.
+    if !enIgnorantLeDelai, !sondeDoitRepartir() { return }
     // ── ON SONDE SANS PORTEUR, ET C'EST UNE RÈGLE DE SÉCURITÉ ────────────────
     //
     // La sonde interroge les machines d'un tailnet qui NE SONT PAS la cible :
@@ -170,6 +182,11 @@ extension ModeleApp {
       return
     }
     sonde = .connue(verdict)
+    // LA DATE SE POSE QUAND LA SONDE EST ALLÉE AU BOUT, jamais avant : une sonde
+    // annulée n'a rien mesuré, et la dater ferait attendre le délai de garde pour
+    // une question qui n'a pas eu de réponse. C'est la même règle que pour
+    // l'empreinte, juste en dessous.
+    dateDerniereSonde = Date()
     // CE QUI SE RETIENT, C'EST CE QUI A ÉTÉ INTERROGÉ. L'empreinte est celle de
     // `candidats` — l'ensemble réellement sondé —, et non celle de la liste
     // entière : y mêler une machine hors ligne ferait croire qu'on a mesuré
@@ -178,6 +195,50 @@ extension ModeleApp {
     Trace.siActive(
       "[sonde] fin : \(verdict.serventDsh.count) serveur(s) DSH sur \(candidats.count) en \(duree) ms, "
         + "\(verdict.causes.count) cause(s) connue(s)")
+  }
+
+  /// LA QUESTION MÉRITE-T-ELLE D'ÊTRE REPOSÉE MAINTENANT ?
+  ///
+  /// Fonction PURE du temps écoulé et de ce qu'on sait déjà : elle s'éprouve sans
+  /// réseau, sans horloge simulée et sans machine — il suffit de lui donner une
+  /// date. C'est ce qui la distingue d'un `guard` écrit au milieu de la sonde, où
+  /// rien ne l'attraperait.
+  ///
+  /// DEUX RÉPONSES SONT TOUJOURS OUI, et ce sont les deux qui comptent :
+  ///   - **on n'a JAMAIS sondé** : il n'y a rien à garder, et refuser ici ferait
+  ///     exactement le défaut qu'on répare — une page qui n'apprend rien ;
+  ///   - **aucun verdict connu** : une sonde annulée, ou une liste qui n'a pas
+  ///     encore été sondée. Le délai protège un verdict EXISTANT du gaspillage ;
+  ///     il ne doit jamais retenir une question sans réponse.
+  ///
+  /// `nonisolated` PARCE QUE C'EST UNE FONCTION PURE : elle ne lit aucun état du
+  /// modèle, seulement ses arguments — et c'est ce qui la rend éprouvable depuis un
+  /// test synchrone, sans acteur et sans horloge.
+  public nonisolated static func sondeDoitRepartir(
+    derniere: Date?, maintenant: Date, seuil: TimeInterval = ModeleApp.seuilDeResondage,
+    verdictConnu: Bool
+  ) -> Bool {
+    guard verdictConnu else { return true }
+    guard let derniere else { return true }
+    return maintenant.timeIntervalSince(derniere) >= seuil
+  }
+
+  /// La même question, posée à l'état du modèle.
+  func sondeDoitRepartir() -> Bool {
+    let verdictConnu: Bool
+    if case .connue = sonde { verdictConnu = true } else { verdictConnu = false }
+    return ModeleApp.sondeDoitRepartir(
+      derniere: dateDerniereSonde, maintenant: Date(), verdictConnu: verdictConnu)
+  }
+
+  /// REPOSE LA QUESTION SI LE DÉLAI DE GARDE EST PASSÉ — le geste de l'affichage.
+  ///
+  /// C'EST CE QUE LES DEUX SURFACES DU DIAGNOSTIC APPELLENT en apparaissant : la
+  /// fiche d'une machine et la barre latérale. Le nom dit exactement ce qu'elle
+  /// fait, et « ne fait rien » est un résultat NORMAL — c'est même le cas le plus
+  /// fréquent, quand la sonde vient de partir.
+  public func sonderSiLeDelaiEstPasse() async {
+    await sonderLesServeurs()
   }
 
   /// Le Mac sert-il DSH, d'après la dernière sonde ?
@@ -299,7 +360,16 @@ extension ModeleApp {
       return
     }
     // On demande à chaque Mac s'il sert DSH, plutôt que de le supposer.
-    await sonderLesServeurs()
+    //
+    // SANS DÉLAI DE GARDE, ET C'EST DÉLIBÉRÉ : cette re-sonde ne part QUE sur une
+    // empreinte qui a changé — la liste des machines en ligne n'est plus la même —,
+    // donc sur un fait NOUVEAU. Le délai de garde existe pour la re-sonde demandée
+    // par l'AFFICHAGE (on rouvre une page, on revient au premier plan), où rien ne
+    // dit que quelque chose a bougé. Ici, quelque chose a bougé, et le garde-fou de
+    // l'empreinte a déjà fait le travail d'économie : le faire passer en plus par
+    // le délai rendait la nouvelle machine invisible pendant cinq secondes — ce que
+    // trois tests attrapent (`SondeConditionnelleTests`).
+    await sonderLesServeurs(enIgnorantLeDelai: true)
   }
 
   /// Choisit un serveur et met l'adresse en conséquence.

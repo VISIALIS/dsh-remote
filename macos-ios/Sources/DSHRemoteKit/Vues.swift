@@ -849,6 +849,20 @@ struct VueListeSessions: View {
       await modele.ajusterAuParc()
       await modele.sonderLesServeurs()
     }
+    // ── LA MACHINE JUGÉE CHANGE : ON REPOSE LA QUESTION ──────────────────────
+    //
+    // POURQUOI CE SECOND `task(id:)`, ALORS QUE LE PRÉCÉDENT EXISTE. Le premier est
+    // indexé sur l'ENSEMBLE DES MACHINES EN LIGNE : il ne se déclenche pas quand on
+    // passe d'une machine à une autre, ni quand on revient sur une machine dont
+    // l'état a changé entre-temps. Celui-ci s'indexe sur la machine CHOISIE — le
+    // diagnostic de la barre latérale parle d'elle —, et il repart donc à chaque
+    // changement de sélection.
+    //
+    // LE DÉLAI DE GARDE EST DANS LE MODÈLE (`sonderSiLeDelaiEstPasse`) : ce n'est
+    // pas à la vue de décider combien de requêtes un aller-retour mérite.
+    .task(id: modele.serveurChoisi?.id) {
+      await modele.sonderSiLeDelaiEstPasse()
+    }
     // LES ESPACES DÉPLIÉS SE RETROUVENT AU LANCEMENT.
     //
     // POURQUOI ICI, ET PAS DANS L'INITIALISATION DE `@State`. L'état vit dans la
