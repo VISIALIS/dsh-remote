@@ -1,4 +1,3 @@
-import DSHRemoteKit
 import SwiftUI
 
 /// Fenêtre principale : la liste des sessions à gauche, le journal à droite.

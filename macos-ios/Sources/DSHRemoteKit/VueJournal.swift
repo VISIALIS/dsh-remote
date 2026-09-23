@@ -1,4 +1,3 @@
-import DSHRemoteKit
 import SwiftUI
 
 /// Vue du journal d'une session : les enregistrements, du plus ancien au plus récent.

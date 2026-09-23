@@ -1,4 +1,3 @@
-import DSHRemoteKit
 import SwiftUI
 
 #if canImport(UIKit)
@@ -181,11 +180,10 @@ public struct FeuilleReglages: View {
   /// « pas encore mesuré » n'est PAS « non » : le constat se fait par une lecture
   /// d'interfaces réseau, et tant qu'il n'a pas eu lieu, l'écran n'affirme rien.
   private var etatTailnet: String {
-    switch modele.tailnetDeLAppareil {
-    case true: return L("connecté")
-    case false: return L("absent")
-    case nil: return L("vérification…")
+    guard let tailnet = modele.tailnetDeLAppareil else {
+      return L("vérification…")
     }
+    return tailnet ? L("connecté") : L("absent")
   }
 
   /// CE QUE LE PAQUET CONSTRUIT AUTORISE, en une ligne.
