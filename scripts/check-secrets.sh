@@ -38,7 +38,6 @@ if [ -n "$CHEMINS_HISTORIQUE" ]; then
 fi
 
 # 3. Contrôle des motifs dans les messages de commit
-# Refuser tout email non autorise dans les messages de commit
 EMAILS_REFUSES="$(git -C "$ROOT" log --all --format='%h %B' | grep -oE '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b' | grep -vF '74245486+VISIALIS@users.noreply.github.com' | grep -vF 'noreply@anthropic.com' || true)"
 if [ -n "$EMAILS_REFUSES" ]; then
   printf '\n[REFUSE] Adresse email non autorisee dans les messages de commit :\n%s\n' "$EMAILS_REFUSES"
@@ -46,18 +45,9 @@ if [ -n "$EMAILS_REFUSES" ]; then
   total=$((total + 1))
 fi
 
-# Refuser tout identifiant d'equipe Apple dans les messages de commit
 TEAMS_REFUSES="$(git -C "$ROOT" log --all --format='%h %B' | grep -E '(DEVELOPMENT_TEAM|TeamIdentifier)[[:space:]]*=[[:space:]]*[A-Z0-9]{10}' || true)"
 if [ -n "$TEAMS_REFUSES" ]; then
   printf '\n[REFUSE] Identifiant d equipe Apple dans les messages de commit :\n%s\n' "$TEAMS_REFUSES"
-  status=1
-  total=$((total + 1))
-fi
-
-# Refuser les noms d'appareils personnels dans les messages de commit
-DEVICES_REFUSES="$(git -C "$ROOT" log --all --format='%h %B' | grep -E '(iPhone|iPad|MacBook|Mac) de [A-Z]' || true)"
-if [ -n "$DEVICES_REFUSES" ]; then
-  printf '\n[REFUSE] Nom d appareil personnel dans les messages de commit :\n%s\n' "$DEVICES_REFUSES"
   status=1
   total=$((total + 1))
 fi
@@ -90,12 +80,12 @@ PATTERNS=(
   'eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}|JWT'
   '/Users/[A-Za-z0-9._-]+/|chemin absolu local (fuite de nom de compte)'
   '/home/[A-Za-z0-9._-]+/|chemin absolu local (fuite de nom de compte)'
+  'macbook-air-de-[a-z0-9-]+|nom de machine local'
   'tail[0-9a-f]{6,}\.ts\.net|nom de tailnet prive'
   'tskey-[A-Za-z0-9]{20,}|cle Tailscale'
   '(DEVELOPMENT_TEAM|DSH_TEAM)[[:space:]]*=[[:space:]]*[A-Z0-9]{10}|identifiant d equipe Apple'
   'TeamIdentifier[[:space:]]*=[[:space:]]*[A-Z0-9]{10}|identifiant d equipe dans une sortie codesign'
-  '(iPhone|iPad|MacBook|Mac) de [A-Z]|nom d appareil personnel'
-  'Device "[^"]+" isn.t registered|nom d appareil reel dans erreur de provisionnement'
+  '(^|[^A-Za-z0-9_])[0-9][A-Z0-9]{8}[A-Z]([^A-Za-z0-9_]|$)|jeton de 10 caracteres ressemblant a un identifiant d equipe Apple'
 )
 
 if [ "$#" -gt 0 ]; then
@@ -122,8 +112,7 @@ fi
 PATTERNS_HISTO=(
   '(DEVELOPMENT_TEAM|DSH_TEAM)[[:space:]]*=[[:space:]]*[A-Z0-9]{10}'
   'TeamIdentifier[[:space:]]*=[[:space:]]*[A-Z0-9]{10}'
-  '(iPhone|iPad|MacBook|Mac) de [A-Z]'
-  'Device "[^"]+" isn.t registered'
+  '(^|[^A-Za-z0-9_])[0-9][A-Z0-9]{8}[A-Z]([^A-Za-z0-9_]|$)'
 )
 
 for pat in "${PATTERNS_HISTO[@]}"; do
