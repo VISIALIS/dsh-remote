@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verifier:
+    runs-on: macos-15
+    steps:
+      - name: Extraire le dépôt (historique complet)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Contrôle des secrets (histoire comprise)
+        run: bash scripts/check-secrets.sh
+
+      - name: Tests du plugin
+        run: node --test plugin/tests/
+
+      - name: Tests Swift (macOS & iOS)
+        run: swift test
+        working-directory: macos-ios

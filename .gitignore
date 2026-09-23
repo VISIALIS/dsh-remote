@@ -1,0 +1,36 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Système macOS
+.DS_Store
+
+# Fichiers journaux et environnement
+*.log
+.env
+.env.*
+
+# Artefacts SwiftPM et Xcode
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+macos-ios/DSHRemote.xcodeproj/xcuserdata/
+macos-ios/DSHRemote.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Configuration locale et signature (RÈGLE #0)
+macos-ios/Config/Local.xcconfig
+macos-ios/Config/DomaineTailnet
+
+# Cache Python
+__pycache__/
+
+# Artefacts d'empaquetage
+*.icns
+*.dmg
+*.app
+*.ipa
+
+# Captures de travail locales
+captures-*/
+macos-ios/captures-*/
