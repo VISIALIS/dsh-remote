@@ -19,7 +19,7 @@ jobs:
         run: bash scripts/check-secrets.sh
 
       - name: Tests du plugin
-        run: node --test plugin/tests/
+        run: node --test 'plugin/tests/**/*.test.js'
 
       - name: Tests Swift (macOS & iOS)
         run: swift test

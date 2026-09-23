@@ -15,7 +15,7 @@ printf '=== 1/3 Contrôle des secrets et de l historique ===\n'
 bash "$ROOT/scripts/check-secrets.sh"
 
 printf '\n=== 2/3 Tests du plugin hôte ===\n'
-(cd "$ROOT" && node --test plugin/tests/)
+(cd "$ROOT" && node --test 'plugin/tests/**/*.test.js')
 
 printf '\n=== 3/3 Tests de l application Swift (macOS & iOS) ===\n'
 (cd "$ROOT/macos-ios" && swift test)
