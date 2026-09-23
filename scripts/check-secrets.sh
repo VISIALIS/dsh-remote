@@ -38,9 +38,26 @@ if [ -n "$CHEMINS_HISTORIQUE" ]; then
 fi
 
 # 3. Contrôle des motifs dans les messages de commit
-MESSAGES_REFUSES="$(git -C "$ROOT" log --all --format='%h %B' | grep -iE 'adresse-privee|fr\.exemple\.|espace-prive' || true)"
-if [ -n "$MESSAGES_REFUSES" ]; then
-  printf '\n[REFUSE] Donnee privee detectee dans les messages de commit :\n%s\n' "$MESSAGES_REFUSES"
+# Refuser tout email non autorise dans les messages de commit
+EMAILS_REFUSES="$(git -C "$ROOT" log --all --format='%h %B' | grep -oE '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b' | grep -vF '74245486+VISIALIS@users.noreply.github.com' | grep -vF 'noreply@anthropic.com' || true)"
+if [ -n "$EMAILS_REFUSES" ]; then
+  printf '\n[REFUSE] Adresse email non autorisee dans les messages de commit :\n%s\n' "$EMAILS_REFUSES"
+  status=1
+  total=$((total + 1))
+fi
+
+# Refuser tout identifiant d'equipe Apple dans les messages de commit
+TEAMS_REFUSES="$(git -C "$ROOT" log --all --format='%h %B' | grep -E '(DEVELOPMENT_TEAM|TeamIdentifier)[[:space:]]*=[[:space:]]*[A-Z0-9]{10}' || true)"
+if [ -n "$TEAMS_REFUSES" ]; then
+  printf '\n[REFUSE] Identifiant d equipe Apple dans les messages de commit :\n%s\n' "$TEAMS_REFUSES"
+  status=1
+  total=$((total + 1))
+fi
+
+# Refuser les noms d'appareils personnels dans les messages de commit
+DEVICES_REFUSES="$(git -C "$ROOT" log --all --format='%h %B' | grep -E '(iPhone|iPad|MacBook|Mac) de [A-Z]' || true)"
+if [ -n "$DEVICES_REFUSES" ]; then
+  printf '\n[REFUSE] Nom d appareil personnel dans les messages de commit :\n%s\n' "$DEVICES_REFUSES"
   status=1
   total=$((total + 1))
 fi
@@ -77,9 +94,8 @@ PATTERNS=(
   'tskey-[A-Za-z0-9]{20,}|cle Tailscale'
   '(DEVELOPMENT_TEAM|DSH_TEAM)[[:space:]]*=[[:space:]]*[A-Z0-9]{10}|identifiant d equipe Apple'
   'TeamIdentifier[[:space:]]*=[[:space:]]*[A-Z0-9]{10}|identifiant d equipe dans une sortie codesign'
-  'fr\.exemple\.|domaine personnel dans identifiant de paquet'
-  'adresse-privee|adresse email privee'
-  'espace-prive|nom d espace de travail reel'
+  '(iPhone|iPad|MacBook|Mac) de [A-Z]|nom d appareil personnel'
+  'Device "[^"]+" isn.t registered|nom d appareil reel dans erreur de provisionnement'
 )
 
 if [ "$#" -gt 0 ]; then
@@ -104,9 +120,10 @@ fi
 
 # 5. Contrôle des motifs dans l'historique complet des diffs (git log -G)
 PATTERNS_HISTO=(
-  'fr\.exemple\.'
-  'adresse-privee'
-  'espace-prive'
+  '(DEVELOPMENT_TEAM|DSH_TEAM)[[:space:]]*=[[:space:]]*[A-Z0-9]{10}'
+  'TeamIdentifier[[:space:]]*=[[:space:]]*[A-Z0-9]{10}'
+  '(iPhone|iPad|MacBook|Mac) de [A-Z]'
+  'Device "[^"]+" isn.t registered'
 )
 
 for pat in "${PATTERNS_HISTO[@]}"; do
