@@ -124,6 +124,37 @@ for pat in "${PATTERNS_HISTO[@]}"; do
   fi
 done
 
+# 6. Noms d'appareils personnels (« MacBook Air de <Prénom> »), arbre et histoire.
+# Les prénoms de fixtures synthétiques sont tolérés via APPAREILS_AUTORISES.
+APPAREILS='(iPhone|iPad|MacBook( Air| Pro)?|Mac mini|Mac Studio|iMac)[[:space:]]+(de[[:space:]]+|d['"'"'’])[[:upper:]]'
+APPAREILS_AUTORISES='(de[[:space:]]+|d['"'"'’])(Camille|Quelqu)'
+
+APPAREILS_ARBRE=""
+if [ "$#" -gt 0 ]; then
+  APPAREILS_ARBRE="$(grep -rInE \
+      --binary-files=without-match \
+      --exclude-dir=.git \
+      --exclude-dir=node_modules \
+      --exclude-dir=.build \
+      --exclude="$SELF_NAME" \
+      -- "$APPAREILS" "$@" 2>/dev/null | grep -vE "$APPAREILS_AUTORISES" || true)"
+fi
+if [ -n "$APPAREILS_ARBRE" ]; then
+  total=$((total + 1))
+  printf '\n[REFUSE] nom d appareil personnel\n'
+  printf '%s\n' "$APPAREILS_ARBRE" | sed "s|^$ROOT/|  |"
+  status=1
+fi
+
+APPAREILS_HISTO="$(git -C "$ROOT" log --all -p --no-color --format='@@ %h' -- ":(exclude)scripts/$SELF_NAME" \
+    | awk '/^@@ [0-9a-f]+$/ { c = $2; next } /^[+-]/ { print c ": " $0 }' \
+    | grep -E "$APPAREILS" | grep -vE "$APPAREILS_AUTORISES" | sort -u || true)"
+if [ -n "$APPAREILS_HISTO" ]; then
+  total=$((total + 1))
+  printf '\n[REFUSE] Nom d appareil personnel dans l histoire des diffs :\n%s\n' "$APPAREILS_HISTO"
+  status=1
+fi
+
 if [ "$status" -eq 0 ]; then
   printf 'check-secrets : aucun motif interdit detecte (arbre et histoire conformes).\n'
 else
