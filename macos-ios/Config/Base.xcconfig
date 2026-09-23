@@ -27,6 +27,7 @@
 // Valeurs par défaut, placées AVANT l'inclusion : dans un xcconfig, la dernière
 // affectation l'emporte, donc `Local.xcconfig` peut les surcharger.
 DSH_BUNDLE_ID = org.example.DSHRemote
+DSH_APP_GROUP = group.org.example.DSHRemote
 
 #include? "Local.xcconfig"
 

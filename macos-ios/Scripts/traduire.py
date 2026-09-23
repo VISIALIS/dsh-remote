@@ -23,13 +23,13 @@ import pathlib
 import re
 import sys
 
-SOURCES = pathlib.Path(__file__).resolve().parents[1] / "Sources"
+PAQUET = pathlib.Path(__file__).resolve().parents[1]
+SOURCES = PAQUET / "Sources"
 SOURCE = SOURCES / "DSHRemoteKit"
 RESSOURCES = SOURCE / "Ressources"
-# LES LIBELLÉS DU MENU macOS VIVENT DANS LA CIBLE DE L'APPLICATION, et ils sont
-# localisés comme les autres : les oublier ici laissait le menu en français dans
-# une application anglaise, sans que rien ne le signale.
-DOSSIERS_DE_CODE = [SOURCE, SOURCES / "DSHRemoteApp"]
+# LES LIBELLÉS DU MENU macOS ET DES WIDGETS VIVENT HORS DE LA BIBLIOTHÈQUE,
+# et ils sont localisés comme les autres.
+DOSSIERS_DE_CODE = [SOURCE, SOURCES / "DSHRemoteApp", PAQUET / "Widgets"]
 VERIFIER = "--verifier" in sys.argv
 
 APPEL = re.compile(r'\b[TL]\("((?:[^"\\]|\\.)*)"\)')
@@ -533,6 +533,24 @@ TRADUCTIONS.update({
 TRADUCTIONS.update({
     "joignable": "reachable",
     "joignables": "reachable",
+})
+
+# ── Widgets (iOS & macOS) ─────────────────────────────────────────────────────
+TRADUCTIONS.update({
+    "(sans titre)": "(untitled)",
+    "Aucune session active": "No active session",
+    "Déconnecté": "Disconnected",
+    "En ligne": "Online",
+    "Prêt": "Ready",
+    "Session": "Session",
+    "au travail": "working",
+    "session active": "active session",
+    "sessions actives": "active sessions",
+    "DSH Remote": "DSH Remote",
+    "Affiche l'état du serveur DeepSeek Harness et les sessions en cours.":
+        "Displays DeepSeek Harness server status and running sessions.",
+    "Projet": "Project",
+    "Tour en cours": "Turn in progress",
 })
 
 if __name__ == "__main__":

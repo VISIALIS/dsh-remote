@@ -100,18 +100,27 @@ public struct Persistance {
   public static let clePreferences = "dsh-remote.preferences-serveurs"
   public static let cleNavigation = "dsh-remote.navigation"
   public static let cleAlertes = "dsh-remote.alertes"
+  public static let cleInstantaneWidget = "dsh-remote.instantane-widget"
   public static let nomDuFichierDAmorcage = "dsh-remote-config.json"
   public static let nomDuDiagnostic = "diagnostic.json"
+  public static let identifiantGroupeAppParDefaut = "group.org.example.DSHRemote"
 
   private let defaults: UserDefaults
+  private let appGroupDefaults: UserDefaults?
   private let documents: URL?
 
   /// - Parameters:
   ///   - defaults: le domaine de préférences. Les tests en passent un à eux.
+  ///   - appGroupDefaults: le domaine partagé pour les extensions (WidgetKit).
   ///   - documents: le dossier des documents de l'application (`nil` dans un
   ///     contexte sans conteneur — l'écriture est alors simplement ignorée).
-  public init(defaults: UserDefaults = .standard, documents: URL? = Persistance.documentsParDefaut) {
+  public init(
+    defaults: UserDefaults = .standard,
+    appGroupDefaults: UserDefaults? = UserDefaults(suiteName: Persistance.identifiantGroupeAppParDefaut),
+    documents: URL? = Persistance.documentsParDefaut
+  ) {
     self.defaults = defaults
+    self.appGroupDefaults = appGroupDefaults
     self.documents = documents
   }
 
@@ -184,6 +193,27 @@ public struct Persistance {
     defaults.set(donnees, forKey: Self.cleNavigation)
   }
 
+  // MARK: - L'instantané du widget
+
+  /// Écrit l'instantané dans le conteneur partagé pour WidgetKit.
+  ///
+  /// Si le domaine partagé est absent (ex. environnement de test ou absence d'entitlement),
+  /// l'écriture se replie sur le domaine `defaults` ordinaire.
+  public func memoriserInstantaneWidget(_ instantane: InstantaneWidget) {
+    guard let donnees = try? JSONEncoder().encode(instantane) else { return }
+    let cible = appGroupDefaults ?? defaults
+    cible.set(donnees, forKey: Self.cleInstantaneWidget)
+  }
+
+  /// Lit le dernier instantané déposé pour le widget.
+  public func lireInstantaneWidget() -> InstantaneWidget? {
+    let source = appGroupDefaults ?? defaults
+    guard let donnees = source.data(forKey: Self.cleInstantaneWidget),
+      let instantane = try? JSONDecoder().decode(InstantaneWidget.self, from: donnees)
+    else { return nil }
+    return instantane
+  }
+
   // MARK: - Le fichier d'amorçage
 
   /// Adresse et jeton déposés dans le conteneur de l'application.
@@ -220,11 +250,18 @@ public struct Persistance {
   @discardableResult
   public func toutOublier() -> Int {
     var retirees = 0
-    for cle in [
+    let cles = [
       Self.cleAdresse, Self.cleNomServeur, Self.clePreferences, Self.cleNavigation, Self.cleAlertes,
-    ] where defaults.object(forKey: cle) != nil {
-      defaults.removeObject(forKey: cle)
-      retirees += 1
+      Self.cleInstantaneWidget,
+    ]
+    for cle in cles {
+      if defaults.object(forKey: cle) != nil {
+        defaults.removeObject(forKey: cle)
+        retirees += 1
+      }
+      if let appGroupDefaults, appGroupDefaults.object(forKey: cle) != nil {
+        appGroupDefaults.removeObject(forKey: cle)
+      }
     }
     return retirees
   }

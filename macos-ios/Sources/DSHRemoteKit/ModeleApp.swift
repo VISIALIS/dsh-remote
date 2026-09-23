@@ -458,6 +458,7 @@ public final class ModeleApp {
     // fin de tour seraient devenues silencieuses sans que rien ne le dise. Ici,
     // c'est structurel.
     observerLesFinsDeTour()
+    actualiserInstantaneWidget()
   }
 
   /// UN STATUT POUSSÉ PAR LE FLUX — le seul écrivain qui ne vient pas d'une liste.

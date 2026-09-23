@@ -28,6 +28,13 @@ extension ModeleApp {
     erreurJournal = nil
   }
 
+  /// Ouvre une session à partir de son identifiant, s'il figure dans la liste connue.
+  public func ouvrirSession(identifiant: String) async {
+    if let session = sessions.first(where: { $0.id == identifiant }) {
+      await ouvrir(session)
+    }
+  }
+
   public func ouvrir(_ session: SessionListee) async {
     // Ouvrir, c'est voir : le rappel de fin de cette session n'a plus lieu d'être.
     marquerCommeVue(session.id)

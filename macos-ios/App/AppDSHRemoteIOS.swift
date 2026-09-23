@@ -27,11 +27,15 @@ struct AppDSHRemoteIOS: App {
   /// arrière-plan : iOS y suspend l'application, et aucune API ne le contourne.
   /// On le relâche donc en quittant le premier plan — garder l'écran allumé
   /// dans une poche serait un défaut, pas un service.
+  @State private var modele = ModeleApp()
   @Environment(\.scenePhase) private var phase
 
   var body: some Scene {
     WindowGroup {
-      VuePrincipale()
+      VuePrincipale(modele: modele)
+        .onOpenURL { url in
+          traiterURL(url)
+        }
     }
     // `initial: true` est nécessaire : la première valeur de `phase` est
     // `active` sans transition, donc un `onChange` ordinaire ne verrait jamais
@@ -39,6 +43,18 @@ struct AppDSHRemoteIOS: App {
     // arrière-plan.
     .onChange(of: phase, initial: true) { _, nouvelle in
       appliquerVerrouDEcran(premierPlan: nouvelle == .active)
+    }
+  }
+
+  /// Traite les liens profonds dshremote:// émis notamment par les widgets.
+  private func traiterURL(_ url: URL) {
+    guard url.scheme == "dshremote" else { return }
+    if url.host == "session" {
+      let identifiant = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+      guard !identifiant.isEmpty else { return }
+      Task {
+        await modele.ouvrirSession(identifiant: identifiant)
+      }
     }
   }
 }

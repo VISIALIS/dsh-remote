@@ -1,16 +1,18 @@
 /* Table française — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   220 clés. */
+   232 clés. */
 
 "%d jeton(s) d'appareil effacé(s)" = "%d jeton(s) d'appareil effacé(s)";
 "%d préférence(s) oubliée(s)" = "%d préférence(s) oubliée(s)";
+"(sans titre)" = "(sans titre)";
 "1. Sur cette machine-là, DSH doit tourner. S'il n'y est pas — Node.js est requis :" = "1. Sur cette machine-là, DSH doit tourner. S'il n'y est pas — Node.js est requis :";
 "2. Publiez ensuite son port 80 sur le tailnet :" = "2. Publiez ensuite son port 80 sur le tailnet :";
 "absent" = "absent";
 "Adresse" = "Adresse";
 "Adresse de la machine" = "Adresse de la machine";
 "Affiche ce serveur" = "Affiche ce serveur";
+"Affiche l'état du serveur DeepSeek Harness et les sessions en cours." = "Affiche l'état du serveur DeepSeek Harness et les sessions en cours.";
 "Ajouter un serveur" = "Ajouter un serveur";
 "Alertes" = "Alertes";
 "Allumez cette machine-là, et vérifiez que Tailscale y est connecté :" = "Allumez cette machine-là, et vérifiez que Tailscale y est connecté :";
@@ -22,6 +24,7 @@
 "après l'étape" = "après l'étape";
 "attend votre réponse" = "attend votre réponse";
 "au repos" = "au repos";
+"au travail" = "au travail";
 "aucun" = "aucun";
 "Aucun dossier de documents : cette exécution n'écrit pas de diagnostic." = "Aucun dossier de documents : cette exécution n'écrit pas de diagnostic.";
 "aucun jeton : collez-le d'abord" = "aucun jeton : collez-le d'abord";
@@ -30,8 +33,9 @@
 "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond." = "Aucun service n'écoute sur le port 80 de cette machine. Le tailnet, lui, fonctionne : la machine répond.";
 "Aucun événement" = "Aucun événement";
 "aucune préférence à oublier" = "aucune préférence à oublier";
-"Aucune session" = "Aucune session";
 "aucune session" = "aucune session";
+"Aucune session" = "Aucune session";
+"Aucune session active" = "Aucune session active";
 "Aucune session en mémoire" = "Aucune session en mémoire";
 "Aucune session ouverte" = "Aucune session ouverte";
 "Caméra indisponible" = "Caméra indisponible";
@@ -79,11 +83,13 @@
 "DSH Remote y répond : la machine peut servir l'application." = "DSH Remote y répond : la machine peut servir l'application.";
 "DSH · hôte" = "DSH · hôte";
 "DSH · hôte interrogé" = "DSH · hôte interrogé";
+"Déconnecté" = "Déconnecté";
 "Détail technique" = "Détail technique";
 "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit." = "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit.";
 "Effacer la recherche" = "Effacer la recherche";
 "Effacer le jeton saisi" = "Effacer le jeton saisi";
 "en attente" = "en attente";
+"En ligne" = "En ligne";
 "Envoyer" = "Envoyer";
 "Envoyer le message" = "Envoyer le message";
 "erreur" = "erreur";
@@ -155,6 +161,8 @@
 "Ouvrir la page" = "Ouvrir la page";
 "Ouvrir Tailscale" = "Ouvrir Tailscale";
 "pas de DSH" = "pas de DSH";
+"Projet" = "Projet";
+"Prêt" = "Prêt";
 "prêt" = "prêt";
 "Rafraîchir" = "Rafraîchir";
 "Rafraîchir la liste" = "Rafraîchir la liste";
@@ -183,6 +191,9 @@
 "Serveurs" = "Serveurs";
 "Ses sessions et ses espaces de travail sont à gauche. Cliquez à nouveau sur sa carte pour ouvrir sa page." = "Ses sessions et ses espaces de travail sont à gauche. Cliquez à nouveau sur sa carte pour ouvrir sa page.";
 "Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa carte pour ouvrir sa page." = "Ses sessions et ses espaces de travail sont à gauche. Touchez à nouveau sa carte pour ouvrir sa page.";
+"Session" = "Session";
+"session active" = "session active";
+"sessions actives" = "sessions actives";
 "Si vous préférez vérifier vous-même, depuis ce Mac : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal)." = "Si vous préférez vérifier vous-même, depuis ce Mac : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal).";
 "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse." = "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse.";
 "Son port 80 doit être publié par `tailscale serve` — sans quoi rien ne répond à son adresse." = "Son port 80 doit être publié par `tailscale serve` — sans quoi rien ne répond à son adresse.";
@@ -201,6 +212,7 @@
 "test de l'adresse…" = "test de l'adresse…";
 "Tester l'adresse" = "Tester l'adresse";
 "tour en cours" = "tour en cours";
+"Tour en cours" = "Tour en cours";
 "tout de suite (interrompt le tour en cours)" = "tout de suite (interrompt le tour en cours)";
 "Tout de suite (interrompt)" = "Tout de suite (interrompt)";
 "Tout effacer" = "Tout effacer";
@@ -216,8 +228,8 @@
 "Vérifiez sur cette machine ce qui est publié :" = "Vérifiez sur cette machine ce qui est publié :";
 "« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé." = "« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé.";
 "à appairer" = "à appairer";
-"À la suite" = "À la suite";
 "à la suite" = "à la suite";
+"À la suite" = "À la suite";
 "À propos" = "À propos";
 "à vérifier" = "à vérifier";
 "Écrire à cette session…" = "Écrire à cette session…";
