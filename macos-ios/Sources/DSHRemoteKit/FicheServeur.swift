@@ -382,14 +382,13 @@ struct FicheServeur: View {
         { Task { await modele.synchroniserServeurs() } }
       )
     }
-    switch modele.sertDsh(serveur) {
-    case true:
+    if modele.sertDsh(serveur) == true {
       let dejaVise = modele.serveurChoisi == serveur
       return (
         dejaVise ? L("Reconnecter") : L("Se connecter"), "bolt.horizontal",
         { Task { await modele.choisirEtConnecter(serveur) } }
       )
-    case false, nil:
+    } else {
       // LA MACHINE RÉPOND, mais rien ne dit encore que DSH y est. Deux gestes,
       // selon qu'elle est ou non celle que l'application VISE : si c'est elle, on
       // reteste son adresse — seul moyen de vérifier une adresse saisie à la

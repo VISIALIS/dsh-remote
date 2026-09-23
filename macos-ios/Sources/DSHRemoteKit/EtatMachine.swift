@@ -42,8 +42,7 @@ enum EtatMachine {
     guard enLigne else {
       return Description(texte: L("hors ligne"), symbole: "moon.zzz.fill", ton: .attention)
     }
-    switch sertDsh {
-    case true:
+    if sertDsh == true {
       // LA MACHINE SERT DSH — ET L'APPAIRAGE SE DIT À CÔTÉ, PAS À SA PLACE.
       //
       // Défaut corrigé, et c'est celui qui coûtait le plus cher : sans jeton
@@ -68,10 +67,10 @@ enum EtatMachine {
         return Description(
           texte: L("jeton refusé"), symbole: "key.slash", ton: .attention)
       }
-    case false:
+    } else if sertDsh == false {
       return Description(
         texte: L("pas de DSH"), symbole: "exclamationmark.triangle.fill", ton: .attention)
-    case nil:
+    } else {
       return Description(texte: L("vérification…"), symbole: "clock", ton: .attente)
     }
   }

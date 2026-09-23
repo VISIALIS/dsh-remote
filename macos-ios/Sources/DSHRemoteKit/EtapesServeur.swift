@@ -235,22 +235,21 @@ public enum EtapesServeur {
     let port: Etat
     if !enLigne {
       port = .inconnue
-    } else {
-      switch sertDsh {
-      case true: port = .franchie
-      case false:
-        // DEUX CAUSES SEULEMENT permettent de conclure sur le port. Un `404`
-        // prouve qu'il est ouvert (quelque chose a répondu) ; `-1004` prouve
-        // qu'il est fermé. Toute autre erreur — délai, DNS — dit que la machine
-        // ne répond pas SANS dire pourquoi : on ne conclut pas, sinon on envoie
-        // publier un port qui l'est peut-être déjà.
-        switch cause {
-        case .pluginAbsent: port = .franchie
-        case .rienNEcoute: port = .aFaire
-        case nil: port = .inconnue
-        }
+    } else if sertDsh == true {
+      port = .franchie
+    } else if sertDsh == false {
+      // DEUX CAUSES SEULEMENT permettent de conclure sur le port. Un `404`
+      // prouve qu'il est ouvert (quelque chose a répondu) ; `-1004` prouve
+      // qu'il est fermé. Toute autre erreur — délai, DNS — dit que la machine
+      // ne répond pas SANS dire pourquoi : on ne conclut pas, sinon on envoie
+      // publier un port qui l'est peut-être déjà.
+      switch cause {
+      case .pluginAbsent: port = .franchie
+      case .rienNEcoute: port = .aFaire
       case nil: port = .inconnue
       }
+    } else {
+      port = .inconnue
     }
 
     // LE PLUGIN N'EST ACCUSÉ QUE SI QUELQU'UN A RÉPONDU. Un `404` prouve que le
@@ -262,12 +261,12 @@ public enum EtapesServeur {
     let plugin: Etat
     if !enLigne {
       plugin = .inconnue
+    } else if sertDsh == true {
+      plugin = .franchie
+    } else if sertDsh == false {
+      plugin = (cause == .pluginAbsent) ? .aFaire : .inconnue
     } else {
-      switch sertDsh {
-      case true: plugin = .franchie
-      case false: plugin = (cause == .pluginAbsent) ? .aFaire : .inconnue
-      case nil: plugin = .inconnue
-      }
+      plugin = .inconnue
     }
 
     return [
