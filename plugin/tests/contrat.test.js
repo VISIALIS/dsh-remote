@@ -29,7 +29,7 @@ import { entreeDeSession, resumer } from '../dynamic/journal.js'
 
 const fixture = JSON.parse(
   readFileSync(
-    new URL('../../../packages/dsh-remote-swift/Tests/DSHRemoteKitTests/Fixtures/sessions-hote.json', import.meta.url),
+    new URL('../../macos-ios/Tests/DSHRemoteKitTests/Fixtures/sessions-hote.json', import.meta.url),
     'utf8',
   ),
 )

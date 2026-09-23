@@ -43,7 +43,7 @@ import {
 // casser sa construction.
 const vecteurs = JSON.parse(
   readFileSync(
-    new URL('../../../packages/dsh-remote-swift/Tests/DSHRemoteKitTests/Fixtures/vecteurs-appairage.json', import.meta.url),
+    new URL('../../macos-ios/Tests/DSHRemoteKitTests/Fixtures/vecteurs-appairage.json', import.meta.url),
     'utf8',
   ),
 )
