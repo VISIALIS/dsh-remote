@@ -303,23 +303,22 @@ extension ModeleApp {
 
   public func demarrerDecouverte() {
     guard decouverteLocalePossible else { return }
-    Task.detached { [weak self] in
-      let trouvees = DecouverteServeurs.machinesDuTailnet()
-      let raison = DecouverteServeurs.diagnostic
-      await MainActor.run {
-        guard let self else { return }
-        // L'hôte a déjà répondu, et sa liste est plus fraîche que celle d'un
-        // processus lancé avant la connexion : on ne l'écrase pas.
-        guard self.sourceServeurs != .hote else { return }
-        self.appliquerServeursDuTailnet(trouvees, diagnostic: raison)
-        // La liste vient d'arriver : c'est le moment de refaire les constats
-        // locaux sur Tailscale, qui décident de la première étape du parcours.
-        self.relireEtatTailscale()
-        // La sonde ne part PAS d'ici : à cet instant la liste vient d'être
-        // posée, mais la vue n'a pas encore été réévaluée. C'est
-        // `task(id: modele.empreinteServeurs)` qui s'en charge, et lui seul —
-        // un appel ici ne ferait que doubler la sonde.
-      }
+    Task { [weak self] in
+      let (trouvees, raison) = await Task.detached {
+        (DecouverteServeurs.machinesDuTailnet(), DecouverteServeurs.diagnostic)
+      }.value
+      guard let self else { return }
+      // L'hôte a déjà répondu, et sa liste est plus fraîche que celle d'un
+      // processus lancé avant la connexion : on ne l'écrase pas.
+      guard self.sourceServeurs != .hote else { return }
+      self.appliquerServeursDuTailnet(trouvees, diagnostic: raison)
+      // La liste vient d'arriver : c'est le moment de refaire les constats
+      // locaux sur Tailscale, qui décident de la première étape du parcours.
+      self.relireEtatTailscale()
+      // La sonde ne part PAS d'ici : à cet instant la liste vient d'être
+      // posée, mais la vue n'a pas encore été réévaluée. C'est
+      // `task(id: modele.empreinteServeurs)` qui s'en charge, et lui seul —
+      // un appel ici ne ferait que doubler la sonde.
     }
   }
 
