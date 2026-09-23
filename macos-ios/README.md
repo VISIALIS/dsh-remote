@@ -19,9 +19,9 @@ client ? » quand on arrive. Les quatre familles sont nommées ici.
 
 | Famille | Où | Sections |
 |---|---|---|
-| **Contrat** (normatif) | ce que le client promet et suit | `Application` (l'interface et ses règles), `Flux temps réel` (le protocole, la reprise, le battement de cœur), `Jeton d'appareil`, `Choix de conception` |
+| **Contrat** (normatif) | ce que le client promet et suit | `Application` (l'interface et ses règles), `Widgets et Live Activities` (formats Small/Medium, Dynamic Island, RÈGLE #0), `Flux temps réel` (le protocole, la reprise, le battement de cœur), `Jeton d'appareil`, `Choix de conception` |
 | **Procédure** (à exécuter) | installer, construire, essayer | `Construire et lancer`, `Installer sur l'iPhone`, `Amorce par fichier`, `Essai sur le simulateur iOS`, `Structure` |
-| **Mesures** (datées, sans autorité) | pourquoi une règle est ce qu'elle est | `Le suivi de l'activité`, `L'arrière-plan`, `La reconnexion est AUTOMATIQUE`, `Le battement de cœur`, `La configuration réseau est PARTAGÉE`, `Vue d'un défaut trouvé en regardant`, `Ce que l'essai a appris` |
+| **Mesures** (datées, sans autorité) | pourquoi une règle est ce qu'elle est | `Le suivi de l'activité`, `L'arrière-plan`, `La reconnexion est AUTOMATIQUE`, `Le battement de cœur`, `La configuration réseau est PARTAGÉE`, `L'instantané du widget est sécurisé`, `Vue d'un défaut trouvé en regardant`, `Ce que l'essai a appris` |
 | **Limites ouvertes** | ce qui reste à prouver | `Ce qui reste non prouvé`, `Ce que cette route ne fait pas` (côté hôte), les notes « non mesuré » des sections de mesure |
 
 **CE QUI N'EST PAS DANS CE DOCUMENT** : le format des échanges (charge utile
@@ -2764,6 +2764,77 @@ redécouvre pas comme des oublis.
 
 ---
 
+## Widgets et Live Activities (iOS & macOS)
+
+L'application expose son état en temps réel en dehors de ses fenêtres principales :
+sur l'écran d'accueil, le bureau macOS, l'écran verrouillé et dans la **Dynamic Island**
+(iPhone 14 Pro et ultérieurs, iOS 17+).
+
+### 1. RÈGLE #0 et architecture de partage : l'instantané
+
+**AUCUN SECRET NE FRANCHIT LE CONTENEUR DE L'APPLICATION.**
+Une extension WidgetKit ou une Live Activity n'a pas accès au trousseau ni aux variables
+en mémoire de l'application hôte sans conteneur partagé. Poser le jeton porteur dans un
+App Group ouvrirait une surface d'attaque sur le stockage partagé.
+
+L'architecture suit donc une règle stricte :
+1. **L'extension ne fait AUCUNE requête réseau.** Elle ne porte ni jeton d'appareil, ni
+   client HTTP, ni WebSocket. Elle est alimentée exclusivement par un **instantané
+   déshydraté** (`InstantaneWidget`) produit par l'application principale.
+2. **Le conteneur partagé ne stocke que des données d'affichage** : le nom du serveur,
+   l'état de connexion (`estConnecte`), le nombre de sessions actives et au travail, et un
+   sommaire de la session active (titre, projet, dernière étape).
+3. **L'écriture est synchrone avec le cycle de vie** : dès qu'une liste de sessions ou un
+   changement d'état survient dans `ModeleApp.appliquerSessions`, `ModeleApp+Widgets.swift`
+   écrit l'instantané dans le domaine `UserDefaults(suiteName: "group.org.example.DSHRemote")`
+   et demande à WidgetKit de recharger ses timelines via `WidgetCenter.shared.reloadAllTimelines()`.
+
+### 2. Formats classiques : Small et Medium (`DSHRemoteWidget`)
+
+Deux familles WidgetKit sont implémentées dans [`VuesWidget.swift`](Sources/DSHRemoteKit/VuesWidget.swift) :
+* **`.systemSmall` (carré 2×2)** : vue condensée affichant le statut de la machine (pastille
+  verte/rouge), le nom du serveur, le compteur de sessions actives et un badge saillant si
+  un agent est au travail (`auTravail.count > 0`).
+* **`.systemMedium` (rectangle 4×2)** : panneau combiné présentant l'état du serveur sur la
+  gauche et la session active la plus pertinente sur la droite (nom de projet, titre,
+  dernière action franchie, horodatage relatif).
+
+Toucher le widget renvoie vers l'application via le schéma d'URL profond `dshremote://session/{id}`.
+Sur iOS comme sur macOS, `.onOpenURL` intercepte l'identifiant et sélectionne immédiatement
+la session correspondante via `modele.ouvrirSession(identifiant:)`.
+
+### 3. Live Activities & Dynamic Island (`ActiviteSessionWidget`)
+
+Pour suivre l'avancement d'un tour sans garder l'application au premier plan :
+* **Modèle `ActivityKit`** ([`ActiviteSession.swift`](Sources/DSHRemoteKit/ActiviteSession.swift)) :
+  attributs statiques `ActiviteSessionAttributes` (`sessionId`, `nomServeur`, `projetNom`) et
+  état dynamique `ContentState` (`statut`, `derniereEtape`, `horodatageEtape`).
+* **Gestionnaire d'activités** : `GestionnaireActivitesLive` démarre l'activité dès qu'une
+  session passe à `statut == "en_cours"`, met à jour l'étape au fil du flux, et clôture avec
+  un délai de grâce de 3 secondes (`dismissalPolicy: .after(...)`) quand le tour s'achève.
+* **Comportement multiplateforme** : entièrement conditionné par `#if canImport(ActivityKit) && os(iOS)`.
+  Sur macOS, une classe no-op offre la même signature sans coût ni dépendance.
+* **Dynamic Island** :
+  * *Compact Leading* : éclair orange indicateur d'agent actif.
+  * *Compact Trailing* : statut dynamique (ellipse animée `…` ou coche `✓`).
+  * *Minimal* : icône compacte pour les contextes d'affichage partagé.
+  * *Expanded* : vue enrichie avec identifiant de machine, projet, chronomètre relatif et
+    libellé de la dernière étape exécutée.
+
+### 4. Configuration Xcode et Entitlements
+
+* **Cible Xcode dédiée** : `DSHRemoteWidgets` déclarée dans `DSHRemote.xcodeproj` avec type
+  `com.apple.product-type.app-extension`, liée à la bibliothèque locale `DSHRemoteKit`.
+* **Incorporation** : phase *Embed Foundation Extensions* incorporant le paquet
+  `PlugIns/DSHRemoteWidgets.appex` au sein de `DSHRemote.app`.
+* **Entitlements** : `com.apple.security.application-groups` configuré sur `group.org.example.DSHRemote`
+  pour l'application ([`DSHRemote.entitlements`](Config/DSHRemote.entitlements)) et l'extension
+  ([`DSHRemoteWidgets.entitlements`](Config/DSHRemoteWidgets.entitlements)).
+* **Autorisations Info.plist** : `NSSupportsLiveActivities` et `NSSupportsLiveActivitiesFrequentUpdates`
+  déclarés dans [`App/Info.plist`](App/Info.plist).
+
+---
+
 ## Pourquoi un tool en ligne de commande avant toute interface
 
 `dsh-remote-ctl` existe pour **prouver** le transport sans interface graphique. Tant
@@ -3017,6 +3088,10 @@ Sources/
 │   ├── ModeleApp+Journal.swift      # ouvrir une session, la suivre : le journal ne se sépare jamais de SA session
 │   ├── ModeleApp+Alertes.swift      # ce qu'on signale, et à quelle condition (première observation, génération, réglage)
 │   ├── ModeleApp+Jetons.swift       # où on lit un jeton, où on le range, et ce qu'on n'écrit jamais
+│   ├── ModeleApp+Widgets.swift      # instantané partagé avec les widgets et synchronisation Live Activities
+│   ├── InstantaneWidget.swift       # contrat de données du widget (RÈGLE #0 : aucun secret, état pur)
+│   ├── VuesWidget.swift             # vues SwiftUI partagées pour widgets Small et Medium
+│   ├── ActiviteSession.swift        # modèle ActivityKit (attributs et état dynamique Sendable) et gestionnaire
 │   ├── AdresseMachine.swift         # http ou https, décidé par ce que le paquet autorise
 │   ├── CheminReseau.swift           # NWPathMonitor : l'état du chemin, et la règle de reprise (pure)
 │   ├── ConfigurationReseau.swift    # la configuration PARTAGÉE des deux clients, et ses deux dissymétries mesurées
@@ -3037,8 +3112,18 @@ Sources/
 │   └── main.swift
 └── DSHRemoteApp/          # application macOS : `swift run DSHRemoteMac`
     └── main.swift
+Widgets/                   # extension WidgetKit (iOS et macOS)
+├── DSHRemoteWidgetsBundle.swift # point d'entrée @main du faisceau de widgets
+├── DSHRemoteWidget.swift        # widget classique Small et Medium
+├── ActiviteSessionWidget.swift  # widget Live Activity et Dynamic Island (iOS 17+)
+├── FournisseurTimeline.swift    # timeline WidgetKit alimentée par le conteneur partagé
+└── Info.plist
 Tests/
-└── DSHRemoteKitTests/     # décodage des charges utiles réelles, écriture, rappels de fin
+└── DSHRemoteKitTests/     # décodage des charges utiles réelles, écriture, rappels de fin, widgets
+Config/
+├── Base.xcconfig          # variables partagées (DSH_APP_GROUP, DSH_BUNDLE_ID)
+├── DSHRemote.entitlements # groupe d'applications partagé (App Group) pour l'app
+└── DSHRemoteWidgets.entitlements # groupe d'applications partagé pour l'extension widget
 Sondes/
 └── dialogue/              # sonde isolée : que fait ÉCHAP sur une confirmation destructive ?
 ```
@@ -3419,3 +3504,7 @@ rallumerait tout seul une seconde plus tard.
 | **Les alertes ne partent que sur un CHANGEMENT, et jamais pour ce qu'on regarde** | 9 tests : attente nouvelle, regroupement, session regardée, ordre attente-avant-fin, première observation muette, éteintes par défaut, refus système qui laisse l'interrupteur éteint, préférence relue au lancement |
 | **`UNUserNotificationCenter` sans paquet fait AVORTER le processus** | mesuré sur un binaire nu : `NSInternalInconsistencyException: bundleProxyForCurrentProcess is nil`, code 134 — d'où la garde `AlerteurSysteme.possibles` |
 | **La suite de tests ne touche plus aux préférences de la machine** | 33 tests construisaient `ModeleApp()` sur le domaine partagé ; ils sont tous isolés. Mesure : **12 échecs sur 15 exécutions** avant, **0 sur 20** après |
+| **L'instantané du widget est sécurisé (RÈGLE #0)** | 2 tests (`InstantaneWidgetTests`) : encodage/décodage de l'instantané pur, aucune clé secrète ni jeton présent dans la structure, effacement garanti par `toutOublier()` |
+| **Le widget ouvre directement la session visée** | validation sur simulateur iOS via `xcrun simctl openurl booted "dshremote://session/..."` : l'URL est interceptée par `.onOpenURL` et la session ouverte immédiatement |
+| **L'extension WidgetKit est incorporée dans le paquet** | vérifié dans `DSHRemote.app` : présence de `PlugIns/DSHRemoteWidgets.appex` dans le bundle de l'application |
+| **Les Live Activities et la Dynamic Island suivent l'agent** | 2 tests (`ActiviteSessionTests`) : cycle de vie `GestionnaireActivitesLive`, démarrage à l'activation d'un tour et dissipation propre à l'arrêt, absence de secret dans les attributs |
