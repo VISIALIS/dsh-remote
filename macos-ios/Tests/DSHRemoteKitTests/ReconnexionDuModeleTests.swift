@@ -37,6 +37,22 @@ private func cheminDuServeurModele() -> String? {
   return nil
 }
 
+/// `node` est-il lançable ? Le test en a besoin pour exécuter le serveur d'essai.
+private func nodeDisponible() -> Bool {
+  let processus = Process()
+  processus.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+  processus.arguments = ["node", "--version"]
+  processus.standardOutput = Pipe()
+  processus.standardError = Pipe()
+  do {
+    try processus.run()
+    processus.waitUntilExit()
+    return processus.terminationStatus == 0
+  } catch {
+    return false
+  }
+}
+
 private func portLibre() throws -> Int {
   let socket = socket(AF_INET, SOCK_STREAM, 0)
   guard socket >= 0 else { throw ErreurRemote.transport("socket impossible") }
@@ -142,6 +158,9 @@ struct ReconnexionDuModeleTests {
   @MainActor
   @Test("Après deux coupures, le modèle rouvre le flux TOUT SEUL et reprend au bon seq")
   func laBoucleRouvreEtReprend() async throws {
+    guard nodeDisponible(), cheminDuServeurModele() != nil else {
+      return
+    }
     let hote = try await FauxHote.demarrer(coupures: 2)
     defer { hote.arreter() }
 
@@ -189,6 +208,9 @@ struct ReconnexionDuModeleTests {
     //
     // On coupe TOUTES les connexions (un nombre plus grand que les tentatives) :
     // le flux ne pourra jamais se stabiliser.
+    guard nodeDisponible(), cheminDuServeurModele() != nil else {
+      return
+    }
     let hote = try await FauxHote.demarrer(coupures: 999)
     defer { hote.arreter() }
 
