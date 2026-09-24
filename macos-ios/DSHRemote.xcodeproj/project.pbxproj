@@ -202,11 +202,11 @@
 			};
 			buildConfigurationList = A1000000000000000000018 /* Build configuration list for PBXProject "DSHRemote" */;
 			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = fr;
+			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				fr,
 				en,
+				fr,
 				Base,
 			);
 			mainGroup = A1000000000000000000010;

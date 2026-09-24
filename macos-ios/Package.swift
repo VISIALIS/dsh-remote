@@ -17,11 +17,8 @@ import PackageDescription
 // l'application installable sur iPhone.
 let package = Package(
   name: "DSHRemote",
-  // LA LANGUE SOURCE DU PAQUET, ET ELLE EST OBLIGATOIRE : SwiftPM refuse un
-  // paquet qui porte des ressources localisées sans dire laquelle fait référence.
-  // C'est le français — le code, les commentaires et les clés le sont (RÈGLE #1) ;
-  // l'anglais est une TRADUCTION ajoutée, pas une seconde source.
-  defaultLocalization: "fr",
+  // Langue par défaut du paquet pour les ressources localisées.
+  defaultLocalization: "en",
   platforms: [
     .macOS(.v14),
     .iOS(.v17),

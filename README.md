@@ -32,14 +32,16 @@ dsh-remote/
 ├── plugin/            # Host plugin for DeepSeek Harness (Node.js ESM)
 │   ├── dynamic/       # Host module and harness browser panel bundle
 │   ├── tests/         # Automated test suite (147+ tests)
-│   └── README.md      # In-depth technical documentation (French)
+│   ├── README.md      # Technical documentation (English)
+│   └── README.fr.md   # Architectural log and measurements (French)
 │
 ├── macos-ios/         # Native Apple client application (Swift / SwiftUI)
 │   ├── Sources/       # Core networking, protocol parsing, and state machine (DSHRemoteKit)
 │   ├── App/           # macOS and iOS SwiftUI application
 │   ├── Widgets/       # WidgetKit extensions and Live Activities (DSHRemoteWidgets)
-│   ├── Tests/         # Swift test suite (359+ tests)
-│   └── README.md      # In-depth architectural documentation (French)
+│   ├── Tests/         # Swift test suite (361+ tests)
+│   ├── README.md      # Architectural documentation (English)
+│   └── README.fr.md   # In-depth architectural journal and measurements (French)
 │
 └── scripts/           # Security audit and verification scripts
 ```
