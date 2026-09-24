@@ -2,19 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleDevelopmentRegion</key><string>fr</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleDisplayName</key><string>DSH Remote</string>
   <!--
-    LES LANGUES SERVIES. `CFBundleDevelopmentRegion` est déjà le français, mais
-    la liste explicite est ce qui fait entrer l'anglais dans les langues que le
-    système propose — et ce qui fait retomber un appareil dont la langue n'est ni
-    l'une ni l'autre sur le français, la langue des clés.
+    LES LANGUES SERVIES. La langue principale par défaut est l'anglais (en),
+    avec le français (fr) comme langue localisée lorsque c'est la langue de l'OS.
   -->
   <key>CFBundleLocalizations</key>
   <array>
-    <string>fr</string>
     <string>en</string>
+    <string>fr</string>
   </array>
+  <key>DSHAppGroup</key>
+  <string>$(DSH_APP_GROUP)</string>
   <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>

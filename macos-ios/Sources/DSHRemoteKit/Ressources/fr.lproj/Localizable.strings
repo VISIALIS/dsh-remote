@@ -1,7 +1,7 @@
 /* Table française — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   232 clés. */
+   233 clés. */
 
 "%d jeton(s) d'appareil effacé(s)" = "%d jeton(s) d'appareil effacé(s)";
 "%d préférence(s) oubliée(s)" = "%d préférence(s) oubliée(s)";
@@ -35,7 +35,6 @@
 "aucune préférence à oublier" = "aucune préférence à oublier";
 "aucune session" = "aucune session";
 "Aucune session" = "Aucune session";
-"Aucune session active" = "Aucune session active";
 "Aucune session en mémoire" = "Aucune session en mémoire";
 "Aucune session ouverte" = "Aucune session ouverte";
 "Caméra indisponible" = "Caméra indisponible";
@@ -83,13 +82,12 @@
 "DSH Remote y répond : la machine peut servir l'application." = "DSH Remote y répond : la machine peut servir l'application.";
 "DSH · hôte" = "DSH · hôte";
 "DSH · hôte interrogé" = "DSH · hôte interrogé";
-"Déconnecté" = "Déconnecté";
 "Détail technique" = "Détail technique";
 "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit." = "Efface les jetons d'appareil gardés sur cet appareil — TOUS, y compris ceux de machines que vous ne visitez plus —, l'adresse et le nom mémorisés, les préférences par serveur, la dernière session consultée, le réglage des alertes et le fichier de diagnostic. Le jeton du harness, sur le Mac, n'est pas touché. Un fichier d'amorçage déposé à la main n'est PAS effacé : il ramènerait l'adresse et le jeton au prochain lancement, et le compte rendu le dit.";
 "Effacer la recherche" = "Effacer la recherche";
 "Effacer le jeton saisi" = "Effacer le jeton saisi";
 "en attente" = "en attente";
-"En ligne" = "En ligne";
+"En veille" = "En veille";
 "Envoyer" = "Envoyer";
 "Envoyer le message" = "Envoyer le message";
 "erreur" = "erreur";
@@ -164,12 +162,14 @@
 "Projet" = "Projet";
 "Prêt" = "Prêt";
 "prêt" = "prêt";
+"Prêt pour la suite" = "Prêt pour la suite";
 "Rafraîchir" = "Rafraîchir";
 "Rafraîchir la liste" = "Rafraîchir la liste";
 "Rechercher une session" = "Rechercher une session";
 "Rechercher une session, un projet…" = "Rechercher une session, un projet…";
 "Reconnecter" = "Reconnecter";
 "Revérifier" = "Revérifier";
+"relevé" = "relevé";
 "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet." = "Rien ne peut être joint sur cette machine tant qu'elle est hors ligne sur le tailnet.";
 "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas." = "Rien ne répond sur son port 80 : `tailscale serve` ne le publie pas.";
 "Rien à coller : le presse-papier est vide. Copiez le texte affiché sous le QR code du panneau « Appairer un appareil »." = "Rien à coller : le presse-papier est vide. Copiez le texte affiché sous le QR code du panneau « Appairer un appareil ».";
@@ -194,6 +194,8 @@
 "Session" = "Session";
 "session active" = "session active";
 "sessions actives" = "sessions actives";
+"session suivie" = "session suivie";
+"sessions suivies" = "sessions suivies";
 "Si vous préférez vérifier vous-même, depuis ce Mac : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal)." = "Si vous préférez vérifier vous-même, depuis ce Mac : `401` ou `200` veut dire que le plugin répond (`401` = jeton absent, c'est normal).";
 "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse." = "Son port 80 doit être publié par `tailscale serve` pour que quelque chose réponde à son adresse.";
 "Son port 80 doit être publié par `tailscale serve` — sans quoi rien ne répond à son adresse." = "Son port 80 doit être publié par `tailscale serve` — sans quoi rien ne répond à son adresse.";
@@ -211,11 +213,13 @@
 "terminée, pas encore lue" = "terminée, pas encore lue";
 "test de l'adresse…" = "test de l'adresse…";
 "Tester l'adresse" = "Tester l'adresse";
-"tour en cours" = "tour en cours";
+"Touchez pour synchroniser" = "Touchez pour synchroniser";
 "Tour en cours" = "Tour en cours";
+"tour en cours" = "tour en cours";
 "tout de suite (interrompt le tour en cours)" = "tout de suite (interrompt le tour en cours)";
 "Tout de suite (interrompt)" = "Tout de suite (interrompt)";
 "Tout effacer" = "Tout effacer";
+"Tout est calme" = "Tout est calme";
 "Un nouvel événement — aller à la fin du journal" = "Un nouvel événement — aller à la fin du journal";
 "Un tour vient de se terminer" = "Un tour vient de se terminer";
 "Une alerte part quand une session se met à ATTENDRE une réponse, ou quand un tour se termine — jamais pour ce que vous êtes en train de regarder. Elle n'est envoyée que tant que l'application tourne : iOS la suspend en arrière-plan, et la réveiller demanderait un serveur de notification, que ce projet n'a pas." = "Une alerte part quand une session se met à ATTENDRE une réponse, ou quand un tour se termine — jamais pour ce que vous êtes en train de regarder. Elle n'est envoyée que tant que l'application tourne : iOS la suspend en arrière-plan, et la réveiller demanderait un serveur de notification, que ce projet n'a pas.";
@@ -228,8 +232,8 @@
 "Vérifiez sur cette machine ce qui est publié :" = "Vérifiez sur cette machine ce qui est publié :";
 "« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé." = "« Se connecter » vise cette adresse tout de suite. « Tester l'adresse » ne change pas de serveur : elle dit seulement ce qu'elle a trouvé.";
 "à appairer" = "à appairer";
-"à la suite" = "à la suite";
 "À la suite" = "À la suite";
+"à la suite" = "à la suite";
 "À propos" = "À propos";
 "à vérifier" = "à vérifier";
 "Écrire à cette session…" = "Écrire à cette session…";

@@ -13,13 +13,29 @@ import WidgetKit
 /// dans le conteneur partagé App Group.
 extension ModeleApp {
 
+  /// Un lien de widget. Les URL d'appairage (`dshremote://<machine>/…`) sont ignorées.
+  public func recevoirLien(_ url: URL) {
+    switch LienWidget.lire(url) {
+    case let .session(identifiant):
+      pageServeurDemandee = false
+      sessionDemandeeParLien = identifiant
+    case .serveur:
+      sessionDemandeeParLien = nil
+      pageServeurDemandee = true
+    case nil:
+      break
+    }
+  }
+
+
   // MARK: - L'instantané du widget
 
   /// Actualise l'instantané partagé avec le widget et synchronise les Live Activities.
   public func actualiserInstantaneWidget() {
     let actives = sessions.filter { $0.vivante == true || $0.statut != nil }
     let auTravail = sessions.filter { $0.statut == "en_cours" }
-    let derniere = sessions.first { $0.statut == "en_cours" } ?? sessions.first
+    let sessionAuTravail = auTravail.first
+    let derniere = sessionAuTravail ?? sessions.first
 
     let sommaireDerniere: SommaireSessionWidget?
     if let derniere {
@@ -60,9 +76,10 @@ extension ModeleApp {
 
     // Synchronisation de la Live Activity (Dynamic Island / écran verrouillé)
     GestionnaireActivitesLive.shared.synchroniser(
-      session: derniere,
+      session: sessionAuTravail,
       nomServeur: nomServeur ?? (adresse.isEmpty ? "DSH" : adresse),
-      derniereEtape: sommaireDerniere?.derniereEtape
+      derniereEtape: sessionAuTravail == nil ? nil : sommaireDerniere?.derniereEtape,
+      horodatageEtape: ReleveDActivite.horodatage(modifieLe: sessionAuTravail?.modifieLe)
     )
   }
 }

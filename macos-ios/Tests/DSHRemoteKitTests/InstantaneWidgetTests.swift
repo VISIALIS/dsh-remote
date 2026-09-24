@@ -39,6 +39,42 @@ struct InstantaneWidgetTests {
   }
 
   @Test
+  func fraicheurEtLiens() {
+    let naissance = Date(timeIntervalSince1970: 1_000_000)
+    let instantane = InstantaneWidget(
+      dateMiseAJour: naissance,
+      nomServeur: "Mac",
+      adresseServeur: "127.0.0.1",
+      estConnecte: true,
+      nombreSessionsActives: 1,
+      nombreSessionsAuTravail: 0
+    )
+    #expect(instantane.estFrais(a: naissance.addingTimeInterval(59)))
+    #expect(!instantane.estFrais(a: naissance.addingTimeInterval(60)))
+
+    #expect(LienWidget.lire(URL(string: "dshremote://session/sess-42")!) == .session("sess-42"))
+    #expect(LienWidget.lire(URL(string: "dshremote://serveur")!) == .serveur)
+    #expect(LienWidget.lire(URL(string: "dshremote://mac.exemple.test/code/v1/CODEFICTIF")!) == nil)
+    #expect(LienWidget.session("sess-42").url?.absoluteString == "dshremote://session/sess-42")
+  }
+
+  @Test
+  @MainActor
+  func lienRetenuJusquALaListe() {
+    let modele = modeleDeTest()
+    modele.recevoirLien(URL(string: "dshremote://session/sess-42")!)
+    #expect(modele.sessionDemandeeParLien == "sess-42")
+    #expect(!modele.pageServeurDemandee)
+
+    modele.recevoirLien(URL(string: "dshremote://serveur")!)
+    #expect(modele.sessionDemandeeParLien == nil)
+    #expect(modele.pageServeurDemandee)
+
+    modele.recevoirLien(URL(string: "dshremote://mac.exemple.test/jeton/v1/JETONFICTIF")!)
+    #expect(modele.pageServeurDemandee)
+  }
+
+  @Test
   func persistanceInstantaneIsolee() {
     let nomSuite = "test-widget-\(UUID().uuidString)"
     guard let suite = UserDefaults(suiteName: nomSuite) else {

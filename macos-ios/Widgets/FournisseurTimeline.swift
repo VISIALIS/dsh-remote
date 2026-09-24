@@ -27,12 +27,16 @@ public struct FournisseurTimeline: TimelineProvider {
 
   public func getTimeline(in context: Context, completion: @escaping (Timeline<EntreeWidget>) -> Void) {
     let instantane = persistance.lireInstantaneWidget() ?? .vide
-    let entree = EntreeWidget(date: Date(), instantane: instantane)
-
-    // Rechargement planifié dans 15 minutes en cas d'inactivité de l'app
-    let dateProchainRechargement = Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
-    let timeline = Timeline(entries: [entree], policy: .after(dateProchainRechargement))
-    completion(timeline)
+    let maintenant = Date()
+    var entrees = [EntreeWidget(date: maintenant, instantane: instantane)]
+    // Deuxième entrée au moment où l'instantané devient ancien : la pastille
+    // passe au gris sans attendre que le système relance l'extension.
+    let bascule = instantane.dateMiseAJour.addingTimeInterval(InstantaneWidget.dureeDeFraicheur)
+    if bascule > maintenant {
+      entrees.append(EntreeWidget(date: bascule, instantane: instantane))
+    }
+    let prochaine = bascule > maintenant ? bascule : maintenant.addingTimeInterval(15 * 60)
+    completion(Timeline(entries: entrees, policy: .after(prochaine)))
   }
 }
 

@@ -211,6 +211,25 @@ public struct VuePrincipale: View {
   ///
   /// ELLE NE FAIT RIEN SANS L'ARGUMENT, ni si une session est déjà ouverte : une
   /// ancre de vérification ne doit jamais écraser un choix de l'utilisateur.
+  /// Ouvre la session nommée par un widget, dès que la liste la contient.
+  private func appliquerLienDeSession() {
+    guard let demande = modele.sessionDemandeeParLien else { return }
+    guard let trouvee = modele.sessions.first(where: { $0.id == demande }) else { return }
+    ajoutOuvert = false
+    sessionSelectionnee = trouvee
+    modele.sessionDemandeeParLien = nil
+  }
+
+  /// Ouvre la page de la machine visée, demandée par le petit widget.
+  private func appliquerLienServeur() {
+    guard modele.pageServeurDemandee else { return }
+    guard let serveur = modele.serveurChoisi ?? modele.serveursAffiches.first else { return }
+    ajoutOuvert = false
+    sessionSelectionnee = nil
+    modele.ouvrirPage(serveur)
+    modele.pageServeurDemandee = false
+  }
+
   private func ouvrirSessionDemandee() {
     guard sessionSelectionnee == nil, let demande = VuePrincipale.sessionDemandee else { return }
     guard
@@ -398,6 +417,16 @@ public struct VuePrincipale: View {
     // pire que pas d'ancre du tout.
     .onChange(of: modele.sessionsFiltrees) { _, _ in
       ouvrirSessionDemandee()
+      appliquerLienDeSession()
+    }
+    .onChange(of: modele.sessionDemandeeParLien, initial: true) { _, _ in
+      appliquerLienDeSession()
+    }
+    .onChange(of: modele.pageServeurDemandee, initial: true) { _, _ in
+      appliquerLienServeur()
+    }
+    .onChange(of: modele.serveurs) { _, _ in
+      appliquerLienServeur()
     }
     // ── UNE ERREUR N'OUVRE PLUS LA PAGE, ET C'EST LA SECONDE FOIS ──────────
     //

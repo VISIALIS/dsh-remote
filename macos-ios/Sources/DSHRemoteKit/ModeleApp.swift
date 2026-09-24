@@ -50,6 +50,13 @@ public final class ModeleApp {
   var cleJetonChargee: String?
 
   public private(set) var sessions: [SessionListee] = []
+
+  /// Session demandée par `dshremote://session/…`, gardée jusqu'à ce que la liste
+  /// la contienne. Un lien reçu au lancement arrive avant la première liste.
+  public var sessionDemandeeParLien: String?
+
+  /// `dshremote://serveur` : ouvrir la page de la machine visée, dès qu'elle est connue.
+  public var pageServeurDemandee = false
   public internal(set) var journal: [EvenementAffiche] = []
   public internal(set) var sessionOuverte: ResumeSession?
   /// Une opération est en cours — un fait d'INTERFACE, pas de connexion : lire

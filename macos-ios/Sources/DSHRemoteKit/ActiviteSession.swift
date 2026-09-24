@@ -1,5 +1,26 @@
 import Foundation
 
+/// Décide si un relevé de Live Activity change vraiment l'affichage.
+///
+/// L'horloge montrée est celle du journal (`modifieLe`), pas l'instant du
+/// rafraîchissement de la liste : sinon « il y a… » retombe à zéro à chaque
+/// lecture, alors que l'étape n'a pas bougé.
+enum ReleveDActivite {
+  static var peremption: TimeInterval { InstantaneWidget.dureeDeFraicheur }
+
+  static func horodatage(modifieLe: Double?) -> Date {
+    guard let modifieLe else { return Date() }
+    return Date(timeIntervalSince1970: modifieLe)
+  }
+
+  static func aChange(
+    etape: String?, depuis etapeActuelle: String?, horodatage: Date, depuis horodatageActuel: Date
+  ) -> Bool {
+    if etape != etapeActuelle { return true }
+    return abs(horodatage.timeIntervalSince(horodatageActuel)) >= 1
+  }
+}
+
 #if canImport(ActivityKit) && os(iOS)
 @preconcurrency import ActivityKit
 
@@ -57,7 +78,8 @@ public final class GestionnaireActivitesLive {
   public func synchroniser(
     session: SessionListee?,
     nomServeur: String,
-    derniereEtape: String? = nil
+    derniereEtape: String? = nil,
+    horodatageEtape: Date = Date()
   ) {
     guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
@@ -66,15 +88,25 @@ public final class GestionnaireActivitesLive {
       return
     }
 
+    let peremption = Date().addingTimeInterval(ReleveDActivite.peremption)
     let nouvelEtat = ActiviteSessionAttributes.ContentState(
       statut: "en_cours",
       derniereEtape: derniereEtape,
-      horodatageEtape: Date()
+      horodatageEtape: horodatageEtape
     )
 
     if let existante = activiteEnCours, existante.attributes.sessionId == session.id {
+      let actuel = existante.content.state
+      // L'application est encore là : on repousse la péremption. L'horloge ne
+      // bouge que si l'étape ou la date du journal a changé.
+      let etat = ReleveDActivite.aChange(
+        etape: derniereEtape,
+        depuis: actuel.derniereEtape,
+        horodatage: horodatageEtape,
+        depuis: actuel.horodatageEtape
+      ) ? nouvelEtat : actuel
       Task {
-        await existante.update(ActivityContent(state: nouvelEtat, staleDate: nil))
+        await existante.update(ActivityContent(state: etat, staleDate: peremption))
       }
     } else {
       arreter()
@@ -87,7 +119,7 @@ public final class GestionnaireActivitesLive {
       do {
         activiteEnCours = try Activity.request(
           attributes: attributs,
-          content: ActivityContent(state: nouvelEtat, staleDate: nil)
+          content: ActivityContent(state: nouvelEtat, staleDate: peremption)
         )
       } catch {
         // En cas de refus système ou quota dépassé, on continue sans bloquer l'app.
@@ -106,7 +138,7 @@ public final class GestionnaireActivitesLive {
         horodatageEtape: Date()
       )
       await activite.end(
-        ActivityContent(state: etatFinal, staleDate: nil),
+        ActivityContent(state: etatFinal, staleDate: Date().addingTimeInterval(3)),
         dismissalPolicy: .after(Date().addingTimeInterval(3))
       )
     }
@@ -118,7 +150,11 @@ public final class GestionnaireActivitesLive {
 public final class GestionnaireActivitesLive {
   public static let shared = GestionnaireActivitesLive()
   public init() {}
-  public func synchroniser(session: SessionListee?, nomServeur: String, derniereEtape: String? = nil) {}
+  public func synchroniser(
+    session: SessionListee?, nomServeur: String, derniereEtape: String? = nil, horodatageEtape: Date = Date()
+  ) {
+    _ = (session, nomServeur, derniereEtape, horodatageEtape)
+  }
   public func arreter() {}
 }
 #endif

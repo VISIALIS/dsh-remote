@@ -34,7 +34,7 @@ struct AppDSHRemoteIOS: App {
     WindowGroup {
       VuePrincipale(modele: modele)
         .onOpenURL { url in
-          traiterURL(url)
+          modele.recevoirLien(url)
         }
     }
     // `initial: true` est nécessaire : la première valeur de `phase` est
@@ -46,17 +46,6 @@ struct AppDSHRemoteIOS: App {
     }
   }
 
-  /// Traite les liens profonds dshremote:// émis notamment par les widgets.
-  private func traiterURL(_ url: URL) {
-    guard url.scheme == "dshremote" else { return }
-    if url.host == "session" {
-      let identifiant = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-      guard !identifiant.isEmpty else { return }
-      Task {
-        await modele.ouvrirSession(identifiant: identifiant)
-      }
-    }
-  }
 }
 
 /// Active ou relâche le verrou d'écran, sur iOS seulement.

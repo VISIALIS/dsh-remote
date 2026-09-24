@@ -105,6 +105,17 @@ public struct Persistance {
   public static let nomDuDiagnostic = "diagnostic.json"
   public static let identifiantGroupeAppParDefaut = "group.org.example.DSHRemote"
 
+  /// Identifiant du groupe App résolu dynamiquement depuis le Info.plist (xcconfig) ou repli par défaut.
+  public static var groupeAppActif: String {
+    if let specifie = Bundle.main.object(forInfoDictionaryKey: "DSHAppGroup") as? String,
+      !specifie.isEmpty,
+      !specifie.hasPrefix("$(")
+    {
+      return specifie
+    }
+    return identifiantGroupeAppParDefaut
+  }
+
   private let defaults: UserDefaults
   private let appGroupDefaults: UserDefaults?
   private let documents: URL?
@@ -116,7 +127,7 @@ public struct Persistance {
   ///     contexte sans conteneur — l'écriture est alors simplement ignorée).
   public init(
     defaults: UserDefaults = .standard,
-    appGroupDefaults: UserDefaults? = UserDefaults(suiteName: Persistance.identifiantGroupeAppParDefaut),
+    appGroupDefaults: UserDefaults? = UserDefaults(suiteName: Persistance.groupeAppActif),
     documents: URL? = Persistance.documentsParDefaut
   ) {
     self.defaults = defaults

@@ -92,8 +92,55 @@ public struct SommaireSessionWidget: Codable, Sendable, Equatable {
     self.dateDerniereActivite = dateDerniereActivite
   }
 
-  /// URL de lien profond pour ouvrir directement cette session dans l'app
+  /// URL de lien profond pour ouvrir directement cette session dans l'app.
   public var urlDeepLink: URL? {
-    URL(string: "dshremote://session/\(identifiant)")
+    LienWidget.session(identifiant).url
+  }
+}
+
+/// Un instantané plus vieux que ça ne dit plus l'état présent : l'application
+/// relit la liste au plus toutes les 15 secondes tant qu'elle tourne.
+extension InstantaneWidget {
+  public static let dureeDeFraicheur: TimeInterval = 60
+
+  /// `date` est l'instant où le widget affiche cet instantané.
+  public func estFrais(a date: Date) -> Bool {
+    date.timeIntervalSince(dateMiseAJour) < Self.dureeDeFraicheur
+  }
+}
+
+/// Lien ouvert par un widget. Le schéma `dshremote` sert aussi à l'appairage :
+/// tout hôte autre que `session` ou `serveur` est ignoré.
+public enum LienWidget: Equatable, Sendable {
+  case session(String)
+  case serveur
+
+  public var url: URL? {
+    var composants = URLComponents()
+    composants.scheme = "dshremote"
+    switch self {
+    case let .session(identifiant):
+      guard !identifiant.isEmpty else { return nil }
+      composants.host = "session"
+      composants.path = "/" + identifiant
+    case .serveur:
+      composants.host = "serveur"
+    }
+    return composants.url
+  }
+
+  public static func lire(_ url: URL) -> LienWidget? {
+    guard url.scheme?.lowercased() == "dshremote" else { return nil }
+    switch url.host?.lowercased() {
+    case "session":
+      let brut = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+      let identifiant = brut.removingPercentEncoding ?? brut
+      guard !identifiant.isEmpty else { return nil }
+      return .session(identifiant)
+    case "serveur":
+      return .serveur
+    default:
+      return nil
+    }
   }
 }

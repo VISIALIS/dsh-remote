@@ -10,7 +10,7 @@ public struct DSHRemoteWidget: Widget {
 
   public var body: some WidgetConfiguration {
     StaticConfiguration(kind: Self.genre, provider: FournisseurTimeline()) { entree in
-      VueConteneurWidget(instantane: entree.instantane)
+      VueConteneurWidget(instantane: entree.instantane, dateAffichee: entree.date)
     }
     .configurationDisplayName(L("DSH Remote"))
     .description(L("Affiche l'état du serveur DeepSeek Harness et les sessions en cours."))
@@ -23,14 +23,15 @@ public struct DSHRemoteWidget: Widget {
 struct VueConteneurWidget: View {
   @Environment(\.widgetFamily) var famille
   let instantane: InstantaneWidget
+  let dateAffichee: Date
 
   var body: some View {
     Group {
       switch famille {
       case .systemMedium:
-        VueWidgetMedium(instantane: instantane)
+        VueWidgetMedium(instantane: instantane, dateAffichee: dateAffichee)
       default:
-        VueWidgetSmall(instantane: instantane)
+        VueWidgetSmall(instantane: instantane, dateAffichee: dateAffichee)
       }
     }
     .containerBackground(for: .widget) {

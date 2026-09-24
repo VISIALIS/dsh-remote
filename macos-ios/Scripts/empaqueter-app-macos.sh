@@ -98,6 +98,32 @@ fi
 # Assemble le paquet d'extension WidgetKit pour macOS dans `Contents/PlugIns/`.
 # Permet au Centre de Notifications et au Bureau de macOS de proposer les
 # widgets DSH Remote (formats Small et Medium).
+# Le groupe est celui du xcconfig local s'il existe, sinon le placeholder du
+# dépôt. On ne l'écrit pas dans le journal : un groupe personnel n'a pas à y
+# figurer (RÈGLE #0).
+groupe_app="group.org.example.DSHRemote"
+if [[ -f "$racine/Config/Local.xcconfig" ]]; then
+  lu="$(sed -n 's/^[[:space:]]*DSH_APP_GROUP[[:space:]]*=[[:space:]]*//p' "$racine/Config/Local.xcconfig" | head -1)"
+  lu="${lu%%#*}"
+  lu="$(printf '%s' "$lu" | tr -d '[:space:]')"
+  if [[ "$lu" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    groupe_app="$lu"
+  fi
+fi
+entitlements_groupe="$(mktemp)"
+cat >"$entitlements_groupe" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>${groupe_app}</string>
+  </array>
+</dict>
+</plist>
+EOF
+
 echo "[macos] compilation de l'extension widget (WidgetKit)"
 dir_bin="$(dirname "$binaire")"
 appex="$bundle/Contents/PlugIns/DSHRemoteWidgets.appex"
@@ -120,8 +146,13 @@ cat >"$appex/Contents/Info.plist" <<'PLIST_WIDGET'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleDevelopmentRegion</key><string>fr</string>
+	<key>CFBundleDevelopmentRegion</key><string>en</string>
 	<key>CFBundleDisplayName</key><string>DSH Remote Widgets</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>fr</string>
+	</array>
 	<key>CFBundleExecutable</key><string>DSHRemoteWidgets</string>
 	<key>CFBundleIdentifier</key><string>org.example.DSHRemote.mac.Widgets</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
@@ -130,6 +161,7 @@ cat >"$appex/Contents/Info.plist" <<'PLIST_WIDGET'
 	<key>CFBundleShortVersionString</key><string>0.2</string>
 	<key>CFBundleVersion</key><string>3</string>
 	<key>LSMinimumSystemVersion</key><string>14.0</string>
+	<key>DSHAppGroup</key><string>GROUPE_APP</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionPointIdentifier</key>
@@ -139,11 +171,14 @@ cat >"$appex/Contents/Info.plist" <<'PLIST_WIDGET'
 </plist>
 PLIST_WIDGET
 
+# Le heredoc ci-dessus est quoté : le groupe est posé après, sans l'imprimer.
+sed -i '' "s/GROUPE_APP/${groupe_app}/" "$appex/Contents/Info.plist"
+
 if [[ -d "$ressources" ]]; then
   cp -R "$ressources" "$appex/Contents/Resources/DSHRemote_DSHRemoteKit.bundle"
 fi
 
-codesign --force --sign - "$appex" 2>/dev/null || true
+codesign --force --sign - --entitlements "$entitlements_groupe" "$appex" 2>/dev/null || true
 echo "[macos] extension widget prete : PlugIns/DSHRemoteWidgets.appex"
 
 
@@ -168,27 +203,31 @@ cat >"$bundle/Contents/Info.plist" <<'PLIST'
   <key>CFBundleVersion</key><string>3</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <!--
-    LES LANGUES SERVIES, ET CE N'EST PAS DÉCORATIF.
-
-    Sans ces deux clés, l'application n'annonce AUCUNE langue : le système lui
-    donne alors l'anglais par défaut, et les tables de traduction du paquet
-    répondent en anglais — MESURÉ sur le binaire nu, où l'interface basculait en
-    anglais sans qu'on ait rien demandé. `CFBundleDevelopmentRegion` dit la
-    langue de référence (le français, comme les clés et les commentaires), et
-    `CFBundleLocalizations` déclare les deux langues servies : le système choisit
-    alors celle de l'utilisateur, et retombe sur le français.
+    LES LANGUES SERVIES : l'anglais est la langue principale (en),
+    avec le français (fr) comme langue localisée si c'est la langue de l'OS.
   -->
-  <key>CFBundleDevelopmentRegion</key><string>fr</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key>
   <array>
-    <string>fr</string>
     <string>en</string>
+    <string>fr</string>
   </array>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
+  <key>DSHAppGroup</key><string>GROUPE_APP</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>org.example.DSHRemote</string>
+      <key>CFBundleURLSchemes</key>
+      <array><string>dshremote</string></array>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST
+
+sed -i '' "s/GROUPE_APP/${groupe_app}/" "$bundle/Contents/Info.plist"
 
 # L'EXCEPTION ATS EST INDISPENSABLE ICI, ET ELLE A ÉTÉ OUBLIÉE.
 #
@@ -246,8 +285,9 @@ fi
 # Signature ad hoc : sans elle, macOS traite le paquet comme non signé et
 # redemande une autorisation à chaque lancement. Ce n'est PAS une signature de
 # distribution — elle ne vaut que pour cette machine.
-codesign --force --sign - "$bundle" 2>/dev/null || \
+codesign --force --sign - --entitlements "$entitlements_groupe" "$bundle" 2>/dev/null || \
   echo "[macos] signature ad hoc impossible ; le paquet fonctionne quand meme"
+rm -f "$entitlements_groupe"
 
 # Le cache d'icônes de macOS garde l'ancienne image d'un paquet réécrit : sans
 # cette invalidation, on croit que la nouvelle icône n'a pas été prise.

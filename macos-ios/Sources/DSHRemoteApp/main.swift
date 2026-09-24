@@ -77,12 +77,7 @@ struct DSHRemoteMac: App {
       VuePrincipale(modele: modele)
         .frame(minWidth: 900, minHeight: 600)
         .onOpenURL { url in
-          guard url.scheme == "dshremote", url.host == "session" else { return }
-          let identifiant = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-          guard !identifiant.isEmpty else { return }
-          Task {
-            await modele.ouvrirSession(identifiant: identifiant)
-          }
+          modele.recevoirLien(url)
         }
     }
     .defaultSize(width: 1100, height: 720)

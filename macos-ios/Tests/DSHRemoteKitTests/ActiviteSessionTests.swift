@@ -33,6 +33,16 @@ struct ActiviteSessionTests {
   }
 
   @Test
+  func lHorlogeNeRepartPasSiRienNAChange() {
+    let ancre = Date(timeIntervalSince1970: 1_700_000_000)
+    #expect(ReleveDActivite.horodatage(modifieLe: 1_700_000_000) == ancre)
+    #expect(!ReleveDActivite.aChange(etape: "tour en cours", depuis: "tour en cours", horodatage: ancre, depuis: ancre))
+    #expect(ReleveDActivite.aChange(etape: "lecture", depuis: "tour en cours", horodatage: ancre, depuis: ancre))
+    #expect(ReleveDActivite.aChange(
+      etape: "tour en cours", depuis: "tour en cours", horodatage: ancre.addingTimeInterval(2), depuis: ancre))
+  }
+
+  @Test
   func regleZeroAucunSecretDansLActivite() {
     let json = """
     {
