@@ -1,0 +1,5 @@
+/* Nom de l'application affiché sur l'écran d'accueil */
+"CFBundleDisplayName" = "DSH Remote";
+
+/* Description de l'autorisation d'accès à la caméra pour le scan QR */
+"NSCameraUsageDescription" = "Pour scanner le QR code d'appairage affiché par DSH sur votre Mac. Aucune image n'est enregistrée ni transmise.";

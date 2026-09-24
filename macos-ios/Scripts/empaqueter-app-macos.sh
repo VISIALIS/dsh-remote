@@ -48,7 +48,11 @@ echo "[macos] generation de l'icone"
 # peut pas juger est un diff qu'on apprend à ignorer — et le jour où l'icône change
 # vraiment, on ne le voit plus. Le catalogue iOS se régénère donc explicitement,
 # quand l'icône change, jamais comme effet de bord d'une compilation du Mac.
-python3 "$racine/Scripts/generer-icone.py" --icns-seul --icns "$icns" >/dev/null
+python_cmd="python3"
+if ! "$python_cmd" -c "import PIL" >/dev/null 2>&1 && /usr/bin/python3 -c "import PIL" >/dev/null 2>&1; then
+  python_cmd="/usr/bin/python3"
+fi
+"$python_cmd" "$racine/Scripts/generer-icone.py" --icns-seul --icns "$icns" >/dev/null
 
 echo "[macos] assemblage du paquet"
 rm -rf "$bundle"
@@ -88,6 +92,60 @@ else
   echo "[macos] ATTENTION : paquet de ressources introuvable ($ressources)" >&2
   echo "[macos]   l'application s'affichera en francais seulement (repli sur les cles)" >&2
 fi
+
+# ── L'EXTENSION WIDGETKIT (macOS) ─────────────────────────────────────────────
+#
+# Assemble le paquet d'extension WidgetKit pour macOS dans `Contents/PlugIns/`.
+# Permet au Centre de Notifications et au Bureau de macOS de proposer les
+# widgets DSH Remote (formats Small et Medium).
+echo "[macos] compilation de l'extension widget (WidgetKit)"
+dir_bin="$(dirname "$binaire")"
+appex="$bundle/Contents/PlugIns/DSHRemoteWidgets.appex"
+mkdir -p "$appex/Contents/MacOS" "$appex/Contents/Resources"
+
+arch="$(uname -m)"
+swiftc \
+  -target "${arch}-apple-macos14.0" \
+  -I "$dir_bin" \
+  -L "$dir_bin" \
+  -lDSHRemoteKit \
+  -framework WidgetKit -framework SwiftUI \
+  "$racine/Widgets/DSHRemoteWidgetsBundle.swift" \
+  "$racine/Widgets/DSHRemoteWidget.swift" \
+  "$racine/Widgets/FournisseurTimeline.swift" \
+  -o "$appex/Contents/MacOS/DSHRemoteWidgets"
+
+cat >"$appex/Contents/Info.plist" <<'PLIST_WIDGET'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key><string>fr</string>
+	<key>CFBundleDisplayName</key><string>DSH Remote Widgets</string>
+	<key>CFBundleExecutable</key><string>DSHRemoteWidgets</string>
+	<key>CFBundleIdentifier</key><string>org.example.DSHRemote.mac.Widgets</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>CFBundleName</key><string>DSHRemoteWidgets</string>
+	<key>CFBundlePackageType</key><string>XPC!</string>
+	<key>CFBundleShortVersionString</key><string>0.2</string>
+	<key>CFBundleVersion</key><string>3</string>
+	<key>LSMinimumSystemVersion</key><string>14.0</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.widgetkit-extension</string>
+	</dict>
+</dict>
+</plist>
+PLIST_WIDGET
+
+if [[ -d "$ressources" ]]; then
+  cp -R "$ressources" "$appex/Contents/Resources/DSHRemote_DSHRemoteKit.bundle"
+fi
+
+codesign --force --sign - "$appex" 2>/dev/null || true
+echo "[macos] extension widget prete : PlugIns/DSHRemoteWidgets.appex"
+
 
 # Info.plist minimal, mais pas décoratif :
 #   - `CFBundleIconFile` est ce qui donne une icône dans le Dock ;

@@ -61,3 +61,28 @@ func cleAbsente() {
   #expect(Traduction.texte("cette clé n'existe pas", langue: "fr") == nil)
   #expect(Traduction.texte("Ajouter", langue: "xx") == nil)
 }
+
+@Test("Les fichiers InfoPlist.strings portent les mêmes clés et sont non vides")
+func infoPlistStringsParite() throws {
+  let racineApp = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .appendingPathComponent("App")
+  let frUrl = racineApp.appendingPathComponent("fr.lproj/InfoPlist.strings")
+  let enUrl = racineApp.appendingPathComponent("en.lproj/InfoPlist.strings")
+  guard FileManager.default.fileExists(atPath: frUrl.path),
+        FileManager.default.fileExists(atPath: enUrl.path) else {
+    return
+  }
+  let frDict = try #require(NSDictionary(contentsOf: frUrl) as? [String: String])
+  let enDict = try #require(NSDictionary(contentsOf: enUrl) as? [String: String])
+  #expect(!frDict.isEmpty)
+  #expect(Set(frDict.keys) == Set(enDict.keys))
+  for (_, val) in frDict {
+    #expect(!val.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+  }
+  for (_, val) in enDict {
+    #expect(!val.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+  }
+}
+

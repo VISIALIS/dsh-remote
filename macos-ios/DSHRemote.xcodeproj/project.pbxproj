@@ -17,6 +17,7 @@
 		A1000000000000000000050 /* DSHRemoteKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000004 /* DSHRemoteKit */; };
 		A1000000000000000000059 /* DSHRemoteWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1000000000000000000049 /* DSHRemoteWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A1000000000000000000064 /* ActiviteSessionWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000065 /* ActiviteSessionWidget.swift */; };
+		A1000000000000000000066 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000067 /* InfoPlist.strings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +59,8 @@
 		A1000000000000000000062 /* DSHRemote.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DSHRemote.entitlements; sourceTree = "<group>"; };
 		A1000000000000000000063 /* DSHRemoteWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DSHRemoteWidgets.entitlements; sourceTree = "<group>"; };
 		A1000000000000000000065 /* ActiviteSessionWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiviteSessionWidget.swift; sourceTree = "<group>"; };
+		A1000000000000000000068 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		A1000000000000000000069 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -97,6 +100,7 @@
 				A1000000000000000000007 /* Info.plist */,
 				A1000000000000000000030 /* Assets.xcassets */,
 				A1000000000000000000034 /* PrivacyInfo.xcprivacy */,
+				A1000000000000000000067 /* InfoPlist.strings */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -226,6 +230,7 @@
 			files = (
 				A1000000000000000000031 /* Assets.xcassets in Resources */,
 				A1000000000000000000035 /* PrivacyInfo.xcprivacy in Resources */,
+				A1000000000000000000066 /* InfoPlist.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -237,6 +242,18 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		A1000000000000000000067 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				A1000000000000000000068 /* fr */,
+				A1000000000000000000069 /* en */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		A1000000000000000000025 /* Exception ATS */ = {

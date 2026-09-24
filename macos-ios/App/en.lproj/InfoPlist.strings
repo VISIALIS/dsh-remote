@@ -1,0 +1,5 @@
+/* Application display name on Home screen */
+"CFBundleDisplayName" = "DSH Remote";
+
+/* Permission description for camera access to scan pairing QR code */
+"NSCameraUsageDescription" = "To scan the pairing QR code displayed by DSH on your Mac. No images are saved or transmitted.";

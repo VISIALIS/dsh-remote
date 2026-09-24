@@ -2092,8 +2092,8 @@ différent.
 dans `App/Info.plist` : sans cette clé, iOS **termine** l'application à l'ouverture du
 scanner — un plantage, pas un refus, et il ne se voit qu'à l'usage. Aucune image n'est
 enregistrée, analysée ni transmise : seul le **texte** lu est analysé, par
-`Appairage.analyser`. **Limite assumée** : cette phrase est en français seulement, la
-traduire demanderait un `InfoPlist.strings` qui n'existe pas encore.
+`Appairage.analyser`. La description est localisée en français et en anglais
+via `InfoPlist.strings` dans le paquet d'application.
 
 **Sur simulateur, il n'y a pas de caméra**, et l'application le dit au lieu d'afficher
 un écran noir : la vue annonce « Caméra indisponible » et renvoie au collage, qui fait
@@ -2821,12 +2821,14 @@ Pour suivre l'avancement d'un tour sans garder l'application au premier plan :
   * *Expanded* : vue enrichie avec identifiant de machine, projet, chronomètre relatif et
     libellé de la dernière étape exécutée.
 
-### 4. Configuration Xcode et Entitlements
+### 4. Configuration Xcode, Empaquetage macOS et Entitlements
 
-* **Cible Xcode dédiée** : `DSHRemoteWidgets` déclarée dans `DSHRemote.xcodeproj` avec type
+* **Cible Xcode iOS dédiée** : `DSHRemoteWidgets` déclarée dans `DSHRemote.xcodeproj` avec type
   `com.apple.product-type.app-extension`, liée à la bibliothèque locale `DSHRemoteKit`.
-* **Incorporation** : phase *Embed Foundation Extensions* incorporant le paquet
+* **Incorporation iOS** : phase *Embed Foundation Extensions* incorporant le paquet
   `PlugIns/DSHRemoteWidgets.appex` au sein de `DSHRemote.app`.
+* **Incorporation macOS** : compilation directe de l'extension WidgetKit et assemblage dans
+  `Contents/PlugIns/DSHRemoteWidgets.appex` au sein de `DSH Remote.app` via [`Scripts/empaqueter-app-macos.sh`](Scripts/empaqueter-app-macos.sh).
 * **Entitlements** : `com.apple.security.application-groups` configuré sur `group.org.example.DSHRemote`
   pour l'application ([`DSHRemote.entitlements`](Config/DSHRemote.entitlements)) et l'extension
   ([`DSHRemoteWidgets.entitlements`](Config/DSHRemoteWidgets.entitlements)).
@@ -3506,5 +3508,5 @@ rallumerait tout seul une seconde plus tard.
 | **La suite de tests ne touche plus aux préférences de la machine** | 33 tests construisaient `ModeleApp()` sur le domaine partagé ; ils sont tous isolés. Mesure : **12 échecs sur 15 exécutions** avant, **0 sur 20** après |
 | **L'instantané du widget est sécurisé (RÈGLE #0)** | 2 tests (`InstantaneWidgetTests`) : encodage/décodage de l'instantané pur, aucune clé secrète ni jeton présent dans la structure, effacement garanti par `toutOublier()` |
 | **Le widget ouvre directement la session visée** | validation sur simulateur iOS via `xcrun simctl openurl booted "dshremote://session/..."` : l'URL est interceptée par `.onOpenURL` et la session ouverte immédiatement |
-| **L'extension WidgetKit est incorporée dans le paquet** | vérifié dans `DSHRemote.app` : présence de `PlugIns/DSHRemoteWidgets.appex` dans le bundle de l'application |
+| **L'extension WidgetKit est incorporée dans les paquets** | vérifié dans `DSHRemote.app` (iOS, via Xcode) et `DSH Remote.app` (macOS, via `empaqueter-app-macos.sh`) : présence de `PlugIns/DSHRemoteWidgets.appex` dans les deux bundles |
 | **Les Live Activities et la Dynamic Island suivent l'agent** | 2 tests (`ActiviteSessionTests`) : cycle de vie `GestionnaireActivitesLive`, démarrage à l'activation d'un tour et dissipation propre à l'arrêt, absence de secret dans les attributs |
