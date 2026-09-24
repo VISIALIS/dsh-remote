@@ -15,20 +15,30 @@ public struct DSHRemoteWidget: Widget {
     .configurationDisplayName(L("DSH Remote"))
     .description(L("Affiche l'état du serveur DeepSeek Harness et les sessions en cours."))
     .supportedFamilies([.systemSmall, .systemMedium])
+    .contentMarginsDisabled()
   }
 }
 
-/// Vue conteneur aiguillant vers la taille appropriée.
+/// Vue conteneur aiguillant vers la taille appropriée et posant le fond de conteneur.
 struct VueConteneurWidget: View {
   @Environment(\.widgetFamily) var famille
   let instantane: InstantaneWidget
 
   var body: some View {
-    switch famille {
-    case .systemMedium:
-      VueWidgetMedium(instantane: instantane)
-    default:
-      VueWidgetSmall(instantane: instantane)
+    Group {
+      switch famille {
+      case .systemMedium:
+        VueWidgetMedium(instantane: instantane)
+      default:
+        VueWidgetSmall(instantane: instantane)
+      }
+    }
+    .containerBackground(for: .widget) {
+      #if os(macOS)
+      Color(nsColor: .windowBackgroundColor)
+      #else
+      Color(uiColor: .systemBackground)
+      #endif
     }
   }
 }
