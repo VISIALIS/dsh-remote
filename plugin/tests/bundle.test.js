@@ -222,8 +222,12 @@ test('le compte a rebours du panneau se lit en clair', () => {
   // (« expire dans 0 s ») transformeraient un avertissement en décoration.
   const { dureeLisible } = moduleClient.essai
   assert.equal(typeof dureeLisible, 'function')
-  assert.equal(dureeLisible(0), 'expiré')
-  assert.equal(dureeLisible(-3), 'expiré')
+  const expire =
+    typeof navigator !== 'undefined' && String(navigator.language || '').toLowerCase().startsWith('fr')
+      ? 'expiré'
+      : 'expired'
+  assert.equal(dureeLisible(0), expire)
+  assert.equal(dureeLisible(-3), expire)
   assert.equal(dureeLisible(12), '12 s')
   assert.equal(dureeLisible(59), '59 s')
   assert.equal(dureeLisible(60), '1 min 0 s')

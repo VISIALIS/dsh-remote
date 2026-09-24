@@ -47,6 +47,68 @@ window.__ModuleLoader__.load({
       React = null
     }
 
+    // L'anglais est la langue du panneau. Le français n'apparaît que si le
+    // navigateur (donc le système) le demande.
+    const EN_FRANCAIS =
+      typeof navigator !== 'undefined' &&
+      typeof navigator.language === 'string' &&
+      navigator.language.toLowerCase().startsWith('fr')
+    const ANGLAIS = {
+      "code d'appairage": 'pairing code',
+      'expiré': 'expired',
+      'date inconnue': 'unknown date',
+      "Cette page n'a plus de session valide : rechargez l'interface DSH, puis rouvrez ce panneau.":
+        'This page no longer has a valid session: reload the DSH interface, then open this panel again.',
+      'Trop de codes demandés en une minute. Patientez un instant.':
+        'Too many codes requested in one minute. Wait a moment.',
+      "L'hôte n'a pas d'adresse joignable par un autre appareil (":
+        'The host has no address another device can reach (',
+      '). Tailscale est-il connecté sur ce Mac ?': '). Is Tailscale connected on this Mac?',
+      "L'appairage est indisponible : ": 'Pairing is unavailable: ',
+      "L'appairage est indisponible sur cet hôte.": 'Pairing is unavailable on this host.',
+      "L'appairage n'a pas pu aboutir (code ": 'Pairing could not finish (code ',
+      'Cliquer pour copier': 'Click to copy',
+      'Copié': 'Copied',
+      "L'hôte n'a pas répondu : l'interface est-elle toujours connectée ?":
+        'The host did not answer: is the interface still connected?',
+      "L'hôte n'a pas répondu : rien n'a été révoqué.": 'The host did not answer: nothing was revoked.',
+      'Appairer un appareil (QR code)': 'Pair a device (QR code)',
+      'Appairer un appareil': 'Pair a device',
+      'Préparation du code…': 'Preparing the code…',
+      'Ce code a expiré. Il ne servait qu’une fois, et il n’ouvre plus rien.':
+        'This code has expired. It could be used only once, and it no longer opens anything.',
+      'Générez un nouveau code pour appairer un appareil.': 'Generate a new code to pair a device.',
+      'Adresse': 'Address',
+      'Ce code expire dans ': 'This code expires in ',
+      ' et ne sert qu’une fois. Fermez ce panneau après usage.':
+        ' and can be used only once. Close this panel after use.',
+      'non appairé': 'not paired',
+      'écriture': 'write',
+      'lecture': 'read',
+      'Confirmer la révocation': 'Confirm revocation',
+      'Révoquer': 'Revoke',
+      'Aucun appareil appairé': 'No paired device',
+      'Appareils appairés (': 'Paired devices (',
+      'Jeton du terminal': 'Terminal token',
+      "Le jeton du terminal n'est pas un appareil appairé : il est tiré au premier chargement du plugin et affiché UNE fois dans le terminal. L'application sur ce Mac et dsh-remote-ctl s'en servent pour la machine locale. Le révoquer ne le supprime pas vraiment : un jeton neuf sera tiré, et affiché dans le terminal, au prochain démarrage du harness.":
+        'The terminal token is not a paired device: it is drawn the first time the plugin loads and shown ONCE in the terminal. The app on this Mac and dsh-remote-ctl use it for the local machine. Revoking it does not really delete it: a new token will be drawn, and shown in the terminal, the next time the harness starts.',
+      'Révoquer coupe cet appareil seulement : les autres continuent de fonctionner.':
+        'Revoking cuts off this device only: the others keep working.',
+      'Générer un nouveau code': 'Generate a new code',
+      'Nouveau code': 'New code',
+      'Fermer': 'Close',
+      "Texte à coller dans l'application macOS": 'Text to paste into the macOS app',
+      "L'appareil recevra un jeton qui LIT sans écrire : il affichera les sessions sans proposer de composeur.":
+        'The device will receive a token that READS without writing: it will show sessions without a composer.',
+      "L'appareil recevra un jeton qui autorise AUSSI À ÉCRIRE dans vos sessions.":
+        'The device will receive a token that ALSO ALLOWS WRITING in your sessions.',
+      "Le code est trop long pour être dessiné. Copiez le texte ci-dessous dans l'application.":
+        'The code is too long to draw. Copy the text below into the app.',
+      "Scannez ce code avec l'application DSH Remote (Ajouter un serveur → Scanner le QR code).":
+        'Scan this code with the DSH Remote app (Add a server → Scan the QR code).',
+    }
+    const t = (francais) => (EN_FRANCAIS ? francais : ANGLAIS[francais] !== undefined ? ANGLAIS[francais] : francais)
+
     // ── L'ENCODEUR QR ────────────────────────────────────────────────────────
     //
     // REPRIS TEL QUEL de `share-qr`, où il était éprouvé (vecteurs normatifs, et
@@ -492,7 +554,7 @@ function encodeQr(text) {
             viewBox: String(-marge) + ' ' + String(-marge) + ' ' + String(cadre) + ' ' + String(cadre),
             shapeRendering: 'crispEdges',
             role: 'img',
-            'aria-label': "code d'appairage",
+            'aria-label': t("code d'appairage"),
           },
           React.createElement('rect', { x: -marge, y: -marge, width: cadre, height: cadre, fill: '#ffffff' }),
           React.createElement('path', { d: morceaux.join(''), fill: '#000000' }),
@@ -502,7 +564,7 @@ function encodeQr(text) {
 
     /** Le temps restant, en clair : « 1 min 47 s », « 12 s », « expiré ». */
     const dureeLisible = (secondes) => {
-      if (!(secondes > 0)) return 'expiré'
+      if (!(secondes > 0)) return t('expiré')
       if (secondes < 60) return String(secondes) + ' s'
       const minutes = Math.floor(secondes / 60)
       const reste = secondes % 60
@@ -510,27 +572,27 @@ function encodeQr(text) {
     }
 
     const dateLisible = (valeur) => {
-      if (!Number.isFinite(valeur)) return 'date inconnue'
+      if (!Number.isFinite(valeur)) return t('date inconnue')
       try {
         return new Date(valeur).toLocaleString()
       } catch (erreur) {
-        return 'date inconnue'
+        return t('date inconnue')
       }
     }
 
     /** Ce qu'on dit à l'utilisateur selon le code HTTP — jamais un code nu. */
     const expliquer = (statut, corps) => {
-      if (statut === 401) return "Cette page n'a plus de session valide : rechargez l'interface DSH, puis rouvrez ce panneau."
-      if (statut === 429) return 'Trop de codes demandés en une minute. Patientez un instant.'
+      if (statut === 401) return t("Cette page n'a plus de session valide : rechargez l'interface DSH, puis rouvrez ce panneau.")
+      if (statut === 429) return t('Trop de codes demandés en une minute. Patientez un instant.')
       if (statut === 503) {
         const detail = corps !== null && typeof corps.detail === 'string' ? corps.detail : ''
         const erreur = corps !== null && typeof corps.erreur === 'string' ? corps.erreur : ''
         if (erreur === 'adresse injoignable') {
-          return "L'hôte n'a pas d'adresse joignable par un autre appareil (" + detail + "). Tailscale est-il connecté sur ce Mac ?"
+          return t("L'hôte n'a pas d'adresse joignable par un autre appareil (") + detail + t('). Tailscale est-il connecté sur ce Mac ?')
         }
-        return detail.length > 0 ? "L'appairage est indisponible : " + detail : "L'appairage est indisponible sur cet hôte."
+        return detail.length > 0 ? t("L'appairage est indisponible : ") + detail : t("L'appairage est indisponible sur cet hôte.")
       }
-      return "L'appairage n'a pas pu aboutir (code " + String(statut) + ")."
+      return t("L'appairage n'a pas pu aboutir (code ") + String(statut) + ').'
     }
 
     const boutonStyle = (principal) => ({
@@ -553,7 +615,7 @@ function encodeQr(text) {
           {
             type: 'button',
             onClick: () => surCopie(valeur),
-            title: 'Cliquer pour copier',
+            title: t('Cliquer pour copier'),
             style: {
               boxSizing: 'border-box',
               width: '100%',
@@ -570,7 +632,7 @@ function encodeQr(text) {
               cursor: 'pointer',
             },
           },
-          copie === valeur ? 'Copié' : valeur,
+          copie === valeur ? t('Copié') : valeur,
         ),
       )
 
@@ -640,7 +702,7 @@ function encodeQr(text) {
           setDonnees(corps)
           setEtat('pret')
         } catch (erreur) {
-          setMessage("L'hôte n'a pas répondu : l'interface est-elle toujours connectée ?")
+          setMessage(t("L'hôte n'a pas répondu : l'interface est-elle toujours connectée ?"))
           setEtat('erreur')
         }
       }
@@ -663,7 +725,7 @@ function encodeQr(text) {
           }
           await chargerAppareils()
         } catch (erreur) {
-          setMessage("L'hôte n'a pas répondu : rien n'a été révoqué.")
+          setMessage(t("L'hôte n'a pas répondu : rien n'a été révoqué."))
         } finally {
           setConfirmation('')
           setRechargement(false)
@@ -732,7 +794,7 @@ function encodeQr(text) {
         {
           type: 'button',
           onClick: ouvrir,
-          title: 'Appairer un appareil (QR code)',
+          title: t('Appairer un appareil (QR code)'),
           style: {
             display: 'inline-flex',
             alignItems: 'center',
@@ -767,13 +829,13 @@ function encodeQr(text) {
         React.createElement(
           'div',
           { key: 'titre', style: { fontSize: '13px', fontWeight: 600, textAlign: 'center', color: COULEURS.texte } },
-          'Appairer un appareil',
+          t('Appairer un appareil'),
         ),
       )
 
       if (etat === 'chargement') {
         contenu.push(
-          React.createElement('div', { key: 'attente', style: { fontSize: '12px', color: COULEURS.discret } }, 'Préparation du code…'),
+          React.createElement('div', { key: 'attente', style: { fontSize: '12px', color: COULEURS.discret } }, t('Préparation du code…')),
         )
       }
 
@@ -835,7 +897,7 @@ function encodeQr(text) {
                   textAlign: 'center',
                 },
               },
-              'Ce code a expiré. Il ne servait qu’une fois, et il n’ouvre plus rien.',
+              t('Ce code a expiré. Il ne servait qu’une fois, et il n’ouvre plus rien.'),
             ),
           )
         } else if (matrice === null) {
@@ -843,7 +905,7 @@ function encodeQr(text) {
             React.createElement(
               'div',
               { key: 'qr-impossible', style: { fontSize: '12px', color: COULEURS.texte } },
-              "Le code est trop long pour être dessiné. Copiez le texte ci-dessous dans l'application.",
+              t("Le code est trop long pour être dessiné. Copiez le texte ci-dessous dans l'application."),
             ),
           )
         } else {
@@ -854,8 +916,8 @@ function encodeQr(text) {
             'div',
             { key: 'consigne', style: { fontSize: '12px', lineHeight: 1.45, textAlign: 'center', color: COULEURS.discret } },
             expire
-              ? 'Générez un nouveau code pour appairer un appareil.'
-              : "Scannez ce code avec l'application DSH Remote (Ajouter un serveur → Scanner le QR code).",
+              ? t('Générez un nouveau code pour appairer un appareil.')
+              : t("Scannez ce code avec l'application DSH Remote (Ajouter un serveur → Scanner le QR code)."),
           ),
         )
         if (!expire) {
@@ -863,8 +925,8 @@ function encodeQr(text) {
             React.createElement(
               'div',
               { key: 'champs', style: { display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' } },
-              ligne('Adresse', donnees.adresse, surCopie, copie),
-              ligne("Texte à coller dans l'application macOS", donnees.charge, surCopie, copie),
+              ligne(t('Adresse'), donnees.adresse, surCopie, copie),
+              ligne(t("Texte à coller dans l'application macOS"), donnees.charge, surCopie, copie),
             ),
           )
           contenu.push(
@@ -884,8 +946,8 @@ function encodeQr(text) {
                 },
               },
               donnees.porteeFuture === 'lecture'
-                ? "L'appareil recevra un jeton qui LIT sans écrire : il affichera les sessions sans proposer de composeur."
-                : "L'appareil recevra un jeton qui autorise AUSSI À ÉCRIRE dans vos sessions.",
+                ? t("L'appareil recevra un jeton qui LIT sans écrire : il affichera les sessions sans proposer de composeur.")
+                : t("L'appareil recevra un jeton qui autorise AUSSI À ÉCRIRE dans vos sessions."),
             ),
           )
           contenu.push(
@@ -904,7 +966,7 @@ function encodeQr(text) {
                   lineHeight: 1.45,
                 },
               },
-              'Ce code expire dans ' + dureeLisible(restant) + ' et ne sert qu’une fois. Fermez ce panneau après usage.',
+              t('Ce code expire dans ') + dureeLisible(restant) + t(' et ne sert qu’une fois. Fermez ce panneau après usage.'),
             ),
           )
         }
@@ -932,7 +994,7 @@ function encodeQr(text) {
       // appareil dont on aurait perdu la trace.
       const ligneAppareil = (appareil) => {
         const enConfirmation = confirmation === appareil.empreinte
-        const quand = appareil.historique === true ? 'non appairé' : dateLisible(appareil.creeLe)
+        const quand = appareil.historique === true ? t('non appairé') : dateLisible(appareil.creeLe)
         return React.createElement(
           'div',
           {
@@ -952,7 +1014,7 @@ function encodeQr(text) {
           React.createElement(
             'span',
             { style: { fontSize: '11px', color: COULEURS.discret } },
-            (appareil.portee === 'ecriture' ? 'écriture' : 'lecture') + ' · ' + quand + ' · ' + appareil.empreinte,
+            (appareil.portee === 'ecriture' ? t('écriture') : t('lecture')) + ' · ' + quand + ' · ' + appareil.empreinte,
           ),
           React.createElement(
             'button',
@@ -965,7 +1027,7 @@ function encodeQr(text) {
               },
               style: { ...boutonStyle(false), alignSelf: 'flex-start', color: enConfirmation ? COULEURS.danger : COULEURS.texte },
             },
-            enConfirmation ? 'Confirmer la révocation' : 'Révoquer',
+            enConfirmation ? t('Confirmer la révocation') : t('Révoquer'),
           ),
         )
       }
@@ -974,7 +1036,7 @@ function encodeQr(text) {
         React.createElement(
           'div',
           { key: 'appareils-titre', style: { fontSize: '11px', fontWeight: 600, color: COULEURS.discret, width: '100%' } },
-          appaires.length === 0 ? 'Aucun appareil appairé' : 'Appareils appairés (' + String(appaires.length) + ')',
+          appaires.length === 0 ? t('Aucun appareil appairé') : t('Appareils appairés (') + String(appaires.length) + ')',
         ),
       )
       for (const appareil of appaires) contenu.push(ligneAppareil(appareil))
@@ -984,7 +1046,7 @@ function encodeQr(text) {
           React.createElement(
             'div',
             { key: 'terminal-titre', style: { fontSize: '11px', fontWeight: 600, color: COULEURS.discret, width: '100%', marginTop: '4px' } },
-            'Jeton du terminal',
+            t('Jeton du terminal'),
           ),
         )
         for (const appareil of duTerminal) contenu.push(ligneAppareil(appareil))
@@ -995,8 +1057,8 @@ function encodeQr(text) {
           'div',
           { key: 'appareils-note', style: { fontSize: '11px', lineHeight: 1.4, color: COULEURS.discret, width: '100%' } },
           duTerminal.length > 0
-            ? "Le jeton du terminal n'est pas un appareil appairé : il est tiré au premier chargement du plugin et affiché UNE fois dans le terminal. L'application sur ce Mac et dsh-remote-ctl s'en servent pour la machine locale. Le révoquer ne le supprime pas vraiment : un jeton neuf sera tiré, et affiché dans le terminal, au prochain démarrage du harness."
-            : 'Révoquer coupe cet appareil seulement : les autres continuent de fonctionner.',
+            ? t("Le jeton du terminal n'est pas un appareil appairé : il est tiré au premier chargement du plugin et affiché UNE fois dans le terminal. L'application sur ce Mac et dsh-remote-ctl s'en servent pour la machine locale. Le révoquer ne le supprime pas vraiment : un jeton neuf sera tiré, et affiché dans le terminal, au prochain démarrage du harness.")
+            : t('Révoquer coupe cet appareil seulement : les autres continuent de fonctionner.'),
         ),
       )
 
@@ -1010,9 +1072,9 @@ function encodeQr(text) {
         React.createElement(
           'button',
           { key: 'regenerer', type: 'button', onClick: frapper, style: boutonStyle(true) },
-          etat === 'pret' && restant <= 0 ? 'Générer un nouveau code' : 'Nouveau code',
+          etat === 'pret' && restant <= 0 ? t('Générer un nouveau code') : t('Nouveau code'),
         ),
-        React.createElement('button', { key: 'fermer', type: 'button', onClick: fermer, style: boutonStyle(false) }, 'Fermer'),
+        React.createElement('button', { key: 'fermer', type: 'button', onClick: fermer, style: boutonStyle(false) }, t('Fermer')),
       ]
       contenu.push(
         React.createElement('div', { key: 'actions', style: { display: 'flex', gap: '8px', marginTop: '2px' } }, actions),
