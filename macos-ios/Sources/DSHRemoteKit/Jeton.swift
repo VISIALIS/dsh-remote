@@ -144,7 +144,9 @@ public struct TrousseauDeLaMachine: GardienDeJetons {
       guard !valeur.isEmpty, let donnees = valeur.data(using: .utf8) else { return }
       var ajout = requete
       ajout[kSecValueData as String] = donnees
-      ajout[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+      // Le widget lit un instantané, pas le jeton : le secret n'a pas à rester
+      // lisible écran verrouillé, ni à suivre une restauration vers un autre appareil.
+      ajout[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
       SecItemAdd(ajout as CFDictionary, nil)
     #endif
   }

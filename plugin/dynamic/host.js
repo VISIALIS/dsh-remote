@@ -58,7 +58,7 @@
 
 import { execFile } from 'node:child_process'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { open, readFile, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
@@ -119,6 +119,19 @@ const PREFIX = '/dsh-remote'
 // LA VERSION DU PROTOCOLE EST EXPORTÉE : c'est un terme du CONTRAT avec le
 // client, et le test de contrat la compare au fixture que le client décode.
 export const VERSION_PROTOCOLE = 1
+
+// Un identifiant de session, tel que DSH les nomme. La même forme sert à la
+// lecture disque et à l'écriture : un segment d'URL n'entre dans
+// `sessionController` que s'il a déjà passé ce filtre.
+const FORME_IDENTIFIANT_SESSION = /^[A-Za-z0-9_-]{1,128}$/
+
+// Fuseau annoncé par le client (`Europe/Paris`, `Etc/GMT+1`). Borné : le champ
+// part vers le harness, et un corps d'un mégaoctet ne doit pas y passer entier.
+const FORME_FUSEAU = /^[A-Za-z0-9_+./-]{1,64}$/
+
+// Flux ouverts par un même jeton. Au-delà, l'upgrade est refusé : chaque flux
+// garde un minuteur et peut relire un journal, dans un processus sans bac à sable.
+export const FLUX_PAR_APPAREIL_MAX = 4
 
 // Bornes de lecture. Un journal de session peut être énorme ; on refuse de
 // décompresser sans limite plutôt que de faire enfler la mémoire du harness.
@@ -225,12 +238,19 @@ import { creerRoutesAppairage } from './routes-appairage.js'
 /**
  * La portée d'un enregistrement de jeton.
  *
- * UN ENREGISTREMENT SANS PORTÉE EST D'AVANT LA PORTÉE : il vaut `ecriture`.
- * Le traiter en lecture seule retirerait silencieusement un droit à son
- * propriétaire — une mise à jour du plugin ne doit pas casser ce qui marchait.
+ * Trois cas, et le troisième est un refus :
+ *   - aucun champ `portee` (jeton d'avant la portée) vaut `ecriture` : le
+ *     traiter en lecture seule retirerait un droit sans le dire ;
+ *   - `lecture` et `ecriture`, exactement, sont les deux valeurs reconnues ;
+ *   - toute autre chaîne vaut `null`. L'appelant ignore alors le jeton. Une
+ *     valeur inconnue qui deviendrait `ecriture` accorderait l'écriture sur
+ *     une faute de frappe dans le coffre.
  */
 export function porteeEnregistree(payload) {
-  return payload?.portee === PORTEE_LECTURE ? PORTEE_LECTURE : PORTEE_ECRITURE
+  const valeur = payload?.portee
+  if (valeur === undefined || valeur === null) return PORTEE_ECRITURE
+  if (valeur === PORTEE_LECTURE || valeur === PORTEE_ECRITURE) return valeur
+  return null
 }
 
 /**
@@ -376,6 +396,9 @@ export function apply(ctx, config) {
     porteeEnregistree,
   })
   const { appareilDe, jetonValide, empreinteDe, ajouter, retirer } = registre
+  // Remplacé plus bas, quand les sockets du flux existent. Vide jusque-là :
+  // aucune requête n'arrive avant la fin de `apply`.
+  let couperLesFluxRevoques = () => {}
 
   // ── Cache des journaux ─────────────────────────────────────────────────────
   // LA POLITIQUE VIT DANS `cache-faits.js` (validité par les marqueurs du fichier,
@@ -677,7 +700,7 @@ export function apply(ctx, config) {
 
   /** Résout l'identifiant demandé en un chemin de journal, sans sortir de la racine. */
   const resoudreJournal = async (identifiant) => {
-    if (typeof identifiant !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(identifiant)) return null
+    if (!FORME_IDENTIFIANT_SESSION.test(identifiant)) return null
     const racine = racineSessions()
     let projets
     try {
@@ -1039,7 +1062,13 @@ export function apply(ctx, config) {
     construire,
     codePlausible,
     ajouter: registre.ajouter,
-    retirer: registre.retirer,
+    retirer: async (empreinte) => {
+      const resultat = await retirer(empreinte)
+      // La mémoire du registre est déjà à jour : les sockets qui portaient ce
+      // jeton se ferment ici, pas au prochain ping.
+      if (resultat.ok === true) couperLesFluxRevoques()
+      return resultat
+    },
     empreinteDe: registre.empreinteDe,
     nomDeLHote,
     GENRE_CODE,
@@ -1055,10 +1084,62 @@ export function apply(ctx, config) {
     revocation: repondreRevocation,
   } = routesAppairage
 
+  /**
+   * Une requête de panneau vient-elle d'un autre site ?
+   *
+   * Le cookie de session est la garde de ces routes. Un navigateur l'attache
+   * aussi à une page tierce si la politique du cookie le permet. `Sec-Fetch-Site`
+   * n'est pas forgeable par une page : `cross-site` est refusé. Sans cet
+   * en-tête, l'`Origin` doit nommer le même hôte que `Host` ou
+   * `X-Forwarded-Host` (le second est celui que pose un relais qui réécrit
+   * `Host` en `127.0.0.1`). Aucun des deux : on refuse, plutôt que d'accepter
+   * une origine qu'on ne peut pas rattacher.
+   */
+  const origineDuPanneauRefusee = (req) => {
+    const site =
+      typeof req.headers['sec-fetch-site'] === 'string' ? req.headers['sec-fetch-site'].toLowerCase() : ''
+    if (site === 'cross-site') return true
+    if (site === 'same-origin' || site === 'same-site' || site === 'none') return false
+    const origine = req.headers.origin
+    if (origine === undefined) return false
+    let url
+    try {
+      url = new URL(origine)
+    } catch {
+      return true
+    }
+    const candidats = []
+    for (const cle of ['x-forwarded-host', 'host']) {
+      const brut = req.headers[cle]
+      if (typeof brut !== 'string') continue
+      for (const partie of brut.split(',')) {
+        const nettoye = partie.trim().toLowerCase()
+        if (nettoye.length > 0) candidats.push(nettoye)
+      }
+    }
+    if (candidats.length === 0) return true
+    const portOrigine = url.port.length > 0 ? url.port : url.protocol === 'https:' ? '443' : '80'
+    return !candidats.some((candidat) => {
+      // Un crochet ferme une IPv6 (`[::1]:3080`). Sans lui, le dernier `:` est
+      // le port d'une IPv4 ou d'un nom.
+      const crochet = candidat.lastIndexOf(']')
+      const coupe = crochet === -1 ? candidat.lastIndexOf(':') : candidat.indexOf(':', crochet)
+      const nomBrut = coupe === -1 ? candidat : candidat.slice(0, coupe)
+      const port = coupe === -1 ? '' : candidat.slice(coupe + 1)
+      const nom = nomBrut.startsWith('[') && nomBrut.endsWith(']') ? nomBrut.slice(1, -1) : nomBrut
+      if (nom !== url.hostname.toLowerCase()) return false
+      return port.length === 0 || port === portOrigine
+    })
+  }
+
   enregistrer({
     kind: 'exact',
     path: PREFIX + '/v1/appairage',
     handler: (req, res) => {
+      if (origineDuPanneauRefusee(req)) {
+        envoyer(res, 403, { erreur: 'origine refusee' })
+        return tracer(req, 403)
+      }
       const navigateur = serviceNavigateur()
       if (navigateur === null) {
         envoyer(res, 503, { erreur: 'authentification navigateur indisponible' })
@@ -1084,6 +1165,10 @@ export function apply(ctx, config) {
     kind: 'exact',
     path: PREFIX + '/v1/appareils',
     handler: (req, res) => {
+      if (origineDuPanneauRefusee(req)) {
+        envoyer(res, 403, { erreur: 'origine refusee' })
+        return tracer(req, 403)
+      }
       const navigateur = serviceNavigateur()
       if (navigateur === null) {
         envoyer(res, 503, { erreur: 'authentification navigateur indisponible' })
@@ -1105,6 +1190,10 @@ export function apply(ctx, config) {
     kind: 'exact',
     path: PREFIX + '/v1/appareils/revoquer',
     handler: (req, res) => {
+      if (origineDuPanneauRefusee(req)) {
+        envoyer(res, 403, { erreur: 'origine refusee' })
+        return tracer(req, 403)
+      }
       const navigateur = serviceNavigateur()
       if (navigateur === null) {
         envoyer(res, 503, { erreur: 'authentification navigateur indisponible' })
@@ -1242,11 +1331,18 @@ export function apply(ctx, config) {
     path: PREFIX + '/v1/session',
     handler: (req, res) => {
       if (!autoriser(req, res)) return tracer(req, 401)
-      const reste = String(req.url).slice((PREFIX + '/v1/session').length)
+      const chemin = String(req.url).split('?')[0]
+      const reste = chemin.slice((PREFIX + '/v1/session').length)
       const segments = reste.split('/').filter((segment) => segment.length > 0)
-      const identifiant = segments[0] === undefined ? '' : decodeURIComponent(segments[0])
-      if (identifiant.length === 0) {
-        envoyer(res, 400, { erreur: 'identifiant de session manquant' })
+      let identifiant = ''
+      try {
+        identifiant = segments[0] === undefined ? '' : decodeURIComponent(segments[0])
+      } catch {
+        envoyer(res, 400, { erreur: 'identifiant de session malforme' })
+        return tracer(req, 400)
+      }
+      if (!FORME_IDENTIFIANT_SESSION.test(identifiant)) {
+        envoyer(res, 400, { erreur: identifiant.length === 0 ? 'identifiant de session manquant' : 'identifiant de session malforme' })
         return tracer(req, 400)
       }
       const action = segments[1] === undefined ? 'journal' : segments[1]
@@ -1309,7 +1405,14 @@ export function apply(ctx, config) {
               mode,
               content: [{ type: 'text', text: texte }],
             }
-            if (typeof corps.fuseau === 'string' && corps.fuseau.length > 0) demande.clientTimeZone = corps.fuseau
+            if (typeof corps.fuseau === 'string' && corps.fuseau.length > 0) {
+              if (!FORME_FUSEAU.test(corps.fuseau)) {
+                envoyer(res, 400, { erreur: 'fuseau invalide' })
+                tracer(req, 400)
+                return
+              }
+              demande.clientTimeZone = corps.fuseau
+            }
             try {
               const valeur = await controleur.prompt(demande, new AbortController().signal)
               envoyer(res, 202, {
@@ -1550,6 +1653,14 @@ export function apply(ctx, config) {
       }
     : null
 
+  const fluxOuverts = new Set()
+  const fluxParEmpreinte = new Map()
+  couperLesFluxRevoques = () => {
+    for (const fiche of [...fluxOuverts]) {
+      if (!jetonValide(fiche.presente)) fiche.arreter(1008)
+    }
+  }
+
   routes.push(
     webServer.registerUpgrade({
       path: PREFIX + '/v1/flux',
@@ -1569,6 +1680,13 @@ export function apply(ctx, config) {
           socket.end('HTTP/1.1 400 Bad Request\r\n\r\n')
           return tracer(req, 400)
         }
+        const empreinteFlux = empreinteDe(presente)
+        if ((fluxParEmpreinte.get(empreinteFlux) ?? 0) >= FLUX_PAR_APPAREIL_MAX) {
+          socket.write('HTTP/1.1 429 Too Many Requests\r\ncontent-length: 0\r\nconnection: close\r\n\r\n')
+          socket.end()
+          return tracer(req, 429)
+        }
+        fluxParEmpreinte.set(empreinteFlux, (fluxParEmpreinte.get(empreinteFlux) ?? 0) + 1)
         const accept = accepterWebSocket(cle)
         socket.write(
           'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' +
@@ -1581,10 +1699,18 @@ export function apply(ctx, config) {
         let ferme = false
         let minuteur = null
         let minuteurPing = null
+        let fiche = null
+        const oublierCeFlux = () => {
+          if (fiche === null || !fluxOuverts.delete(fiche)) return
+          const reste = (fluxParEmpreinte.get(empreinteFlux) ?? 1) - 1
+          if (reste <= 0) fluxParEmpreinte.delete(empreinteFlux)
+          else fluxParEmpreinte.set(empreinteFlux, reste)
+        }
 
         const arreter = (code) => {
           if (ferme) return
           ferme = true
+          oublierCeFlux()
           if (minuteur !== null) clearInterval(minuteur)
           if (minuteurPing !== null) clearInterval(minuteurPing)
           minuteur = null
@@ -1597,8 +1723,13 @@ export function apply(ctx, config) {
           socket.end()
         }
 
+        fiche = { presente, arreter }
+        fluxOuverts.add(fiche)
+
         const envoyer = (charge) => {
           if (ferme) return
+          // Un jeton révoqué pendant que le bus pousse ne doit plus rien écrire.
+          if (!jetonValide(presente)) return arreter(1008)
           // Client trop lent : on coupe plutot que de laisser le tampon du noyau
           // enfler jusqu'a faire enfler la memoire du harness. Le client se
           // reconnectera avec `depuisSeq` et rattrapera sans perte.
@@ -1724,9 +1855,19 @@ export function apply(ctx, config) {
           const base = await lireDepuis(trouve.fichier, trouve.information.size, 0)
           let faits = resumer(base.enregistrements)
           if (faits.id === null) {
-            // La fenetre n'a pas atteint l'en-tete : on lit le debut du fichier.
-            const tampon = await readFile(trouve.fichier)
-            const complet = decoderJournal(tampon)
+            // L'en-tête est au début du journal. On en lit une fenêtre bornée :
+            // `readFile` du fichier entier (jusqu'à 512 Mio) chargerait le
+            // processus du harness pour un seul flux authentifié.
+            const longueur = Math.min(trouve.information.size, FENETRE_FLUX_MAX)
+            const descripteur = await open(trouve.fichier, 'r')
+            let complet
+            try {
+              const tampon = Buffer.alloc(longueur)
+              const lu = await descripteur.read(tampon, 0, longueur, 0)
+              complet = decoderJournal(tampon.subarray(0, lu.bytesRead))
+            } finally {
+              await descripteur.close()
+            }
             const tous = []
             for (const ligne of complet.lignes) {
               const analyse = analyserLigne(ligne)
@@ -1774,6 +1915,7 @@ export function apply(ctx, config) {
           if (minuteurPing === null) {
             minuteurPing = setInterval(() => {
               if (ferme) return
+              if (!jetonValide(presente)) return arreter(1008)
               // L'ECHEANCE EST VERIFIEE AVANT D'ENVOYER : un client qui n'a plus
               // repondu depuis deux pings est mort, et continuer a lui ecrire ne
               // ferait que garder son minuteur de lecture en vie — donc le `stat`
@@ -1842,6 +1984,7 @@ export function apply(ctx, config) {
         socket.on('error', () => arreter(1011))
         socket.on('close', () => {
           ferme = true
+          oublierCeFlux()
           if (minuteur !== null) clearInterval(minuteur)
           if (minuteurPing !== null) clearInterval(minuteurPing)
           // SE DESABONNER EST AUSSI IMPORTANT QUE S'ABONNER : sans cela, une

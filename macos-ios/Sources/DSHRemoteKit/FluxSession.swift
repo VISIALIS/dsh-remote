@@ -93,6 +93,10 @@ public actor FluxSession {
     battement: Battement = .parDefaut, configuration: URLSessionConfiguration? = nil
   ) {
     guard var composants = URLComponents(string: adresse) else { return nil }
+    let clair = composants.scheme != "https" && composants.scheme != "wss"
+    if clair, let hote = composants.host, !jeton.isEmpty, ExceptionATS.hoteEnClairExpose(hote) {
+      return nil
+    }
     composants.scheme = composants.scheme == "https" ? "wss" : "ws"
     composants.path = "/dsh-remote/v1/flux"
     guard let url = composants.url else { return nil }

@@ -30,7 +30,7 @@ import { join } from 'node:path'
 import zlib from 'node:zlib'
 
 import { analyser } from '../dynamic/appairage.js'
-import { apply, configurerTtlCode, inject, name, VERSION_PROTOCOLE } from '../dynamic/host.js'
+import { apply, configurerTtlCode, FLUX_PAR_APPAREIL_MAX, inject, name, VERSION_PROTOCOLE } from '../dynamic/host.js'
 import { lireTrames } from '../dynamic/trames.js'
 
 /**
@@ -661,11 +661,11 @@ test('la frappe est plafonnee par fenetre', async () => {
   assert.equal(liste.code, 200)
 })
 
-test('les routes natives refusent toujours Origin, les routes navigateur non', () => {
-  // LA DISTINCTION EST LE CŒUR DE LA DÉROGATION : les routes natives sont gardées
-  // par le jeton et refusent `Origin` ; les routes d'appairage sont des routes de
-  // NAVIGATEUR, gardées par le cookie — et un navigateur, lui, envoie toujours
-  // `Origin`. Le refuser là serait refuser l'usage prévu.
+test('les routes natives refusent tout Origin ; le panneau accepte la sienne', async () => {
+  // Les routes natives refusent tout `Origin`. Celles du panneau en envoient un,
+  // celui de la page du harness : le refuser en bloc casserait l'appairage. Ce
+  // qu'elles refusent, c'est une origine d'un AUTRE site — le cookie de session
+  // ne suffit pas, un formulaire tiers pourrait le porter.
   const ctx = contexteFactice()
   apply(ctx, { journaliser: false })
 
@@ -689,12 +689,35 @@ test('les routes natives refusent toujours Origin, les routes navigateur non', (
   )
   assert.equal(echange.code, 403, 'l echange reste une route NATIVE')
 
-  const appairage = reponseFactice()
+  const memeHote = reponseFactice()
   route(ctx, '/dsh-remote/v1/appairage').handler(
-    requete({ method: 'POST', url: '/dsh-remote/v1/appairage', headers: { origin: 'http://127.0.0.1:3080' }, corps: {} }),
-    appairage,
+    requete({
+      method: 'POST',
+      url: '/dsh-remote/v1/appairage',
+      headers: { origin: 'http://127.0.0.1:3080', host: '127.0.0.1:3080', 'sec-fetch-site': 'same-origin' },
+      corps: {},
+    }),
+    memeHote,
   )
-  assert.notEqual(appairage.code, 403, 'la route du panneau ne refuse pas Origin')
+  await attendre(memeHote)
+  assert.notEqual(memeHote.code, 403, 'la page du harness envoie son propre Origin : ' + memeHote.corps)
+
+  const etranger = reponseFactice()
+  route(ctx, '/dsh-remote/v1/appairage').handler(
+    requete({
+      method: 'POST',
+      url: '/dsh-remote/v1/appairage',
+      headers: {
+        origin: 'http://attaquant.exemple.test',
+        host: '127.0.0.1:3080',
+        'sec-fetch-site': 'cross-site',
+      },
+      corps: {},
+    }),
+    etranger,
+  )
+  assert.equal(etranger.code, 403)
+  assert.equal(etranger.json().erreur, 'origine refusee')
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -961,6 +984,105 @@ test('un client qui ne repond PLUS est ferme, au lieu de scruter le disque pour 
       assert.equal(fermeture.charge.readUInt16BE(0), 1008)
     } finally {
       socket.emit('data', trameClient(0x8, ''))
+    }
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+test('revoquer un appareil ferme son flux deja ouvert et laisse les autres', async () => {
+  const arbre = await arbreDeSessions({ sessions: ['session-aaa'] })
+  try {
+    const ctx = await demarrer()
+    const premier = await echanger(ctx, (await frapperUnCode(ctx)).code, { nom: 'telephone' })
+    const second = await echanger(ctx, (await frapperUnCode(ctx)).code, { nom: 'tablette' })
+    assert.equal(premier.code, 200)
+    assert.equal(second.code, 200)
+    const jeton = premier.json().jeton
+    const jetonAutre = second.json().jeton
+
+    const ouvrir = (valeur) => {
+      const socket = socketFactice()
+      route(ctx, '/dsh-remote/v1/flux').handler(
+        requete({
+          url: '/dsh-remote/v1/flux',
+          headers: { ...entete(valeur), 'sec-websocket-key': 'Y2xlLWRlLXRlc3QtaXhpY2k=' },
+        }),
+        socket,
+      )
+      socket.emit('data', trameClient(0x1, JSON.stringify({ type: 'demarrer', session: 'session-aaa' })))
+      return socket
+    }
+    const socket = ouvrir(jeton)
+    const socketAutre = ouvrir(jetonAutre)
+    try {
+      assert.notEqual(await attendreMessage(socket, (message) => message.type === 'base'), null)
+      assert.notEqual(await attendreMessage(socketAutre, (message) => message.type === 'base'), null)
+
+      const liste = reponseFactice()
+      route(ctx, '/dsh-remote/v1/appareils').handler(requete({ url: '/dsh-remote/v1/appareils' }), liste)
+      const cible = liste.json().appareils.find((entree) => entree.nom === 'telephone')
+      const revocation = reponseFactice()
+      route(ctx, '/dsh-remote/v1/appareils/revoquer').handler(
+        requete({ method: 'POST', url: '/dsh-remote/v1/appareils/revoquer', corps: { empreinte: cible.empreinte } }),
+        revocation,
+      )
+      await attendre(revocation)
+      assert.equal(revocation.code, 200)
+
+      assert.equal(socket.termine, true, 'le flux du jeton revoque doit se fermer')
+      const fermeture = fermetureDuFlux(socket)
+      assert.notEqual(fermeture, undefined)
+      assert.equal(fermeture.charge.readUInt16BE(0), 1008)
+      assert.notEqual(socketAutre.termine, true, 'le flux d un autre appareil reste ouvert')
+
+      ctx.emettre('session/event', { id: 'session-aaa' }, {
+        type: 'assistant/message',
+        seq: 50,
+        time: 1,
+        data: { texte: 'apres revocation' },
+      })
+      const chezLeRevoque = messagesDuFlux(socket).some(
+        (message) => message.type === 'evenement' && message.enregistrement?.seq === 50,
+      )
+      assert.equal(chezLeRevoque, false, 'un flux ferme ne recoit plus les evenements')
+      const chezLAutre = await attendreMessage(
+        socketAutre,
+        (message) => message.type === 'evenement' && message.enregistrement?.seq === 50,
+      )
+      assert.notEqual(chezLAutre, null, 'l autre appareil recoit toujours le bus')
+    } finally {
+      socket.emit('data', trameClient(0x8, ''))
+      socketAutre.emit('data', trameClient(0x8, ''))
+    }
+  } finally {
+    await arbre.nettoyer()
+  }
+})
+
+test('un appareil ne peut pas ouvrir plus de flux que le plafond', async () => {
+  const arbre = await arbreDeSessions({ sessions: ['session-aaa'] })
+  try {
+    const ctx = await demarrer()
+    const sockets = []
+    try {
+      for (let index = 0; index < FLUX_PAR_APPAREIL_MAX; index++) {
+        const socket = ouvrirLeFlux(ctx, 'session-aaa')
+        sockets.push(socket)
+        assert.match(socket.ecrit[0].toString('utf8'), /^HTTP\/1\.1 101 /)
+      }
+      const refuse = ouvrirLeFlux(ctx, 'session-aaa')
+      sockets.push(refuse)
+      assert.match(refuse.ecrit[0].toString('utf8'), /^HTTP\/1\.1 429 /)
+      assert.equal(refuse.termine, true, 'le refus ferme la socket avant l upgrade')
+
+      // Une place se libère à la fermeture : le suivant est accepté.
+      sockets[0].emit('data', trameClient(0x8, ''))
+      const repris = ouvrirLeFlux(ctx, 'session-aaa')
+      sockets.push(repris)
+      assert.match(repris.ecrit[0].toString('utf8'), /^HTTP\/1\.1 101 /)
+    } finally {
+      for (const socket of sockets) socket.emit('data', trameClient(0x8, ''))
     }
   } finally {
     await arbre.nettoyer()

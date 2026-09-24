@@ -138,6 +138,38 @@ func nomsQualifies() {
   #expect(!ExceptionATS.estUnNomQualifie("macmini"))
 }
 
+@Test("Le HTTP clair vers une IP publique est un jeton exposé")
+func clairPublic() {
+  #expect(ExceptionATS.hoteEnClairExpose("8.8.8.8"))
+  #expect(ExceptionATS.hoteEnClairExpose("100.128.0.1"))
+  #expect(ExceptionATS.hoteEnClairExpose("172.32.0.1"))
+  #expect(ExceptionATS.hoteEnClairExpose("2001:db8::1"))
+  #expect(!ExceptionATS.hoteEnClairExpose("100.64.0.1"))
+  #expect(!ExceptionATS.hoteEnClairExpose("100.127.255.255"))
+  #expect(!ExceptionATS.hoteEnClairExpose("192.168.1.10"))
+  #expect(!ExceptionATS.hoteEnClairExpose("10.1.2.3"))
+  #expect(!ExceptionATS.hoteEnClairExpose("172.16.0.1"))
+  #expect(!ExceptionATS.hoteEnClairExpose("127.0.0.1"))
+  #expect(!ExceptionATS.hoteEnClairExpose("::1"))
+  #expect(!ExceptionATS.hoteEnClairExpose("localhost"))
+  #expect(!ExceptionATS.hoteEnClairExpose("mac-mini.exemple.ts.net"))
+
+  #expect(throws: ErreurRemote.self) {
+    _ = try RemoteClient(adresse: "http://8.8.8.8:3080", jeton: "jeton-de-test-suffisamment-long")
+  }
+  #expect(throws: Never.self) {
+    _ = try RemoteClient(adresse: "http://100.64.1.2:3080", jeton: "jeton-de-test-suffisamment-long")
+  }
+  #expect(throws: Never.self) {
+    _ = try RemoteClient(adresse: "http://8.8.8.8:3080", jeton: "")
+  }
+  #expect(throws: Never.self) {
+    _ = try RemoteClient(adresse: "https://8.8.8.8", jeton: "jeton-de-test-suffisamment-long")
+  }
+  #expect(FluxSession(adresse: "http://8.8.8.8:3080", jeton: "jeton-de-test-suffisamment-long", identifiant: "session-aaa") == nil)
+  #expect(FluxSession(adresse: "http://127.0.0.1:3080", jeton: "jeton-de-test-suffisamment-long", identifiant: "session-aaa") != nil)
+}
+
 @Test("Le remède d'un 401 mène à un champ qui existe vraiment")
 func remedeDu401() {
   // LE DÉFAUT RÉPARÉ. Le message disait « collez-le dans Réglages » : or la

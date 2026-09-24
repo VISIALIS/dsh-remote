@@ -125,11 +125,60 @@ public enum ExceptionATS {
   }
 
   private static func estUneIPv4(_ hote: String) -> Bool {
+    octetsIPv4(hote) != nil
+  }
+
+  /// Cet hôte, joint en HTTP clair, ferait-il voyager un jeton hors d'un réseau
+  /// de confiance ?
+  ///
+  /// ATS ne s'applique pas aux adresses IP. `http://8.8.8.8` enverrait donc le
+  /// porteur en clair sur l'internet, là où `http://100.x.y.z` reste dans le
+  /// tunnel Tailscale et `http://192.168.x.x` dans un réseau privé. Un nom de
+  /// domaine n'est pas jugé ici : c'est ATS qui s'en charge.
+  ///
+  /// Rend `true` seulement pour une IP publique. La boucle locale, les plages
+  /// privées, le lien local et le CGNAT Tailscale (`100.64.0.0/10`) rendent
+  /// `false`.
+  public static func hoteEnClairExpose(_ hote: String) -> Bool {
+    let nom = hote.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    if nom.isEmpty || nom == "localhost" || nom.hasPrefix("localhost.") { return false }
+    if nom.contains(":") { return !ipv6DeConfiance(nom) }
+    guard let octets = octetsIPv4(nom) else { return false }
+    return !ipv4DeConfiance(octets)
+  }
+
+  private static func octetsIPv4(_ hote: String) -> [UInt8]? {
     let morceaux = hote.split(separator: ".", omittingEmptySubsequences: false)
-    guard morceaux.count == 4 else { return false }
-    return morceaux.allSatisfy { morceau in
-      !morceau.isEmpty && morceau.count <= 3 && morceau.allSatisfy(\.isNumber)
+    guard morceaux.count == 4 else { return nil }
+    var octets: [UInt8] = []
+    for morceau in morceaux {
+      guard morceau.count <= 3, morceau.allSatisfy(\.isNumber), let valeur = Int(morceau), (0...255).contains(valeur)
+      else { return nil }
+      octets.append(UInt8(valeur))
     }
+    return octets
+  }
+
+  private static func ipv4DeConfiance(_ octets: [UInt8]) -> Bool {
+    if octets[0] == 0 || octets[0] == 10 || octets[0] == 127 { return true }
+    if octets[0] == 192 && octets[1] == 168 { return true }
+    if octets[0] == 169 && octets[1] == 254 { return true }
+    if octets[0] == 172 && (16...31).contains(Int(octets[1])) { return true }
+    // 100.64.0.0/10 — les adresses Tailscale.
+    if octets[0] == 100 && (64...127).contains(Int(octets[1])) { return true }
+    return false
+  }
+
+  private static func ipv6DeConfiance(_ hote: String) -> Bool {
+    var nom = hote
+    if nom.hasPrefix("["), nom.hasSuffix("]") { nom = String(nom.dropFirst().dropLast()) }
+    if nom == "::1" || nom == "::" { return true }
+    if nom.hasPrefix("fe8") || nom.hasPrefix("fe9") || nom.hasPrefix("fea") || nom.hasPrefix("feb") { return true }
+    if nom.hasPrefix("fc") || nom.hasPrefix("fd") { return true }
+    if let marque = nom.range(of: "::ffff:"), let octets = octetsIPv4(String(nom[marque.upperBound...])) {
+      return ipv4DeConfiance(octets)
+    }
+    return false
   }
 
   /// Les exceptions du paquet QUI EXÉCUTE CE CODE.

@@ -62,6 +62,13 @@ public actor RemoteClient {
       throw ErreurRemote.adresseInvalide("schéma « \(schema) » non supporté")
     }
     guard !hote.isEmpty else { throw ErreurRemote.adresseInvalide("hôte vide") }
+    // Un jeton sur du HTTP clair vers une IP publique quitte le tailnet. La
+    // sonde, elle, n'a pas de jeton : elle peut encore interroger l'adresse.
+    if schema == "http", !jeton.isEmpty, ExceptionATS.hoteEnClairExpose(hote) {
+      throw ErreurRemote.adresseInvalide(
+        "HTTP clair vers une adresse publique : le jeton d'appareil partirait en clair. Utilisez https, ou une adresse de tailnet, de réseau privé, ou de boucle locale."
+      )
+    }
     self.base = url
     self.jeton = jeton
 

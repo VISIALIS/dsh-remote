@@ -242,6 +242,49 @@ test('les fonctions de portée : le défaut d’un jeton neuf est la LECTURE', (
 
   // Et un enregistrement d'avant la portée reste en écriture.
   assert.equal(porteeEnregistree({ token: JETON }), PORTEE_ECRITURE)
+  assert.equal(porteeEnregistree({ token: JETON, portee: null }), PORTEE_ECRITURE)
   assert.equal(porteeEnregistree({ token: JETON, portee: PORTEE_LECTURE }), PORTEE_LECTURE)
-  assert.equal(porteeEnregistree({ token: JETON, portee: 'autre chose' }), PORTEE_ECRITURE)
+  assert.equal(porteeEnregistree({ token: JETON, portee: PORTEE_ECRITURE }), PORTEE_ECRITURE)
+  // Une valeur inconnue n'est PAS un droit d'écriture.
+  assert.equal(porteeEnregistree({ token: JETON, portee: 'autre chose' }), null)
+  assert.equal(porteeEnregistree({ token: JETON, portee: '' }), null)
+})
+
+test('une portée inconnue n authentifie pas, et n écrit pas', async () => {
+  const { routes, ecrit } = await monter({ portee: 'autre chose' })
+  const { code } = await appeler(routes, CHEMIN_PROMPT, {
+    methode: 'POST',
+    corps: { texte: 'ne doit pas partir', mode: 'queue' },
+  })
+  assert.equal(code, 401)
+  assert.equal(ecrit.length, 0)
+})
+
+test('un identifiant de session hors contrat n atteint pas le contrôleur', async () => {
+  const { routes, ecrit } = await monter({ portee: PORTEE_ECRITURE })
+  const { code, corps } = await appeler(routes, '/dsh-remote/v1/session/..%2Fetc/prompt', {
+    methode: 'POST',
+    corps: { texte: 'bonjour', mode: 'queue' },
+  })
+  assert.equal(code, 400)
+  assert.equal(corps.erreur, 'identifiant de session malforme')
+  assert.equal(ecrit.length, 0)
+})
+
+test('un fuseau hors contrat est refusé avant l envoi', async () => {
+  const { routes, ecrit } = await monter({ portee: PORTEE_ECRITURE })
+  const refuse = await appeler(routes, CHEMIN_PROMPT, {
+    methode: 'POST',
+    corps: { texte: 'bonjour', mode: 'queue', fuseau: 'Europe/Paris\nX-Injecte: 1' },
+  })
+  assert.equal(refuse.code, 400)
+  assert.equal(refuse.corps.erreur, 'fuseau invalide')
+  assert.equal(ecrit.length, 0)
+
+  const admis = await appeler(routes, CHEMIN_PROMPT, {
+    methode: 'POST',
+    corps: { texte: 'bonjour', mode: 'queue', fuseau: 'Europe/Paris' },
+  })
+  assert.equal(admis.code, 202)
+  assert.equal(ecrit[0].clientTimeZone, 'Europe/Paris')
 })

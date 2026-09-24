@@ -444,7 +444,7 @@ node --test plugins/dsh-remote/tests/*.test.js
 | P5 | sur macOS, **Coller un appairage** (le texte sous le QR) remplit l'adresse et le jeton | le Mac ne peut pas scanner son propre écran — la forme texte est la représentation canonique, pas un repli |
 | P6 | **le compte à rebours arrive à zéro**, le QR disparaît, et « Générer un nouveau code » en redonne un | un code EXPIRÉ ne peut plus être échangé — c'est ce qui rend une photo d'écran sans valeur |
 | P7 | l'appareil appairé apparaît dans **« Appareils appairés »** avec son nom, sa portée et sa date ; l'adresse dans l'app est celle du Mac | le registre est écrit, et le nom vient bien de l'appareil |
-| P8 | **Révoquer** cet appareil (deux appuis : « Révoquer », puis « Confirmer ») : il disparaît de la liste, et l'application de cet appareil reçoit `401` à la requête suivante | la révocation est **par appareil** — la limite que l'étape A ne levait pas |
+| P8 | **Révoquer** cet appareil (deux appuis : « Révoquer », puis « Confirmer ») : il disparaît de la liste, l'application reçoit `401` à la requête suivante, et un flux WebSocket déjà ouvert se ferme | la révocation est **par appareil**, y compris le direct déjà établi |
 | P9 | `curl -s http://127.0.0.1:3080/dsh-remote/v1/sante -H "Authorization: Bearer <jeton d'un appareil>"` → `portee`, `capacites.ecriture` et `appareils` | la portée est **par appareil**, et le compte est publié sans la liste |
 | P10 | rejouer le même code (`curl -X POST …/appairage/echange -H "Authorization: Bearer <code>"`) une seconde fois → `403 code inconnu ou deja utilise` | un code ne sert **qu'une fois** |
 | P11 | après une retouche de `dynamic/client.js`, le bouton se met à jour **dans l'onglet déjà ouvert**, sans redémarrage du harness (visible en changeant le libellé ou le survol) | `dsh-client-hmr` surveille les bundles clients (`stat` toutes les 500 ms, puis `rebuilt`) — **non observé à ce jour** |
@@ -657,6 +657,7 @@ y répond par construction : un jeton `lecture` lit tout et n'écrit rien.
 | Jeton **neuf** (installation neuve) | `lecture` | Lit ; l'écriture répond `403 jeton en lecture seule` |
 | Jeton neuf avec `DSH_REMOTE_PORTEE=ecriture` | `ecriture` | Lit et écrit |
 | Enregistrement **d'avant la portée** (aucun champ `portee`) | `ecriture` | Inchangé : une mise à jour du plugin ne retire pas un droit acquis |
+| Champ `portee` **présent mais inconnu** | jeton ignoré | Ni lecture ni écriture : une valeur inconnue n'est pas un droit d'écriture |
 
 **Pourquoi la lecture seule par défaut.** Une installation neuve n'a aucune raison
 d'accorder l'écriture, et le dépôt public doit pouvoir répondre « un jeton fuité
@@ -1267,9 +1268,10 @@ conséquences pratiques :
   lecture. Il n'est **jamais** recopié hors du coffre et du trousseau du client ;
 - une révocation existe, et elle est **par appareil** : chaque entrée du registre se
   retire depuis le panneau sans toucher aux autres (voir « Le registre des jetons, et
-  la portée par appareil »). Le **jeton historique** du terminal, lui, est une entrée
-  unique — le tourner révoque ce seul jeton, et il n'est remplacé qu'au démarrage
-  suivant du harness ;
+  la portée par appareil »). Les requêtes HTTP suivantes reçoivent `401`, et les
+  WebSocket déjà ouverts avec ce jeton sont fermés. Le **jeton historique** du
+  terminal, lui, est une entrée unique — le tourner révoque ce seul jeton, et il
+  n'est remplacé qu'au démarrage suivant du harness ;
 - les approbations restent **inaccessibles** (voir les limites) : écrire un
   prompt n'autorise pas à répondre à une demande de permission. La portée est
   réelle, elle est bornée.
@@ -1361,11 +1363,9 @@ limite la surface de casse.
   navigateur.** Sa route exige le cookie de l'interface web : ce n'est pas un
   défaut, c'est ce qui la garde — mais cela veut dire qu'on appaire depuis la page
   du Mac, pas depuis le téléphone.
-- **La description d'usage de la caméra est en français seulement.** L'application
-  est localisée (fr source, en ajouté), mais `NSCameraUsageDescription` vit dans
-  l'`Info.plist`, dont la traduction demanderait un `InfoPlist.strings` qui n'existe
-  pas encore. Un utilisateur anglophone verra donc une phrase française dans
-  l'invite système — c'est écrit ici plutôt que découvert.
+- **La description d'usage de la caméra est localisée** : `NSCameraUsageDescription`
+  dispose d'un `InfoPlist.strings` pour le français et l'anglais dans le paquet
+  d'application iOS.
 - **Aucun lien universel, aucun schéma déclaré** : le scan se fait **dans**
   l'application. Ouvrir l'appairage depuis la caméra système demanderait un
   `CFBundleURLTypes` et un `apple-app-site-association` servi par DSH — un sujet à

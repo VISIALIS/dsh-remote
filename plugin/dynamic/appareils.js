@@ -111,7 +111,16 @@ export function creerRegistreDAppareils({
     if (existant !== undefined && existant !== null && existant.kind === 'grant') {
       const valeur = existant.payload?.token
       if (typeof valeur === 'string' && valeur.length >= LONGUEUR_JETON_MINIMALE) {
-        portee = porteeEnregistree(existant.payload)
+        const lue = porteeEnregistree(existant.payload)
+        // Une portée inconnue n'authentifie pas. La laisser passer ferait de
+        // n'importe quelle chaîne autre que `lecture` un droit d'écriture.
+        if (lue !== PORTEE_LECTURE && lue !== PORTEE_ECRITURE) {
+          journal(
+            'portee inconnue sur le jeton du terminal : il est ignore. Valeurs admises : lecture, ecriture, ou aucun champ.',
+          )
+          return null
+        }
+        portee = lue
         return valeur
       }
     }
@@ -142,9 +151,11 @@ export function creerRegistreDAppareils({
     if (brut === null || typeof brut !== 'object') return null
     const valeur = brut.token
     if (typeof valeur !== 'string' || valeur.length < LONGUEUR_JETON_MINIMALE) return null
+    const lue = porteeEnregistree(brut)
+    if (lue !== PORTEE_LECTURE && lue !== PORTEE_ECRITURE) return null
     return {
       token: valeur,
-      portee: porteeEnregistree(brut),
+      portee: lue,
       creeLe: Number.isFinite(brut.creeLe) ? brut.creeLe : null,
       nom: nomDAppareil(brut.nom),
       historique: false,
