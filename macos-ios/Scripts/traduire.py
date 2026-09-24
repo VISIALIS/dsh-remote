@@ -169,7 +169,7 @@ TRADUCTIONS = {
 
 RESSOURCES = SOURCE / "Ressources"
 
-APPEL = re.compile(r'\b[TL]\("((?:[^"\\]|\\.)*)"\)')
+APPEL = re.compile(r'\b[TL]\(\s*"((?:[^"\\]|\\.)*)"', re.MULTILINE)
 
 
 def desechapper(texte: str) -> str:
@@ -550,11 +550,63 @@ TRADUCTIONS.update({
     "au travail": "working",
     "session active": "active session",
     "sessions actives": "active sessions",
+    "session suivie": "tracked session",
+    "sessions suivies": "tracked sessions",
+    "relevé": "as of",
     "DSH Remote": "DSH Remote",
     "Affiche l'état du serveur DeepSeek Harness et les sessions en cours.":
         "Displays DeepSeek Harness server status and running sessions.",
     "Projet": "Project",
     "Tour en cours": "Turn in progress",
+    "événement": "event",
+    "événements": "events",
+    "évt": "event",
+    "évts": "events",
+    "à l'instant": "just now",
+    "j": "d",
+    "mois": "mo",
+    "franchie": "done",
+    "à faire": "to do",
+    ", sur le Mac": ", on the Mac",
+    "après l'étape %d": "after step %d",
+    "Étape %d": "Step %d",
+    "Journal (%d affichés)": "Journal (%d shown)",
+    "%d nouveaux événements": "%d new events",
+    "1 nouvel événement": "1 new event",
+    "%d nouveaux événements — aller à la fin du journal": "%d new events — go to the end of the journal",
+    "%d session(s) — adresse et jeton acceptés": "%d session(s) — address and token accepted",
+    "aucune exception déclarée": "no exception declared",
+    "1 exception déclarée": "1 exception declared",
+    "%d exceptions déclarées": "%d exceptions declared",
+    "réflexion :": "reasoning:",
+    "(message assistant)": "(assistant message)",
+    "outil": "tool",
+    "(résultat d'outil)": "(tool result)",
+    "(titre)": "(title)",
+    "(objectif)": "(objective)",
+    "preset :": "preset:",
+    "bac à sable :": "sandbox:",
+    "adresse invalide :": "invalid address:",
+    "échec de transport :": "transport failed:",
+    "réponse illisible :": "unreadable response:",
+    "réponse inattendue (HTTP %d)": "unexpected response (HTTP %d)",
+    "protocole incompatible : le serveur annonce la version %d, ce client sait lire la %d":
+        "incompatible protocol: the server announces version %d, this client can read %d",
+    "refus de l'hôte%@ : %@ (HTTP %d)": "host refused%@: %@ (HTTP %d)",
+    "l'hôte n'a rien renvoyé : la liste était marquée inchangée, et ce client n'en a pas de copie":
+        "the host sent nothing back: the list was marked unchanged, and this client has no copy of it",
+    "Découverte automatique indisponible (%@). Saisissez l'adresse de la machine ci-dessous.":
+        "Automatic discovery is unavailable (%@). Enter the machine address below.",
+    "Aucune machine trouvée sur le tailnet. Vérifiez que Tailscale est connecté, puis rafraîchissez.":
+        "No machine found on the tailnet. Check that Tailscale is connected, then refresh.",
+    "Tailscale ne semble pas installé : installez-le, connectez-vous, puis rafraîchissez.":
+        "Tailscale does not appear to be installed: install it, sign in, then refresh.",
+    "Saisissez l'adresse d'une machine ci-dessous, puis connectez-vous : elle publiera ensuite la liste des machines de votre tailnet.":
+        "Enter a machine address below, then connect: it will then publish the list of machines on your tailnet.",
+    "jeton refusé (401) — le jeton d'appareil est absent, révoqué ou faux. Recopiez celui qu'affiche le harness, puis collez-le dans le champ « Jeton d'appareil » : sur la page de cette machine, ou dans la feuille « Adresse » quand vous saisissez une adresse à la main.":
+        "token refused (401) — the device token is missing, revoked, or wrong. Copy the one the harness shows, then paste it into the “Device token” field: on this machine's page, or in the “Address” sheet when you type an address by hand.",
+    "écriture refusée (403) — ce jeton autorise la lecture, pas l'écriture. Le harness a tiré un jeton en lecture seule : relancez-le avec DSH_REMOTE_PORTEE=ecriture, puis saisissez le nouveau jeton.":
+        "write refused (403) — this token can read, not write. The harness issued a read-only token: relaunch it with DSH_REMOTE_PORTEE=ecriture, then enter the new token.",
 })
 
 if __name__ == "__main__":

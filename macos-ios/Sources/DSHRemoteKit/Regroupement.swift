@@ -274,11 +274,11 @@ public enum AgeLisible {
   public static func texte(_ millisecondes: Int?, maintenant: Date = Date()) -> String {
     guard let millisecondes, millisecondes > 0 else { return "" }
     let secondes = maintenant.timeIntervalSince1970 - Double(millisecondes) / 1000
-    guard secondes > 0 else { return "à l'instant" }
+    guard secondes > 0 else { return L("à l'instant") }
     if secondes < 60 { return "\(Int(secondes))s" }
     if secondes < 3600 { return "\(Int(secondes / 60))min" }
     if secondes < 86400 { return "\(Int(secondes / 3600))h" }
-    if secondes < 86400 * 30 { return "\(Int(secondes / 86400))j" }
-    return "\(Int(secondes / (86400 * 30)))mois"
+    if secondes < 86400 * 30 { return "\(Int(secondes / 86400))" + L("j") }
+    return "\(Int(secondes / (86400 * 30)))" + L("mois")
   }
 }

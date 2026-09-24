@@ -501,8 +501,7 @@ public enum ErreurRemote: Error, CustomStringConvertible {
       // écran vide, sur un iPhone neuf où c'était le seul remède écrit. Les deux
       // endroits qui portent réellement le champ sont nommés, et le premier est
       // celui qu'on a sous les yeux quand on lit ce message.
-      return
-        "jeton refusé (401) — le jeton d'appareil est absent, révoqué ou faux. Recopiez celui qu'affiche le harness, puis collez-le dans le champ « Jeton d'appareil » : sur la page de cette machine, ou dans la feuille « Adresse » quand vous saisissez une adresse à la main."
+      return L("jeton refusé (401) — le jeton d'appareil est absent, révoqué ou faux. Recopiez celui qu'affiche le harness, puis collez-le dans le champ « Jeton d'appareil » : sur la page de cette machine, ou dans la feuille « Adresse » quand vous saisissez une adresse à la main.")
     case .origineRefusee:
       return L("origine refusée (403) — un client natif ne doit jamais envoyer d'en-tête Origin")
     case let .appairageRefuse(motif, detail):
@@ -531,23 +530,24 @@ public enum ErreurRemote: Error, CustomStringConvertible {
       // LE REMÈDE EST NOMMÉ, ET IL EST AILLEURS : la portée se change sur la
       // MACHINE qui héberge le harness, pas dans l'application. Un message qui
       // laisserait chercher un réglage ici serait un faux remède.
-      return
-        "écriture refusée (403) — ce jeton autorise la lecture, pas l'écriture. Le harness a tiré un jeton en lecture seule : relancez-le avec DSH_REMOTE_PORTEE=ecriture, puis saisissez le nouveau jeton."
+      return L("écriture refusée (403) — ce jeton autorise la lecture, pas l'écriture. Le harness a tiré un jeton en lecture seule : relancez-le avec DSH_REMOTE_PORTEE=ecriture, puis saisissez le nouveau jeton.")
     case let .versionIncompatible(recue, supportee):
-      return "protocole incompatible : le serveur annonce la version \(recue), ce client sait lire la \(supportee)"
+      return String(
+        format: L("protocole incompatible : le serveur annonce la version %d, ce client sait lire la %d"),
+        recue, supportee)
     case let .reponseInattendue(code):
-      return "réponse inattendue (HTTP \(code))"
+      return String(format: L("réponse inattendue (HTTP %d)"), code)
     case let .refusServeur(statut, motif, code):
       let marque = code.map { " [\($0)]" } ?? ""
-      return "refus de l'hôte\(marque) : \(motif) (HTTP \(statut))"
+      return String(format: L("refus de l'hôte%@ : %@ (HTTP %d)"), marque, motif, statut)
     case let .adresseInvalide(detail):
-      return "adresse invalide : \(detail)"
+      return L("adresse invalide :") + " " + detail
     case let .transport(detail):
-      return "échec de transport : \(detail)"
+      return L("échec de transport :") + " " + detail
     case let .decodage(detail):
-      return "réponse illisible : \(detail)"
+      return L("réponse illisible :") + " " + detail
     case .nonModifie:
-      return "l'hôte n'a rien renvoyé : la liste était marquée inchangée, et ce client n'en a pas de copie"
+      return L("l'hôte n'a rien renvoyé : la liste était marquée inchangée, et ce client n'en a pas de copie")
     }
   }
 }

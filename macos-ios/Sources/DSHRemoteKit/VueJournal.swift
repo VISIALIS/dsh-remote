@@ -169,7 +169,7 @@ struct VueJournal: View {
               Label(preset, systemImage: "slider.horizontal.3")
             }
             if let total = resume.nbEnregistrements {
-              Label("\(total) évts", systemImage: "list.bullet")
+              Label("\(total) " + (total > 1 ? L("évts") : L("évt")), systemImage: "list.bullet")
             }
           }
           .font(.caption2)
@@ -183,7 +183,7 @@ struct VueJournal: View {
 
   @ViewBuilder
   private var sectionJournal: some View {
-    Section("Journal (\(evenements.count) affichés)") {
+    Section(String(format: L("Journal (%d affichés)"), evenements.count)) {
       ForEach(evenements) { evenement in
         LigneEvenement(evenement: evenement)
       }
@@ -261,7 +261,7 @@ struct VueJournal: View {
     } label: {
       Label(
         arrivesDepuis > 1
-          ? "\(arrivesDepuis) nouveaux événements" : "1 nouvel événement",
+          ? String(format: L("%d nouveaux événements"), arrivesDepuis) : L("1 nouvel événement"),
         systemImage: "arrow.down.circle.fill")
         .font(.caption)
     }
@@ -270,7 +270,7 @@ struct VueJournal: View {
     .padding(.bottom, 4)
     .accessibilityLabel(
       arrivesDepuis > 1
-        ? "\(arrivesDepuis) nouveaux événements — aller à la fin du journal"
+        ? String(format: L("%d nouveaux événements — aller à la fin du journal"), arrivesDepuis)
         : L("Un nouvel événement — aller à la fin du journal"))
   }
 }

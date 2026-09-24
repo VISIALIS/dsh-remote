@@ -69,20 +69,20 @@ public struct EvenementAffiche: Sendable, Identifiable {
     case "assistant/message":
       let reflexion = blocs(de: "reasoning").first
       let reponse = blocs(de: "text").first
-      return reponse ?? reflexion.map { "réflexion : " + $0 } ?? "(message assistant)"
+      return reponse ?? reflexion.map { L("réflexion :") + " " + $0 } ?? L("(message assistant)")
     case "tool/call":
       let nom = donnees?.name ?? "?"
-      return "outil \(nom)"
+      return L("outil") + " \(nom)"
     case "tool/result":
-      return premierTexte(role: nil) ?? "(résultat d'outil)"
+      return premierTexte(role: nil) ?? L("(résultat d'outil)")
     case "session/title":
-      return donnees?.title ?? "(titre)"
+      return donnees?.title ?? L("(titre)")
     case "goal/change":
-      return donnees?.objective ?? "(objectif)"
+      return donnees?.objective ?? L("(objectif)")
     case "permission/preset":
-      return "preset : \(donnees?.preset ?? "?")"
+      return L("preset :") + " \(donnees?.preset ?? "?")"
     case "sandbox/mode":
-      return "bac à sable : \(donnees?.mode ?? "?")"
+      return L("bac à sable :") + " \(donnees?.mode ?? "?")"
     default:
       return type
     }

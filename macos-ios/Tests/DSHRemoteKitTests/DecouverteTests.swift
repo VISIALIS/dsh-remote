@@ -324,12 +324,12 @@ func ageLisible() {
     let horodatage = Int((maintenant.timeIntervalSince1970 - ecartEnSecondes) * 1000)
     return AgeLisible.texte(horodatage, maintenant: maintenant)
   }
-  #expect(age(0) == "à l'instant")
+  #expect(age(0) == L("à l'instant"))
   #expect(age(30) == "30s")
   #expect(age(5 * 60) == "5min")
   #expect(age(60 * 60) == "1h")
-  #expect(age(24 * 60 * 60) == "1j")
-  #expect(age(3 * 24 * 60 * 60) == "3j")
+  #expect(age(24 * 60 * 60) == "1" + L("j"))
+  #expect(age(3 * 24 * 60 * 60) == "3" + L("j"))
   // Une date absente ne doit pas produire de texte trompeur.
   #expect(AgeLisible.texte(nil, maintenant: maintenant) == "")
   #expect(AgeLisible.texte(0, maintenant: maintenant) == "")

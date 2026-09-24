@@ -168,13 +168,13 @@ struct ParcoursDesEtapes<Methode: View>: View {
   private func libelle(_ etape: EtapesServeur.Etape, bloquante: Int?) -> String {
     let etat: String
     switch etape.etat {
-    case .franchie: etat = "franchie"
-    case .aFaire: etat = "à faire"
-    case .inconnue: etat = "à vérifier"
+    case .franchie: etat = L("franchie")
+    case .aFaire: etat = L("à faire")
+    case .inconnue: etat = L("à vérifier")
     }
-    let ou = mode == .objectifs && etape.responsable == .hote ? ", sur le Mac" : ""
-    let ordre = bloquante.map { ", après l'étape \($0)" } ?? ""
-    return "Étape \(etape.numero), \(etape.titre)\(ou), \(etat)\(ordre)"
+    let ou = mode == .objectifs && etape.responsable == .hote ? L(", sur le Mac") : ""
+    let ordre = bloquante.map { ", " + String(format: L("après l'étape %d"), $0) } ?? ""
+    return String(format: L("Étape %d"), etape.numero) + ", \(etape.titre)\(ou), \(etat)\(ordre)"
   }
 
   private func symbole(_ etat: EtapesServeur.Etat) -> String {

@@ -307,18 +307,20 @@ public enum DecouverteServeurs {
   public static func messageDAbsence() -> String {
     #if os(macOS)
       if let diagnostic, !diagnostic.isEmpty {
-        return "Découverte automatique indisponible (\(diagnostic)). Saisissez l'adresse de la machine ci-dessous."
+        return String(
+          format: L("Découverte automatique indisponible (%@). Saisissez l'adresse de la machine ci-dessous."),
+          diagnostic)
       }
       if tailscaleSembleInstalle() {
-        return "Aucune machine trouvée sur le tailnet. Vérifiez que Tailscale est connecté, puis rafraîchissez."
+        return L("Aucune machine trouvée sur le tailnet. Vérifiez que Tailscale est connecté, puis rafraîchissez.")
       }
-      return "Tailscale ne semble pas installé : installez-le, connectez-vous, puis rafraîchissez."
+      return L("Tailscale ne semble pas installé : installez-le, connectez-vous, puis rafraîchissez.")
     #else
       // On ne dit plus « impossible sur iPhone » : la découverte y est
       // impossible LOCALEMENT, mais un hôte déjà joint publie la liste. Le
       // message donne donc l'action qui débloque, au lieu d'un constat.
       return
-        "Saisissez l'adresse d'une machine ci-dessous, puis connectez-vous : elle publiera ensuite la liste des machines de votre tailnet."
+        L("Saisissez l'adresse d'une machine ci-dessous, puis connectez-vous : elle publiera ensuite la liste des machines de votre tailnet.")
     #endif
   }
 

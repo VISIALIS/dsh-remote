@@ -74,8 +74,8 @@ func libelleDuneLigne() {
   let libelle = affiche.libelleAccessible
   #expect(libelle.hasPrefix("Corriger le portail"), "le titre vient en premier : c'est ce qu'on cherche")
   #expect(libelle.contains(L("tour en cours")))
-  #expect(libelle.contains("1 événement"))
-  #expect(!libelle.contains("événements"), "un seul événement ne se dit pas au pluriel")
+  #expect(libelle.contains("1 " + L("événement")))
+  #expect(!libelle.contains(L("événements")), "un seul événement ne se dit pas au pluriel")
 }
 
 @Test("Une session au repos ne dit RIEN de son état — le silence est l'information")

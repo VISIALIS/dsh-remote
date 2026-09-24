@@ -17,11 +17,16 @@ import SwiftUI
 /// #1 du dépôt — tout en français — reste vraie pour le code, les commentaires et
 /// les clés. L'anglais est une traduction AJOUTÉE.
 public enum Traduction {
-  /// Les langues servies par ce paquet.
-  ///
-  /// L'ORDRE EST CELUI DE LA SOURCE : le français d'abord. Un test vérifie que
-  /// les deux tables portent exactement les mêmes clés.
-  public static let langues = ["fr", "en"]
+  /// Les langues servies. L'anglais est la langue du projet : c'est elle qui
+  /// s'affiche, sauf si le système demande le français.
+  public static let langues = ["en", "fr"]
+
+  /// `fr` seulement quand la langue préférée du système est le français.
+  /// Toute autre langue, y compris l'absence de préférence, reste en anglais.
+  public static func langueDemandee() -> String {
+    let preferee = Locale.preferredLanguages.first?.lowercased() ?? "en"
+    return preferee.hasPrefix("fr") ? "fr" : "en"
+  }
 
   /// Le texte d'une clé dans une langue DONNÉE, ou `nil` si la clé n'y est pas.
   ///
@@ -192,8 +197,8 @@ public enum Traduction {
 ///
 /// La clé EST la phrase française (voir `Traduction`) : ce qui se lit dans le
 /// code est ce qui s'affiche.
-public func T(_ cle: String.LocalizationValue) -> Text {
-  Text(String(localized: cle, bundle: Traduction.paquet))
+public func T(_ cle: String) -> Text {
+  Text(verbatim: L(cle))
 }
 
 /// La CHAÎNE d'une clé, localisée — pour les endroits qui prennent un `String`.
@@ -204,6 +209,9 @@ public func T(_ cle: String.LocalizationValue) -> Text {
 /// `String` DÉJÀ TRADUITE est le seul chemin qui traverse le paquet — et c'est
 /// aussi ce qu'il faut au modèle, dont les messages sont construits en `String`
 /// avant d'être affichés.
-public func L(_ cle: String.LocalizationValue) -> String {
-  String(localized: cle, bundle: Traduction.paquet)
+public func L(_ cle: String) -> String {
+  let langue = Traduction.langueDemandee()
+  if let valeur = Traduction.texte(cle, langue: langue) { return valeur }
+  if langue != "en", let anglais = Traduction.texte(cle, langue: "en") { return anglais }
+  return cle
 }

@@ -196,9 +196,9 @@ public struct FeuilleReglages: View {
   private var etatTransport: String {
     let declarations = ExceptionATS.duBuildCourant.count
     switch declarations {
-    case 0: return "aucune exception déclarée"
-    case 1: return "1 exception déclarée"
-    default: return "\(declarations) exceptions déclarées"
+    case 0: return L("aucune exception déclarée")
+    case 1: return L("1 exception déclarée")
+    default: return String(format: L("%d exceptions déclarées"), declarations)
     }
   }
 

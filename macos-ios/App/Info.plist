@@ -65,15 +65,15 @@
     l'application au moment ou le scanner s'ouvre : ce n'est pas un refus, c'est
     un plantage — et il ne se voit qu'a l'usage, jamais a la compilation.
 
-    La description de référence est en français (CFBundleDevelopmentRegion).
-    Elle est localisée en anglais et en français via InfoPlist.strings dans
-    le paquet d'application.
+    La description de référence est en anglais : c'est la langue du projet
+    (CFBundleDevelopmentRegion). Le français est dans fr.lproj/InfoPlist.strings,
+    et le système le choisit quand l'appareil est en français.
 
     La camera ne sert QU'A cela : aucune image n'est enregistree, analysee ni
     transmise. Seul le TEXTE lu est analyse, par `Appairage.analyser`.
   -->
   <key>NSCameraUsageDescription</key>
-  <string>Pour scanner le QR code d'appairage affiché par DSH sur votre Mac. Aucune image n'est enregistrée ni transmise.</string>
+  <string>To scan the pairing QR code displayed by DSH on your Mac. No images are saved or transmitted.</string>
   <key>UILaunchScreen</key><dict/>
   <key>UIApplicationSceneManifest</key>
   <dict>

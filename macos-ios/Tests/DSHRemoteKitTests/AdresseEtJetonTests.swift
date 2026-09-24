@@ -178,9 +178,9 @@ func remedeDu401() {
   // vide. Les deux endroits qui portent le champ sont donc nommés — et le test
   // empêche d'en réintroduire un troisième qui n'existerait pas.
   let texte = ErreurRemote.jetonRefuse.description
-  #expect(!texte.contains("Réglages"), "les Réglages ne contiennent plus de champ de jeton")
-  #expect(texte.contains("Jeton d'appareil"))
-  #expect(texte.contains("Adresse"))
+  #expect(!texte.contains(L("Réglages")), "les Réglages ne contiennent plus de champ de jeton")
+  #expect(texte.contains(L("Jeton d'appareil")))
+  #expect(texte.contains(L("Adresse")))
   // Le message reste utile : il dit la cause ET le geste.
   #expect(texte.contains("401"))
   #expect(texte.contains("harness"))

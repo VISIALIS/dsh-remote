@@ -1850,7 +1850,7 @@ struct AfficheLigneSession: Equatable {
     var morceaux = [titre]
     if etat != .rien { morceaux.append(etat.libelle) }
     if let evenements {
-      morceaux.append("\(evenements) événement\(evenements > 1 ? "s" : "")")
+      morceaux.append("\(evenements) " + (evenements > 1 ? L("événements") : L("événement")))
     }
     if let octets {
       morceaux.append(ByteCountFormatter.string(fromByteCount: Int64(octets), countStyle: .file))
@@ -1875,7 +1875,7 @@ struct LigneSession: View {
       }
       HStack(spacing: 8) {
         if let evenements = affiche.evenements {
-          Text("\(evenements) évts")
+          Text("\(evenements) " + (evenements > 1 ? L("évts") : L("évt")))
         }
         if let octets = affiche.octets {
           Text(ByteCountFormatter.string(fromByteCount: Int64(octets), countStyle: .file))

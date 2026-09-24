@@ -13,6 +13,14 @@ import Testing
 // Ils ne disent pas si la traduction est BONNE — cela se juge en lisant —, mais
 // ils disent qu'elle est COMPLÈTE et qu'aucune valeur n'est vide.
 
+@Test("L suit la langue du système, et l'anglais reste le repli")
+func lSuitLaLangueDuSysteme() {
+  #expect(Traduction.texte("Prêt", langue: "en") == "Ready")
+  #expect(Traduction.texte("Prêt", langue: "fr") == "Prêt")
+  #expect(L("Prêt") == Traduction.texte("Prêt", langue: Traduction.langueDemandee()))
+  #expect(L("cette clé n'existe pas") == "cette clé n'existe pas")
+}
+
 @Test("Les tables française et anglaise existent, et sont lisibles depuis le paquet")
 func tablesLisibles() throws {
   for langue in Traduction.langues {

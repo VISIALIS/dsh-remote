@@ -274,7 +274,7 @@ struct FeuilleAdresse: View {
         Label { T("test de l'adresse…") } icon: { Image(systemName: "hourglass") }.font(.caption)
           .foregroundStyle(EtatVisuel.attente.couleur)
       case let .joignable(reponses):
-        Label("\(reponses) session(s) — adresse et jeton acceptés", systemImage: EtatVisuel.pret.symbole)
+        Label(String(format: L("%d session(s) — adresse et jeton acceptés"), reponses), systemImage: EtatVisuel.pret.symbole)
           .font(.caption)
           .foregroundStyle(EtatVisuel.pret.couleur)
       case let .injoignable(detail):
