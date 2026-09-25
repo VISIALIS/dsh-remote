@@ -1,0 +1,9 @@
+{
+  "id" : "6848cb3d-e0e6-42a8-ade1-f44d15e43b9d",
+  "targets" : [
+    {
+      "id" : "b52f554c-2e23-4ef4-8bce-fe2814c58e12",
+      "name" : "DSHRemote"
+    }
+  ]
+}

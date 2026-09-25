@@ -1,7 +1,6 @@
 import WidgetKit
 import SwiftUI
 
-@main
 struct DSHRemoteWidgetsBundle: WidgetBundle {
   var body: some Widget {
     DSHRemoteWidget()

@@ -153,16 +153,25 @@ appex="$bundle/Contents/PlugIns/DSHRemoteWidgets.appex"
 mkdir -p "$appex/Contents/MacOS" "$appex/Contents/Resources"
 
 arch="$(uname -m)"
+entry_obj="$(mktemp /tmp/widget_entry_XXXXX.o)"
+clang \
+  -target "${arch}-apple-macos14.0" \
+  -c "$racine/Widgets/widget_entry.c" \
+  -o "$entry_obj"
+
 swiftc \
   -target "${arch}-apple-macos14.0" \
   -I "$dir_bin" \
   -L "$dir_bin" \
   -lDSHRemoteKit \
   -framework WidgetKit -framework SwiftUI \
+  "$racine/Widgets/main.swift" \
   "$racine/Widgets/DSHRemoteWidgetsBundle.swift" \
   "$racine/Widgets/DSHRemoteWidget.swift" \
   "$racine/Widgets/FournisseurTimeline.swift" \
+  "$entry_obj" \
   -o "$appex/Contents/MacOS/DSHRemoteWidgets"
+rm -f "$entry_obj"
 
 cat >"$appex/Contents/Info.plist" <<'PLIST_WIDGET'
 <?xml version="1.0" encoding="UTF-8"?>

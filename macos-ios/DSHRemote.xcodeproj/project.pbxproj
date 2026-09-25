@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		542A92773E119B55E450E091 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000034 /* PrivacyInfo.xcprivacy */; };
+		813FAFD9A3A15280683870FB /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3ED93FED0D5C9753A3677D78 /* Cocoa.framework */; };
+		8492AB0807F6B2EBF614A171 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000067 /* InfoPlist.strings */; };
 		A1000000000000000000001 /* AppDSHRemoteIOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000002 /* AppDSHRemoteIOS.swift */; };
 		A1000000000000000000003 /* DSHRemoteKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000004 /* DSHRemoteKit */; };
 		A1000000000000000000031 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000030 /* Assets.xcassets */; };
@@ -18,6 +21,8 @@
 		A1000000000000000000059 /* DSHRemoteWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1000000000000000000049 /* DSHRemoteWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A1000000000000000000064 /* ActiviteSessionWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000065 /* ActiviteSessionWidget.swift */; };
 		A1000000000000000000066 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000067 /* InfoPlist.strings */; };
+		EDB8D2737C5BA4592612C253 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000030 /* Assets.xcassets */; };
+		F11202FA78B2589EF20BC2AC /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D4266B0EE3A7F6A09C1412 /* main.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,12 +50,14 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		3ED93FED0D5C9753A3677D78 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.0.sdk/System/Library/Frameworks/Cocoa.framework; sourceTree = DEVELOPER_DIR; };
+		76A0E1319F0B74ED6D0FB5FD /* DSHRemote-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "DSHRemote-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000000000000000000002 /* AppDSHRemoteIOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDSHRemoteIOS.swift; sourceTree = "<group>"; };
 		A1000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1000000000000000000008 /* DSHRemote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DSHRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000000000000000000030 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A1000000000000000000034 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A1000000000000000000032 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		A1000000000000000000034 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A1000000000000000000042 /* FournisseurTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FournisseurTimeline.swift; sourceTree = "<group>"; };
 		A1000000000000000000044 /* DSHRemoteWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSHRemoteWidget.swift; sourceTree = "<group>"; };
 		A1000000000000000000046 /* DSHRemoteWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSHRemoteWidgetsBundle.swift; sourceTree = "<group>"; };
@@ -61,9 +68,19 @@
 		A1000000000000000000065 /* ActiviteSessionWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiviteSessionWidget.swift; sourceTree = "<group>"; };
 		A1000000000000000000068 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		A1000000000000000000069 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		AD909284079E7EB4C573DE7B /* main.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		B6D4266B0EE3A7F6A09C1412 /* main.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = main.swift; path = Sources/DSHRemoteApp/main.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		5B643EF9DF30FE5CA72993BC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				813FAFD9A3A15280683870FB /* Cocoa.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A1000000000000000000009 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -83,6 +100,22 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0FE347D1DA5CCFA67397C39C /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				BDB69A6EB98E34405F0D095B /* OS X */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		8F0F2E25BD7C6D0D2B23DEF4 /* DSHRemoteApp */ = {
+			isa = PBXGroup;
+			children = (
+				AD909284079E7EB4C573DE7B /* main.swift */,
+			);
+			name = DSHRemoteApp;
+			sourceTree = "<group>";
+		};
 		A1000000000000000000010 = {
 			isa = PBXGroup;
 			children = (
@@ -90,6 +123,9 @@
 				A1000000000000000000048 /* Widgets */,
 				A1000000000000000000033 /* Config */,
 				A1000000000000000000012 /* Products */,
+				0FE347D1DA5CCFA67397C39C /* Frameworks */,
+				C2A8F3E56A5BC8B5E1A0B8A7 /* Sources */,
+				B6D4266B0EE3A7F6A09C1412 /* main.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -110,6 +146,7 @@
 			children = (
 				A1000000000000000000008 /* DSHRemote.app */,
 				A1000000000000000000049 /* DSHRemoteWidgets.appex */,
+				76A0E1319F0B74ED6D0FB5FD /* DSHRemote-macOS.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -136,9 +173,46 @@
 			path = Widgets;
 			sourceTree = "<group>";
 		};
+		BDB69A6EB98E34405F0D095B /* OS X */ = {
+			isa = PBXGroup;
+			children = (
+				3ED93FED0D5C9753A3677D78 /* Cocoa.framework */,
+			);
+			name = "OS X";
+			sourceTree = "<group>";
+		};
+		C2A8F3E56A5BC8B5E1A0B8A7 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				8F0F2E25BD7C6D0D2B23DEF4 /* DSHRemoteApp */,
+			);
+			name = Sources;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		888E1E9E8076F3794AA0471B /* DSHRemote-macOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3414F5399C10109600F8327D /* Build configuration list for PBXNativeTarget "DSHRemote-macOS" */;
+			buildPhases = (
+				5B1E263A86E052D186DA515D /* Sources */,
+				5B643EF9DF30FE5CA72993BC /* Frameworks */,
+				F35EAF42DD4F973F38BDEAEC /* Resources */,
+				A41F477A2E876DC67122C800 /* Exception ATS */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "DSHRemote-macOS";
+			packageProductDependencies = (
+				A1000000000000000000004 /* DSHRemoteKit */,
+			);
+			productName = "DSH Remote";
+			productReference = 76A0E1319F0B74ED6D0FB5FD /* DSHRemote-macOS.app */;
+			productType = "com.apple.product-type.application";
+		};
 		A1000000000000000000013 /* DSHRemote */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A1000000000000000000014 /* Build configuration list for PBXNativeTarget "DSHRemote" */;
@@ -219,6 +293,7 @@
 			targets = (
 				A1000000000000000000013 /* DSHRemote */,
 				A1000000000000000000054 /* DSHRemoteWidgets */,
+				888E1E9E8076F3794AA0471B /* DSHRemote-macOS */,
 			);
 		};
 /* End PBXProject section */
@@ -241,19 +316,17 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-/* End PBXResourcesBuildPhase section */
-
-/* Begin PBXVariantGroup section */
-		A1000000000000000000067 /* InfoPlist.strings */ = {
-			isa = PBXVariantGroup;
-			children = (
-				A1000000000000000000068 /* fr */,
-				A1000000000000000000069 /* en */,
+		F35EAF42DD4F973F38BDEAEC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EDB8D2737C5BA4592612C253 /* Assets.xcassets in Resources */,
+				542A92773E119B55E450E091 /* PrivacyInfo.xcprivacy in Resources */,
+				8492AB0807F6B2EBF614A171 /* InfoPlist.strings in Resources */,
 			);
-			name = InfoPlist.strings;
-			sourceTree = "<group>";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
-/* End PBXVariantGroup section */
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		A1000000000000000000025 /* Exception ATS */ = {
@@ -275,9 +348,36 @@
 			shellPath = /bin/sh;
 			shellScript = "\"${SRCROOT}/Scripts/injecter-exception-ats.sh\"\n";
 		};
+		A41F477A2E876DC67122C800 /* Exception ATS */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Exception ATS";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/Scripts/injecter-exception-ats.sh\"\n";
+		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		5B1E263A86E052D186DA515D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F11202FA78B2589EF20BC2AC /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A1000000000000000000015 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -307,7 +407,85 @@
 		};
 /* End PBXTargetDependency section */
 
+/* Begin PBXVariantGroup section */
+		A1000000000000000000067 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				A1000000000000000000068 /* fr */,
+				A1000000000000000000069 /* en */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
 /* Begin XCBuildConfiguration section */
+		4BDAE7C4F2559BE50B0F7AD4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1000000000000000000032 /* Base.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Config/DSHRemote-macOS.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(DSH_TEAM)";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "App/Info-macOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1;
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DSH_BUNDLE_ID)";
+				PRODUCT_NAME = "DSH Remote";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		63C6E2F83FC6B633774B8671 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A1000000000000000000032 /* Base.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = NO;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Config/DSHRemote-macOS.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(DSH_TEAM)";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "App/Info-macOS.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1;
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(DSH_BUNDLE_ID)";
+				PRODUCT_NAME = "DSH Remote";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
 		A1000000000000000000020 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -478,6 +656,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		3414F5399C10109600F8327D /* Build configuration list for PBXNativeTarget "DSHRemote-macOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4BDAE7C4F2559BE50B0F7AD4 /* Release */,
+				63C6E2F83FC6B633774B8671 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		A1000000000000000000014 /* Build configuration list for PBXNativeTarget "DSHRemote" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
