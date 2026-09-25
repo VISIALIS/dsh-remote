@@ -10,7 +10,8 @@ enum ReleveDActivite {
 
   static func horodatage(modifieLe: Double?) -> Date {
     guard let modifieLe else { return Date() }
-    return Date(timeIntervalSince1970: modifieLe)
+    let secondes = modifieLe > 100_000_000_000 ? modifieLe / 1000.0 : modifieLe
+    return Date(timeIntervalSince1970: secondes)
   }
 
   static func aChange(

@@ -102,12 +102,19 @@ fi
 # dépôt. On ne l'écrit pas dans le journal : un groupe personnel n'a pas à y
 # figurer (RÈGLE #0).
 groupe_app="group.org.example.DSHRemote"
+bundle_id="org.example.DSHRemote"
 if [[ -f "$racine/Config/Local.xcconfig" ]]; then
   lu="$(sed -n 's/^[[:space:]]*DSH_APP_GROUP[[:space:]]*=[[:space:]]*//p' "$racine/Config/Local.xcconfig" | head -1)"
   lu="${lu%%#*}"
   lu="$(printf '%s' "$lu" | tr -d '[:space:]')"
   if [[ "$lu" =~ ^[A-Za-z0-9._-]+$ ]]; then
     groupe_app="$lu"
+  fi
+  lu_bid="$(sed -n 's/^[[:space:]]*DSH_BUNDLE_ID[[:space:]]*=[[:space:]]*//p' "$racine/Config/Local.xcconfig" | head -1)"
+  lu_bid="${lu_bid%%#*}"
+  lu_bid="$(printf '%s' "$lu_bid" | tr -d '[:space:]')"
+  if [[ "$lu_bid" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    bundle_id="$lu_bid"
   fi
 fi
 entitlements_groupe="$(mktemp)"
@@ -116,6 +123,22 @@ cat >"$entitlements_groupe" <<EOF
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>com.apple.security.application-groups</key>
+  <array>
+    <string>${groupe_app}</string>
+  </array>
+</dict>
+</plist>
+EOF
+
+entitlements_widget="$(mktemp)"
+cat >"$entitlements_widget" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
   <key>com.apple.security.application-groups</key>
   <array>
     <string>${groupe_app}</string>
@@ -154,11 +177,15 @@ cat >"$appex/Contents/Info.plist" <<'PLIST_WIDGET'
 		<string>fr</string>
 	</array>
 	<key>CFBundleExecutable</key><string>DSHRemoteWidgets</string>
-	<key>CFBundleIdentifier</key><string>org.example.DSHRemote.mac.Widgets</string>
+	<key>CFBundleIdentifier</key><string>IDENTIFIANT_WIDGET</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 	<key>CFBundleName</key><string>DSHRemoteWidgets</string>
 	<key>CFBundlePackageType</key><string>XPC!</string>
 	<key>CFBundleShortVersionString</key><string>0.2</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
 	<key>CFBundleVersion</key><string>3</string>
 	<key>LSMinimumSystemVersion</key><string>14.0</string>
 	<key>DSHAppGroup</key><string>GROUPE_APP</string>
@@ -171,14 +198,16 @@ cat >"$appex/Contents/Info.plist" <<'PLIST_WIDGET'
 </plist>
 PLIST_WIDGET
 
-# Le heredoc ci-dessus est quoté : le groupe est posé après, sans l'imprimer.
+# Le heredoc ci-dessus est quoté : les identifiants sont posés après, sans les imprimer.
 sed -i '' "s/GROUPE_APP/${groupe_app}/" "$appex/Contents/Info.plist"
+sed -i '' "s/IDENTIFIANT_WIDGET/${bundle_id}.Widgets/" "$appex/Contents/Info.plist"
 
 if [[ -d "$ressources" ]]; then
   cp -R "$ressources" "$appex/Contents/Resources/DSHRemote_DSHRemoteKit.bundle"
 fi
 
-codesign --force --sign - --entitlements "$entitlements_groupe" "$appex" 2>/dev/null || true
+codesign --force --sign - --entitlements "$entitlements_widget" "$appex" 2>/dev/null || true
+rm -f "$entitlements_widget"
 echo "[macos] extension widget prete : PlugIns/DSHRemoteWidgets.appex"
 
 
@@ -196,7 +225,7 @@ cat >"$bundle/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>DSH Remote</string>
   <key>CFBundleDisplayName</key><string>DSH Remote</string>
   <key>CFBundleExecutable</key><string>DSHRemoteMac</string>
-  <key>CFBundleIdentifier</key><string>org.example.DSHRemote.mac</string>
+  <key>CFBundleIdentifier</key><string>IDENTIFIANT_APP</string>
   <key>CFBundleIconFile</key><string>DSHRemote</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.2</string>
@@ -218,7 +247,7 @@ cat >"$bundle/Contents/Info.plist" <<'PLIST'
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
-      <key>CFBundleURLName</key><string>org.example.DSHRemote</string>
+      <key>CFBundleURLName</key><string>IDENTIFIANT_APP</string>
       <key>CFBundleURLSchemes</key>
       <array><string>dshremote</string></array>
     </dict>
@@ -228,6 +257,7 @@ cat >"$bundle/Contents/Info.plist" <<'PLIST'
 PLIST
 
 sed -i '' "s/GROUPE_APP/${groupe_app}/" "$bundle/Contents/Info.plist"
+sed -i '' "s/IDENTIFIANT_APP/${bundle_id}/" "$bundle/Contents/Info.plist"
 
 # L'EXCEPTION ATS EST INDISPENSABLE ICI, ET ELLE A ÉTÉ OUBLIÉE.
 #
@@ -345,6 +375,15 @@ if [[ "$installer" -eq 1 ]]; then
     echo "[macos] ATTENTION : le paquet installe n'a PAS d'exception ATS." >&2
     echo "[macos]   il ne joindra aucun Mac en HTTP (erreur -1022) : voir Config/DomaineTailnet." >&2
   fi
+
+  # Enregistrement auprès de LaunchServices et PluginKit pour les widgets macOS
+  lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+  if [[ -x "$lsregister" ]]; then
+    "$lsregister" -f -R "$cible" >/dev/null 2>&1 || true
+    "$lsregister" -f "$cible/Contents/PlugIns/DSHRemoteWidgets.appex" >/dev/null 2>&1 || true
+  fi
+  pluginkit -a "$cible/Contents/PlugIns/DSHRemoteWidgets.appex" 2>/dev/null || true
+
   echo "[macos] installe et verifie : $cible"
 fi
 

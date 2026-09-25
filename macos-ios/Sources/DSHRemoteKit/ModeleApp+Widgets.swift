@@ -46,7 +46,7 @@ extension ModeleApp {
         espaceNom: derniere.projet ?? derniere.dossier ?? "",
         etat: derniere.statut ?? "inactif",
         derniereEtape: etatCalcule.libelle,
-        dateDerniereActivite: derniere.modifieLe.map { Date(timeIntervalSince1970: $0) } ?? Date()
+        dateDerniereActivite: ReleveDActivite.horodatage(modifieLe: derniere.modifieLe)
       )
     } else {
       sommaireDerniere = nil

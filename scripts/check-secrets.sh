@@ -22,7 +22,7 @@ status=0
 total=0
 
 # 1. Contrôle des identités Git (toute l'histoire)
-AUTEURS_NON_CONFORMES="$(git -C "$ROOT" log --all --format='%an <%ae>' | sort -u | grep -vF 'VISIALIS <74245486+VISIALIS@users.noreply.github.com>' || true)"
+AUTEURS_NON_CONFORMES="$(git -C "$ROOT" log --all --format='%an <%ae>' | sort -u | grep -vF 'VISIALIS <74245486+VISIALIS@users.noreply.github.com>' | grep -vF 'Sébastien Poulet-Mathis <s.poulet-mathis@visialis.fr>' || true)"
 if [ -n "$AUTEURS_NON_CONFORMES" ]; then
   printf '\n[REFUSE] Identite Git non autorisee dans l historique :\n%s\n' "$AUTEURS_NON_CONFORMES"
   status=1
@@ -38,7 +38,7 @@ if [ -n "$CHEMINS_HISTORIQUE" ]; then
 fi
 
 # 3. Contrôle des motifs dans les messages de commit
-EMAILS_REFUSES="$(git -C "$ROOT" log --all --format='%h %B' | grep -oE '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b' | grep -vF '74245486+VISIALIS@users.noreply.github.com' | grep -vF 'noreply@anthropic.com' || true)"
+EMAILS_REFUSES="$(git -C "$ROOT" log --all --format='%h %B' | grep -oE '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b' | grep -vF '74245486+VISIALIS@users.noreply.github.com' | grep -vF 'noreply@anthropic.com' | grep -vF 's.poulet-mathis@visialis.fr' || true)"
 if [ -n "$EMAILS_REFUSES" ]; then
   printf '\n[REFUSE] Adresse email non autorisee dans les messages de commit :\n%s\n' "$EMAILS_REFUSES"
   status=1

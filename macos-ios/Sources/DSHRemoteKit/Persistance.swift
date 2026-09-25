@@ -214,10 +214,30 @@ public struct Persistance {
     guard let donnees = try? JSONEncoder().encode(instantane) else { return }
     let cible = appGroupDefaults ?? defaults
     cible.set(donnees, forKey: Self.cleInstantaneWidget)
+
+    // Écriture miroir dans le dossier partagé App Group (garantit la parité macOS sandbox)
+    if let dossierPartage = FileManager.default.containerURL(
+      forSecurityApplicationGroupIdentifier: Self.groupeAppActif
+    ) {
+      let fichier = dossierPartage.appendingPathComponent(Self.cleInstantaneWidget + ".json")
+      try? donnees.write(to: fichier, options: .atomic)
+    }
   }
 
   /// Lit le dernier instantané déposé pour le widget.
   public func lireInstantaneWidget() -> InstantaneWidget? {
+    // Lecture préférentielle dans le conteneur partagé de groupe
+    if let dossierPartage = FileManager.default.containerURL(
+      forSecurityApplicationGroupIdentifier: Self.groupeAppActif
+    ) {
+      let fichier = dossierPartage.appendingPathComponent(Self.cleInstantaneWidget + ".json")
+      if let donnees = try? Data(contentsOf: fichier),
+        let instantane = try? JSONDecoder().decode(InstantaneWidget.self, from: donnees)
+      {
+        return instantane
+      }
+    }
+
     let source = appGroupDefaults ?? defaults
     guard let donnees = source.data(forKey: Self.cleInstantaneWidget),
       let instantane = try? JSONDecoder().decode(InstantaneWidget.self, from: donnees)
