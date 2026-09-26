@@ -104,6 +104,14 @@ actor EspionAlerteur: Alerteur {
   func prevenir(_ alerte: Alerte) async { recues.append(alerte) }
   func demanderAutorisation() async -> Bool { accorde }
   func alertes() -> [Alerte] { recues }
+
+  func attendreAlertes(auMoins nombre: Int, delai: TimeInterval = 2.0) async -> [Alerte] {
+    let echeance = Date().addingTimeInterval(delai)
+    while recues.count < nombre && Date() < echeance {
+      try? await Task.sleep(nanoseconds: 20_000_000)
+    }
+    return recues
+  }
 }
 
 /// Deux listes de sessions, la seconde avec une session qui ATTEND une réponse.
@@ -162,9 +170,7 @@ func allumeesAlertentSurTransition() async throws {
   #expect(await espion.alertes().isEmpty, "la première observation n'alerte pas")
 
   modele.appliquerSessions(liste(true), vu: modele.generationDuDepart())
-  try await Task.sleep(nanoseconds: 60_000_000)
-
-  let recues = await espion.alertes()
+  let recues = await espion.attendreAlertes(auMoins: 1)
   #expect(recues.count == 1)
   #expect(recues.first?.titre == L("Une session attend votre réponse"))
 
