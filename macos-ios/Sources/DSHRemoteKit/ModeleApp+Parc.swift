@@ -477,6 +477,18 @@ extension ModeleApp {
   /// possible avant qu'un serveur ait été joint (c'est lui qui publie le
   /// tailnet).
   public func demarrer() async {
+    #if DEBUG
+      // ANCRE DE CAPTURE, ABSENTE DU BINAIRE LIVRÉ. Le simulateur n'a ni caméra
+      // pour le QR code, ni moyen d'injecter un appui : sans elle, les captures
+      // de la fiche App Store ne montreraient que l'écran d'appairage. Le jeton
+      // vient de `Scripts/hote-demo.mjs` (fictif). Il est rangé DIRECTEMENT au
+      // trousseau du simulateur : `enregistrerJeton` refuse de garder celui de
+      // la boucle locale, et la page de la machine le relit par le gardien.
+      if let jeton = ProcessInfo.processInfo.environment["DSH_REMOTE_JETON_DEMO"], !jeton.isEmpty {
+        gardien.ecrire(jeton, pour: IdentiteHote.cle(cible.adresse))
+        definirJeton(jeton)
+      }
+    #endif
     if sourceServeurs == .aucune, !decouverteLocalePossible, serveurs.isEmpty {
       // Aucune liste locale possible (iPhone) : on tente l'adresse mémorisée.
       await connecter()
