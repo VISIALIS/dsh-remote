@@ -26,7 +26,10 @@ echo "--- Exécution des tests Swift (DSHRemoteKitTests) ---"
 
 # 3. Injection dynamique de la signature
 echo "--- Configuration de la signature ---"
-TEAM_VAL="${CI_TEAM_ID:-${DSH_CLOUD_TEAM:-${DSH_TEAM_ID:-${CI_DSH_TEAM:-}}}}"
+TEAM_VAL="${DSH_CLOUD_TEAM:-${DSH_TEAM_ID:-${CI_DSH_TEAM:-}}}"
+if [[ -z "$TEAM_VAL" ]] && [[ "${CI_TEAM_ID:-}" =~ ^[A-Z0-9]{10}$ ]]; then
+  TEAM_VAL="$CI_TEAM_ID"
+fi
 BUNDLE_VAL="${CI_BUNDLE_ID:-${DSH_CLOUD_BUNDLE_ID:-${CI_DSH_BUNDLE_ID:-}}}"
 
 if [[ -n "$TEAM_VAL" ]]; then
