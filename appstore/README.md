@@ -105,19 +105,29 @@ Host plugin (open source, MIT): https://github.com/VISIALIS/dsh-remote
 
 ---
 
-## Captures d'écran à produire
+## Captures d'écran
 
-Tailles obligatoires (App Store Connect les redimensionne pour les appareils plus petits) :
+Prêtes dans `captures/` (données fictives, anglais, barre d'état 9:41) :
 
-| Plateforme | Taille | Obligatoire |
+| Dossier | Taille | Emplacement App Store Connect |
 |---|---|---|
-| iPhone 6,9" | 1320 × 2868 (portrait) | Oui |
-| iPad 13" | 2064 × 2752 (portrait) | Oui — l'app cible aussi l'iPad |
-| Mac | 2880 × 1800 (ou 1280 × 800) | Seulement si la plateforme macOS est ajoutée à l'app |
+| `captures/iphone-6.9/` | 1320 × 2868 | iPhone 6,9" |
+| `captures/ipad-13/` | 2064 × 2752 | iPad 13" |
 
-Écrans suggérés (3 à 5) : liste des sessions, détail d'une session avec appels d'outils, appairage par QR code, widgets / Activité en direct, réglages de confidentialité.
+Mac (2880 × 1800) : seulement si la plateforme macOS est ajoutée à l'app.
 
-Les captures doivent montrer des **données fictives** (RÈGLE #0 : aucun nom de machine, tailnet ou chemin réel). Le faux hôte des tests (`macos-ios/Tests/DSHRemoteKitTests/Outils/serveur-modele-essai.mjs`) peut servir de source de données dans le simulateur.
+**Les régénérer** (aucune minute Xcode Cloud) :
+
+1. `node macos-ios/Scripts/hote-demo.mjs 3080` — le vrai plugin, nourri de sessions fictives ;
+2. construire l'app en **Debug** pour le simulateur, l'installer ;
+3. la lancer avec `SIMCTL_CHILD_DSH_REMOTE_ADRESSE=http://127.0.0.1:3080` et
+   `SIMCTL_CHILD_DSH_REMOTE_JETON_DEMO=<jeton imprimé par le script>`, plus `-AppleLanguages '(en)'` ;
+   `--session=<fragment>` ouvre une session, `--page-seule` la page de la machine ;
+4. `xcrun simctl status_bar <appareil> override --time 9:41 …` puis `xcrun simctl io <appareil> screenshot`.
+
+Le jeton de démo n'existe qu'en Debug (`#if DEBUG` dans `ModeleApp+Parc.swift`) : il est absent du binaire livré.
+
+Voir aussi `CONFORMITE.md` pour l'audit des App Store Review Guidelines.
 
 ---
 

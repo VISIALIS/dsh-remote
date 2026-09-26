@@ -3,7 +3,6 @@ DSH Remote Companion est le compagnon natif pour iPhone, iPad et Mac de DeepSeek
 SUIVEZ VOS AGENTS EN DIRECT
 • Toutes les sessions actives et leur statut, d’un coup d’œil
 • Les appels d’outils au moment où ils se produisent : modifications de fichiers, commandes, progression de la génération
-• Les jetons consommés par session
 • Une notification quand une session attend votre réponse
 
 SUR L’ÉCRAN VERROUILLÉ
