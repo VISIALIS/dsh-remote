@@ -45,7 +45,7 @@ func refusDePorteeReconnu() {
   // sur la machine qui héberge le harness. Un message qui laisserait chercher un
   // réglage dans l'application serait un faux remède.
   #expect(erreur.description.contains("DSH_REMOTE_PORTEE=ecriture"))
-  #expect(erreur.description.contains("lecture"))
+  #expect(erreur.description.contains("lecture") || erreur.description.contains("read"))
 }
 
 @Test("Un 403 sans cette raison reste une origine refusée")

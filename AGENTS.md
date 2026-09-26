@@ -51,3 +51,11 @@ All changes must pass:
 2. `node --test plugin/tests/`
 3. `(cd macos-ios && swift test)`
 Or simply `bash scripts/verifier.sh`.
+
+---
+
+## RULE #3 — Deployment & Releases
+
+See [`DEPLOIEMENT.md`](DEPLOIEMENT.md) for tag naming conventions:
+- **Beta / TestFlight:** `beta-<version>` (e.g. `beta-0.1.0`) or `test-<version>`. Never use `v...` for a beta.
+- **Production:** `v<version>` (e.g. `v1.0.0`).
