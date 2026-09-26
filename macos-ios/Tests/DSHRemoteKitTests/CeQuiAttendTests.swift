@@ -43,7 +43,9 @@ func resumeDEspace() {
   #expect(resume.total == 4)
   #expect(resume.enAttente == 1)
   #expect(resume.terminees == 1)
-  #expect(resume.texte == "4 · 1 en attente · 1 terminée")
+  // Le texte suit la langue du système : on le compose par les MÊMES clés.
+  let attendu = ["4", String(format: L("%d en attente"), 1), String(format: L("%d terminée"), 1)]
+  #expect(resume.texte == attendu.joined(separator: " · "))
 }
 
 @Test("Quand rien n'attend, l'en-tête reste court")

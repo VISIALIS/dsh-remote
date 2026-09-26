@@ -1,8 +1,9 @@
 /* Table anglaise — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   275 clés. */
+   283 clés. */
 
+"%d en attente" = "%d pending";
 "%d exceptions déclarées" = "%d exceptions declared";
 "%d jeton(s) d'appareil effacé(s)" = "%d device token(s) erased";
 "%d nouveaux événements" = "%d new events";
@@ -33,6 +34,7 @@
 "Appairer" = "Pair";
 "Appairer avec ce texte" = "Pair with this text";
 "Appairer un appareil" = "Pair a device";
+"Application" = "App";
 "après l'étape" = "after step";
 "après l'étape %d" = "after step %d";
 "attend votre réponse" = "waiting for your answer";
@@ -48,8 +50,8 @@
 "aucune exception déclarée" = "no exception declared";
 "Aucune machine trouvée sur le tailnet. Vérifiez que Tailscale est connecté, puis rafraîchissez." = "No machine found on the tailnet. Check that Tailscale is connected, then refresh.";
 "aucune préférence à oublier" = "no preference to forget";
-"aucune session" = "no sessions";
 "Aucune session" = "No sessions";
+"aucune session" = "no sessions";
 "Aucune session en mémoire" = "No sessions in memory";
 "Aucune session ouverte" = "No session open";
 "bac à sable :" = "sandbox:";
@@ -59,6 +61,7 @@
 "Ce code d'appairage a expiré." = "This pairing code has expired.";
 "Ce code d'appairage n'est plus valable : il a déjà servi, ou il n'a jamais été émis." = "This pairing code is no longer valid: it has already been used, or it was never issued.";
 "Ce genre d'appairage n'existe pas." = "That kind of pairing does not exist.";
+"Ce jeton lit sans écrire : l'écriture demande un jeton de portée « ecriture », tiré par un harness relancé avec DSH_REMOTE_PORTEE=ecriture." = "This token can read but not write: writing needs a token with the « ecriture » scope, issued by a harness relaunched with DSH_REMOTE_PORTEE=ecriture.";
 "Ce lien n'est pas un appairage DSH." = "This link is not a DSH pairing.";
 "Ce lien vise la boucle locale : un autre appareil ne peut pas la joindre." = "This link points at the loopback address: another device cannot reach it.";
 "Ce serveur est prêt." = "This server is ready.";
@@ -69,6 +72,7 @@
 "Cet appareil" = "This device";
 "Cet appareil est appairé" = "This device is paired";
 "Cet appareil n'est pas appairé à cette machine. Ouvrez sa page et prenez le QR code du panneau « Appairer un appareil » — ou, sur le Mac lui-même, recopiez le jeton que le harness n'affiche qu'une fois, au premier chargement du plugin." = "This device is not paired with that machine. Open its page and take the QR code from the « Appairer un appareil » panel — or, on the Mac itself, copy the token the harness shows only once, when the plugin first loads.";
+"Cet hôte n'annonce pas l'écriture : cette composition ne monte pas le service qui permet d'envoyer un message." = "This host does not advertise writing: its setup does not include the service that sends messages.";
 "cet hôte ne sait pas échanger un code d'appairage : son plugin dsh-remote est plus ancien que cette application. Mettez le plugin à jour, ou collez le jeton d'appareil à la main." = "this host cannot exchange a pairing code: its dsh-remote plugin is older than this app. Update the plugin, or paste the device token by hand.";
 "Cette machine est visible" = "This machine is visible";
 "Cette session n'a encore rien écrit." = "This session has not written anything yet.";
@@ -183,11 +187,14 @@
 "Ouvrir la page" = "Open page";
 "Ouvrir Tailscale" = "Open Tailscale";
 "pas de DSH" = "no DSH";
+"Plateforme" = "Platform";
+"Politique de confidentialité" = "Privacy Policy";
 "preset :" = "preset:";
 "Projet" = "Project";
 "protocole incompatible : le serveur annonce la version %d, ce client sait lire la %d" = "incompatible protocol: the server announces version %d, this client can read %d";
-"Prêt" = "Ready";
+"Protocole lu" = "Protocol supported";
 "prêt" = "ready";
+"Prêt" = "Ready";
 "Prêt pour la suite" = "Ready for what's next";
 "Rafraîchir" = "Refresh";
 "Rafraîchir la liste" = "Refresh the list";
@@ -244,8 +251,8 @@
 "test de l'adresse…" = "testing the address…";
 "Tester l'adresse" = "Test the address";
 "Touchez pour synchroniser" = "Tap to sync";
-"tour en cours" = "turn in progress";
 "Tour en cours" = "Turn in progress";
+"tour en cours" = "turn in progress";
 "tout de suite (interrompt le tour en cours)" = "right away (interrupts the current turn)";
 "Tout de suite (interrompt)" = "Right away (interrupts)";
 "Tout effacer" = "Erase everything";
@@ -254,6 +261,7 @@
 "Un tour vient de se terminer" = "A turn just finished";
 "Une alerte part quand une session se met à ATTENDRE une réponse, ou quand un tour se termine — jamais pour ce que vous êtes en train de regarder. Elle n'est envoyée que tant que l'application tourne : iOS la suspend en arrière-plan, et la réveiller demanderait un serveur de notification, que ce projet n'a pas." = "An alert is sent when a session STARTS waiting for an answer, or when a turn finishes — never for what you are already looking at. It is only sent while the application is running: iOS suspends it in the background, and waking it up would require a notification server, which this project does not have.";
 "Une session attend votre réponse" = "A session is waiting for your answer";
+"version" = "version";
 "Vu" = "Seen";
 "Vérification en cours…" = "Checking…";
 "vérification…" = "checking…";

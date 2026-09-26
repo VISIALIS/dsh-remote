@@ -304,23 +304,33 @@ public struct FeuilleReglages: View {
 
   // MARK: - À propos
 
-  /// LES VERSIONS, ET RIEN DE PLUS.
+  /// LES VERSIONS, ET LA POLITIQUE DE CONFIDENTIALITÉ.
   ///
   /// Un client et un hôte qui ne s'entendent pas le disent par un message
   /// d'incompatibilité ; savoir quelle version du protocole ce client sait lire
   /// est ce qui permet de comprendre ce message. Le reste — mentions, licence —
-  /// appartient au dépôt, pas à l'écran.
+  /// appartient au dépôt, pas à l'écran, SAUF la politique de confidentialité :
+  /// l'App Store exige qu'elle soit joignable DEPUIS l'application
+  /// (guideline 5.1.1).
+  ///
+  /// Les libellés passent par `L` : un littéral donné à `LabeledContent` est
+  /// cherché dans le programme principal, pas dans ce paquet, et restait en
+  /// français dans l'interface anglaise.
   private var aPropos: some View {
     Section(header: T("À propos")) {
-      LabeledContent("Application", value: versionApplication)
-      LabeledContent("Protocole lu", value: "version \(versionProtocoleSupportee)")
+      LabeledContent(L("Application"), value: versionApplication)
+      LabeledContent(L("Protocole lu"), value: L("version") + " \(versionProtocoleSupportee)")
       #if os(iOS)
-        LabeledContent("Plateforme", value: "iPhone")
+        LabeledContent(L("Plateforme"), value: "iPhone")
       #else
-        LabeledContent("Plateforme", value: "macOS")
+        LabeledContent(L("Plateforme"), value: "macOS")
       #endif
+      Link(L("Politique de confidentialité"), destination: FeuilleReglages.adressePolitique)
     }
   }
+
+  /// La politique publiée dans le dépôt — la même URL que la fiche App Store.
+  static let adressePolitique = URL(string: "https://github.com/VISIALIS/dsh-remote/blob/main/PRIVACY.md")!
 
   /// La version déclarée par le PAQUET, ou un tiret s'il n'y en a pas.
   ///

@@ -49,8 +49,10 @@ public struct ResumeEspace: Equatable, Sendable {
   /// une ligne d'en-tête chargée se lit moins vite.
   public var texte: String {
     var morceaux = ["\(total)"]
-    if enAttente > 0 { morceaux.append("\(enAttente) en attente") }
-    if terminees > 0 { morceaux.append("\(terminees) terminée\(terminees > 1 ? "s" : "")") }
+    if enAttente > 0 { morceaux.append(String(format: L("%d en attente"), enAttente)) }
+    if terminees > 0 {
+      morceaux.append(String(format: L(terminees > 1 ? "%d terminées" : "%d terminée"), terminees))
+    }
     return morceaux.joined(separator: " · ")
   }
 }

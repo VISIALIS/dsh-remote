@@ -1,8 +1,9 @@
 /* Table française — ÉCRITE PAR Scripts/traduire.py, ne pas éditer à la main.
    Les clés sont les phrases FRANÇAISES : le code, les commentaires et les clés
    restent en français (RÈGLE #1) ; l'anglais est une traduction ajoutée.
-   275 clés. */
+   283 clés. */
 
+"%d en attente" = "%d en attente";
 "%d exceptions déclarées" = "%d exceptions déclarées";
 "%d jeton(s) d'appareil effacé(s)" = "%d jeton(s) d'appareil effacé(s)";
 "%d nouveaux événements" = "%d nouveaux événements";
@@ -33,6 +34,7 @@
 "Appairer" = "Appairer";
 "Appairer avec ce texte" = "Appairer avec ce texte";
 "Appairer un appareil" = "Appairer un appareil";
+"Application" = "Application";
 "après l'étape" = "après l'étape";
 "après l'étape %d" = "après l'étape %d";
 "attend votre réponse" = "attend votre réponse";
@@ -48,8 +50,8 @@
 "aucune exception déclarée" = "aucune exception déclarée";
 "Aucune machine trouvée sur le tailnet. Vérifiez que Tailscale est connecté, puis rafraîchissez." = "Aucune machine trouvée sur le tailnet. Vérifiez que Tailscale est connecté, puis rafraîchissez.";
 "aucune préférence à oublier" = "aucune préférence à oublier";
-"aucune session" = "aucune session";
 "Aucune session" = "Aucune session";
+"aucune session" = "aucune session";
 "Aucune session en mémoire" = "Aucune session en mémoire";
 "Aucune session ouverte" = "Aucune session ouverte";
 "bac à sable :" = "bac à sable :";
@@ -59,6 +61,7 @@
 "Ce code d'appairage a expiré." = "Ce code d'appairage a expiré.";
 "Ce code d'appairage n'est plus valable : il a déjà servi, ou il n'a jamais été émis." = "Ce code d'appairage n'est plus valable : il a déjà servi, ou il n'a jamais été émis.";
 "Ce genre d'appairage n'existe pas." = "Ce genre d'appairage n'existe pas.";
+"Ce jeton lit sans écrire : l'écriture demande un jeton de portée « ecriture », tiré par un harness relancé avec DSH_REMOTE_PORTEE=ecriture." = "Ce jeton lit sans écrire : l'écriture demande un jeton de portée « ecriture », tiré par un harness relancé avec DSH_REMOTE_PORTEE=ecriture.";
 "Ce lien n'est pas un appairage DSH." = "Ce lien n'est pas un appairage DSH.";
 "Ce lien vise la boucle locale : un autre appareil ne peut pas la joindre." = "Ce lien vise la boucle locale : un autre appareil ne peut pas la joindre.";
 "Ce serveur est prêt." = "Ce serveur est prêt.";
@@ -69,6 +72,7 @@
 "Cet appareil" = "Cet appareil";
 "Cet appareil est appairé" = "Cet appareil est appairé";
 "Cet appareil n'est pas appairé à cette machine. Ouvrez sa page et prenez le QR code du panneau « Appairer un appareil » — ou, sur le Mac lui-même, recopiez le jeton que le harness n'affiche qu'une fois, au premier chargement du plugin." = "Cet appareil n'est pas appairé à cette machine. Ouvrez sa page et prenez le QR code du panneau « Appairer un appareil » — ou, sur le Mac lui-même, recopiez le jeton que le harness n'affiche qu'une fois, au premier chargement du plugin.";
+"Cet hôte n'annonce pas l'écriture : cette composition ne monte pas le service qui permet d'envoyer un message." = "Cet hôte n'annonce pas l'écriture : cette composition ne monte pas le service qui permet d'envoyer un message.";
 "cet hôte ne sait pas échanger un code d'appairage : son plugin dsh-remote est plus ancien que cette application. Mettez le plugin à jour, ou collez le jeton d'appareil à la main." = "cet hôte ne sait pas échanger un code d'appairage : son plugin dsh-remote est plus ancien que cette application. Mettez le plugin à jour, ou collez le jeton d'appareil à la main.";
 "Cette machine est visible" = "Cette machine est visible";
 "Cette session n'a encore rien écrit." = "Cette session n'a encore rien écrit.";
@@ -183,11 +187,14 @@
 "Ouvrir la page" = "Ouvrir la page";
 "Ouvrir Tailscale" = "Ouvrir Tailscale";
 "pas de DSH" = "pas de DSH";
+"Plateforme" = "Plateforme";
+"Politique de confidentialité" = "Politique de confidentialité";
 "preset :" = "preset :";
 "Projet" = "Projet";
 "protocole incompatible : le serveur annonce la version %d, ce client sait lire la %d" = "protocole incompatible : le serveur annonce la version %d, ce client sait lire la %d";
-"Prêt" = "Prêt";
+"Protocole lu" = "Protocole lu";
 "prêt" = "prêt";
+"Prêt" = "Prêt";
 "Prêt pour la suite" = "Prêt pour la suite";
 "Rafraîchir" = "Rafraîchir";
 "Rafraîchir la liste" = "Rafraîchir la liste";
@@ -244,8 +251,8 @@
 "test de l'adresse…" = "test de l'adresse…";
 "Tester l'adresse" = "Tester l'adresse";
 "Touchez pour synchroniser" = "Touchez pour synchroniser";
-"tour en cours" = "tour en cours";
 "Tour en cours" = "Tour en cours";
+"tour en cours" = "tour en cours";
 "tout de suite (interrompt le tour en cours)" = "tout de suite (interrompt le tour en cours)";
 "Tout de suite (interrompt)" = "Tout de suite (interrompt)";
 "Tout effacer" = "Tout effacer";
@@ -254,6 +261,7 @@
 "Un tour vient de se terminer" = "Un tour vient de se terminer";
 "Une alerte part quand une session se met à ATTENDRE une réponse, ou quand un tour se termine — jamais pour ce que vous êtes en train de regarder. Elle n'est envoyée que tant que l'application tourne : iOS la suspend en arrière-plan, et la réveiller demanderait un serveur de notification, que ce projet n'a pas." = "Une alerte part quand une session se met à ATTENDRE une réponse, ou quand un tour se termine — jamais pour ce que vous êtes en train de regarder. Elle n'est envoyée que tant que l'application tourne : iOS la suspend en arrière-plan, et la réveiller demanderait un serveur de notification, que ce projet n'a pas.";
 "Une session attend votre réponse" = "Une session attend votre réponse";
+"version" = "version";
 "Vu" = "Vu";
 "Vérification en cours…" = "Vérification en cours…";
 "vérification…" = "vérification…";

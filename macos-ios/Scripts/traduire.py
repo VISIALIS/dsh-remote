@@ -362,6 +362,24 @@ TRADUCTIONS.update({
 # pouvait pas le voir : il compare les deux TABLES entre elles, et toutes deux
 # ignoraient la même clé. C'est `--verifier` qui l'attrape, en relisant le code —
 # et il faut donc le lancer, ce que `scripts/verifier.sh` ne faisait pas.
+# Le résumé d'un espace de travail (`Regroupement.texte`) : il était écrit en
+# dur, et s'affichait « 1 · 1 en attente » dans l'interface anglaise ; de même
+# la raison « sans écriture » du modèle.
+TRADUCTIONS.update({
+    "%d en attente": "%d pending",
+    "%d terminée": "%d finished",
+    "%d terminées": "%d finished",
+    "Application": "App",
+    "Protocole lu": "Protocol supported",
+    "version": "version",
+    "Plateforme": "Platform",
+    "Politique de confidentialité": "Privacy Policy",
+    "Ce jeton lit sans écrire : l'écriture demande un jeton de portée « ecriture », tiré par un harness relancé avec DSH_REMOTE_PORTEE=ecriture.":
+        "This token can read but not write: writing needs a token with the « ecriture » scope, issued by a harness relaunched with DSH_REMOTE_PORTEE=ecriture.",
+    "Cet hôte n'annonce pas l'écriture : cette composition ne monte pas le service qui permet d'envoyer un message.":
+        "This host does not advertise writing: its setup does not include the service that sends messages.",
+})
+
 TRADUCTIONS.update({
     # L'appairage : les gestes.
     "Appairer": "Pair",

@@ -86,14 +86,13 @@ func raisonSansEcriture() {
   //    la machine qui héberge le harness.
   let lecture = Sante.Capacites.annoncees(#"{"sessions":true,"journal":true,"flux":true,"ecriture":false,"approbations":false}"#)
   let raison = ModeleApp.raisonSansEcriture(capacites: lecture, portee: "lecture")
-  #expect(raison?.contains("lit sans écrire") == true)
+  #expect(raison == L("Ce jeton lit sans écrire : l'écriture demande un jeton de portée « ecriture », tiré par un harness relancé avec DSH_REMOTE_PORTEE=ecriture."))
   #expect(raison?.contains("DSH_REMOTE_PORTEE=ecriture") == true)
 
   // 2. Portée non dite (hôte antérieur) : on ne l'INVENTE pas — on dit seulement
   //    que l'hôte n'annonce pas l'écriture.
   let muette = ModeleApp.raisonSansEcriture(capacites: lecture, portee: nil)
-  #expect(muette?.contains("n'annonce pas l'écriture") == true)
-  #expect(muette?.contains("lecture seule") == false)
+  #expect(muette == L("Cet hôte n'annonce pas l'écriture : cette composition ne monte pas le service qui permet d'envoyer un message."))
 
   // 3. L'écriture est possible : aucune raison à donner.
   let ecriture = Sante.Capacites.annoncees(#"{"sessions":true,"journal":true,"flux":true,"ecriture":true,"approbations":false}"#)

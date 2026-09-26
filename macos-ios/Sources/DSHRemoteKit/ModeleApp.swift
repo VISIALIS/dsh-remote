@@ -2065,12 +2065,12 @@ public final class ModeleApp {
     guard !capacites.ecriture else { return nil }
     if portee == "lecture" {
       return
-        "Ce jeton lit sans écrire : l'écriture demande un jeton de portée « ecriture », tiré par un harness relancé avec DSH_REMOTE_PORTEE=ecriture."
+        L("Ce jeton lit sans écrire : l'écriture demande un jeton de portée « ecriture », tiré par un harness relancé avec DSH_REMOTE_PORTEE=ecriture.")
     }
     // La portée n'est pas dite, ou l'hôte ne monte pas le service : dans les deux
     // cas, l'action est du côté de l'hôte, et on ne l'invente pas.
     return
-      "Cet hôte n'annonce pas l'écriture : cette composition ne monte pas le service qui permet d'envoyer un message."
+      L("Cet hôte n'annonce pas l'écriture : cette composition ne monte pas le service qui permet d'envoyer un message.")
   }
 
   /// L'hôte a-t-il annoncé savoir interrompre un tour ?
