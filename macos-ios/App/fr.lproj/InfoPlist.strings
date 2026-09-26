@@ -3,3 +3,6 @@
 
 /* Description de l'autorisation d'accès à la caméra pour le scan QR */
 "NSCameraUsageDescription" = "Pour scanner le QR code d'appairage affiché par DSH sur votre Mac. Aucune image n'est enregistrée ni transmise.";
+
+/* Autorisation d’accès au réseau local pour joindre l’hôte DSH */
+"NSLocalNetworkUsageDescription" = "Pour joindre le Mac qui exécute DeepSeek Harness sur votre réseau local. Rien ne quitte votre réseau.";

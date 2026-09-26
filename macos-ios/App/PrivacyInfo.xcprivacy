@@ -20,6 +20,10 @@
     ecrites par la meme application » — ce qui est exactement le cas. Le JETON
     d'appareil, lui, n'y est JAMAIS : il vit au trousseau.
 
+    1C8F.1 couvre le GROUPE D'APP (`UserDefaults(suiteName:)`) : l'application
+    y depose l'instantane que lit son widget — une donnee du meme developpeur,
+    partagee entre ses propres cibles, ce que decrit exactement cette raison.
+
     CE QUE CE FICHIER NE COUVRE PAS, PARCE QUE LE CODE NE LES UTILISE PAS :
     les API de mesure du disque, de l'horloge systeme et des horodatages de
     fichiers — verifie dans Sources/ et App/, pas suppose.
@@ -38,6 +42,7 @@
       <key>NSPrivacyAccessedAPITypeReasons</key>
       <array>
         <string>CA92.1</string>
+        <string>1C8F.1</string>
       </array>
     </dict>
   </array>

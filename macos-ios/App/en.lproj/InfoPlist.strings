@@ -3,3 +3,6 @@
 
 /* Permission description for camera access to scan pairing QR code */
 "NSCameraUsageDescription" = "To scan the pairing QR code displayed by DSH on your Mac. No images are saved or transmitted.";
+
+/* Permission description for local network access to reach the DSH host */
+"NSLocalNetworkUsageDescription" = "To connect to the Mac running DeepSeek Harness on your local network. Nothing leaves your network.";

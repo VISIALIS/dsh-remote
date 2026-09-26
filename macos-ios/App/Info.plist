@@ -75,6 +75,13 @@
   -->
   <key>NSCameraUsageDescription</key>
   <string>To scan the pairing QR code displayed by DSH on your Mac. No images are saved or transmitted.</string>
+  <!--
+    L'ACCÈS AU RÉSEAU LOCAL. Joindre le Mac par son adresse de réseau local
+    déclenche l'autorisation « réseau local » d'iOS ; sans cette phrase, iOS
+    n'explique pas pourquoi, et l'App Review le relève (guideline 5.1.1).
+  -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>To connect to the Mac running DeepSeek Harness on your local network. Nothing leaves your network.</string>
   <key>UILaunchScreen</key><dict/>
   <key>UIApplicationSceneManifest</key>
   <dict>

@@ -16,6 +16,7 @@
 		A1000000000000000000035 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000034 /* PrivacyInfo.xcprivacy */; };
 		A1000000000000000000041 /* FournisseurTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000042 /* FournisseurTimeline.swift */; };
 		A1000000000000000000043 /* DSHRemoteWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000044 /* DSHRemoteWidget.swift */; };
+		A1000000000000000000070 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000071 /* PrivacyInfo.xcprivacy */; };
 		A1000000000000000000045 /* DSHRemoteWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000046 /* DSHRemoteWidgetsBundle.swift */; };
 		A1000000000000000000050 /* DSHRemoteKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1000000000000000000004 /* DSHRemoteKit */; };
 		A1000000000000000000059 /* DSHRemoteWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1000000000000000000049 /* DSHRemoteWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -60,6 +61,7 @@
 		A1000000000000000000034 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A1000000000000000000042 /* FournisseurTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FournisseurTimeline.swift; sourceTree = "<group>"; };
 		A1000000000000000000044 /* DSHRemoteWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSHRemoteWidget.swift; sourceTree = "<group>"; };
+		A1000000000000000000071 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A1000000000000000000046 /* DSHRemoteWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSHRemoteWidgetsBundle.swift; sourceTree = "<group>"; };
 		A1000000000000000000047 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A1000000000000000000049 /* DSHRemoteWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DSHRemoteWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -169,6 +171,7 @@
 				A1000000000000000000046 /* DSHRemoteWidgetsBundle.swift */,
 				A1000000000000000000047 /* Info.plist */,
 				A1000000000000000000065 /* ActiviteSessionWidget.swift */,
+				A1000000000000000000071 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Widgets;
 			sourceTree = "<group>";
@@ -313,6 +316,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1000000000000000000070 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    LA DÉCLARATION DE CONFIDENTIALITÉ DE L'EXTENSION WIDGET.
+
+    Chaque paquet livré déclare ses propres accès : celle de l'application ne
+    couvre pas l'extension. Le widget ne collecte rien et ne suit personne ; il
+    LIT l'instantané que l'application dépose dans le groupe d'app
+    (`UserDefaults(suiteName:)`), d'où la raison 1C8F.1 — et les préférences du
+    paquet partagé `DSHRemoteKit` (`UserDefaults.standard`), d'où CA92.1.
+  -->
+  <key>NSPrivacyTracking</key>
+  <false/>
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array/>
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>CA92.1</string>
+        <string>1C8F.1</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>
