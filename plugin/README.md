@@ -34,7 +34,7 @@ plugin/
 │   ├── trames.js           # Event frame formatting for WebSocket
 │   ├── tailscale.js        # Tailscale MagicDNS and local IP resolution
 │   └── reponse.js          # Normalized JSON HTTP response helpers
-├── tests/                  # Automated test suite (147+ tests using Node.js test runner)
+├── tests/                  # Automated test suite (150+ tests using Node.js test runner)
 ├── ANNEXE-MESURES.md       # Benchmarks, protocol timings, and design log (French)
 ├── README.md               # This English documentation
 └── README.fr.md            # In-depth architectural log and documentation (French)

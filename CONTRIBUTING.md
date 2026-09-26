@@ -13,7 +13,7 @@ The repository consists of two integrated components:
 
 - The existing codebase, comments, architectural notes, and commit history are written in French.
 - Contributions, issues, and pull requests in either **English** or **French** are welcome.
-- Technical documentation under `plugin/README.md` and `macos-ios/README.md` provides in-depth French references for internal mechanics.
+- Technical documentation lives in `plugin/README.md` and `macos-ios/README.md` (English); in-depth French references for internal mechanics are in their `README.fr.md` counterparts.
 
 ## Security Rules (Mandatory)
 
@@ -31,8 +31,8 @@ bash scripts/verifier.sh
 
 This verifies:
 1. `scripts/check-secrets.sh`: Full history and working tree secret audit.
-2. `node --test plugin/tests/`: Host plugin test suite (147+ tests).
-3. `swift test`: Swift package test suite across models and networking (350+ tests).
+2. `node --test plugin/tests/`: Host plugin test suite (150+ tests).
+3. `swift test`: Swift package test suite across models and networking (360+ tests).
 
 All checks must pass (`exit 0`) without warnings.
 

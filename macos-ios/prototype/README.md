@@ -15,6 +15,10 @@ est inchangé, et rien de ce qui est ici n'est câblé au réseau.
 | Aucun Mac découvert | `captures/03-serveurs-vides.png` | Une liste vide qui dit POURQUOI et propose l'action |
 | Réglages | `captures/04-reglages.png` | Ce qui n'est plus sur la page principale : adresse, jeton, filtres |
 
+Les captures ne sont pas versionnées : elles se régénèrent avec
+`Scripts/construire-prototype.sh <ecran>` puis `xcrun simctl io … screenshot`
+(voir ci-dessous).
+
 ---
 
 ## Comment le lancer
@@ -22,7 +26,7 @@ est inchangé, et rien de ce qui est ici n'est câblé au réseau.
 ### Sur le simulateur
 
 ```bash
-cd packages/dsh-remote-swift
+cd macos-ios
 Scripts/construire-prototype.sh [ecran] [appareil]
 ```
 

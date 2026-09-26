@@ -31,7 +31,7 @@ DSH Remote is organized as a monorepo containing both the harness host plugin an
 dsh-remote/
 ├── plugin/            # Host plugin for DeepSeek Harness (Node.js ESM)
 │   ├── dynamic/       # Host module and harness browser panel bundle
-│   ├── tests/         # Automated test suite (147+ tests)
+│   ├── tests/         # Automated test suite (150+ tests)
 │   ├── README.md      # Technical documentation (English)
 │   └── README.fr.md   # Architectural log and measurements (French)
 │
@@ -39,7 +39,7 @@ dsh-remote/
 │   ├── Sources/       # Core networking, protocol parsing, and state machine (DSHRemoteKit)
 │   ├── App/           # macOS and iOS SwiftUI application
 │   ├── Widgets/       # WidgetKit extensions and Live Activities (DSHRemoteWidgets)
-│   ├── Tests/         # Swift test suite (361+ tests)
+│   ├── Tests/         # Swift test suite (360+ tests)
 │   ├── README.md      # Architectural documentation (English)
 │   └── README.fr.md   # In-depth architectural journal and measurements (French)
 │
@@ -115,10 +115,10 @@ Or run individual test suites:
 # Security & secret audit (checks working tree and full Git history)
 bash scripts/check-secrets.sh
 
-# Host plugin tests (147 tests)
+# Host plugin tests (150+ tests)
 node --test plugin/tests/
 
-# Swift client tests (359 tests)
+# Swift client tests (360+ tests)
 cd macos-ios && swift test
 ```
 
@@ -128,8 +128,8 @@ cd macos-ios && swift test
 
 Comprehensive architectural references and protocol specifications are available:
 
-- [Host Plugin Reference (French)](plugin/README.md) — REST API specification, WebSocket stream contract, and pairing protocol.
-- [Swift Client Architecture (French)](macos-ios/README.md) — State machine, cache management, offline resilience, and Live Activity lifecycles.
+- [Host Plugin Reference](plugin/README.md) — REST API specification, WebSocket stream contract, and pairing protocol.
+- [Swift Client Architecture](macos-ios/README.md) — State machine, cache management, offline resilience, and Live Activity lifecycles.
 - [Contributing Guidelines](CONTRIBUTING.md) — Pull request guidelines and code style.
 - [Security Policy](SECURITY.md) — Security model and reporting instructions.
 
