@@ -43,6 +43,10 @@ private func cheminDuServeur() -> String? {
 
 /// `node` est-il lançable ? Le test en a besoin, et le dire vaut mieux que
 /// d'échouer sur un `launch path not accessible`.
+///
+/// Employé comme trait `.enabled(if:)` et non comme `#require` : sans `node`
+/// (Xcode Cloud n'en fournit pas), le test est marqué IGNORÉ avec sa raison —
+/// visible dans le rapport, sans faire échouer l'archive.
 private func nodeDisponible() -> Bool {
   let processus = Process()
   processus.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -106,13 +110,13 @@ private func echeance(_ secondes: Double) -> Date { Date().addingTimeInterval(se
 @Suite(.serialized)
 struct FluxRepriseTests {
 
-  @Test("Après une coupure, le client redemande à partir du seq qu'il connaît")
+  @Test("Après une coupure, le client redemande à partir du seq qu'il connaît",
+        .enabled(if: nodeDisponible(), "node introuvable : reprise NON éprouvée"))
   func laReprisePorteLeSeqConnu() async throws {
     // LES DEUX RAISONS DE S'ABSTENIR, DITES À VOIX HAUTE : sans `node`, ou sans le
     // fichier du serveur d'essai, la reprise ne peut pas être éprouvée sur le fil.
     // Un `return` silencieux ferait passer une absence de preuve pour une preuve.
     let serveurEssai = try #require(cheminDuServeur(), "serveur d'essai introuvable : reprise NON éprouvée")
-    try #require(nodeDisponible(), "node introuvable : reprise NON éprouvée")
 
     let port = try portLibre()
     let note = FileManager.default.temporaryDirectory
@@ -212,7 +216,8 @@ struct FluxRepriseTests {
     #expect(await session.sequenceConnue == nil, "aucun contenu recu : aucun curseur a reprendre")
   }
 
-  @Test("Un serveur SOURD est vu mort en vingt secondes, pas en quinze minutes")
+  @Test("Un serveur SOURD est vu mort en vingt secondes, pas en quinze minutes",
+        .enabled(if: nodeDisponible(), "node introuvable : battement NON éprouvé"))
   func leBattementDetecteUneSocketMorte() async throws {
     // LE DÉFAUT QUE CE TEST FIXE. Une connexion TCP peut mourir SANS LE DIRE : la
     // radio perd les paquets, et ni la fermeture ni l'erreur n'arrivent. `receive()`
@@ -226,7 +231,6 @@ struct FluxRepriseTests {
     // courte du battement rend observable en quelques dixièmes de seconde au lieu
     // de quinze secondes d'attente dans la suite.
     let serveurEssai = try #require(cheminDuServeur(), "serveur d'essai introuvable : battement NON éprouvé")
-    try #require(nodeDisponible(), "node introuvable : battement NON éprouvé")
 
     let port = try portLibre()
     let note = FileManager.default.temporaryDirectory
@@ -263,14 +267,14 @@ struct FluxRepriseTests {
     #expect(journal.contains("ping=1"), "le client doit avoir envoyé un ping — journal :\n\(journal)")
   }
 
-  @Test("Un serveur qui répond aux pings garde le flux : le battement ne coupe rien")
+  @Test("Un serveur qui répond aux pings garde le flux : le battement ne coupe rien",
+        .enabled(if: nodeDisponible(), "node introuvable : battement NON éprouvé"))
   func leBattementNeCoupePasUnFluxVivant() async throws {
     // LA CONTREPARTIE, ET ELLE EST INDISPENSABLE : un battement qui coupe un flux
     // sain serait pire que pas de battement du tout — il transformerait un direct
     // en reconnexions périodiques. Le serveur répond ici à chaque ping, et le flux
     // doit survivre à PLUSIEURS battements.
     let serveurEssai = try #require(cheminDuServeur(), "serveur d'essai introuvable : battement NON éprouvé")
-    try #require(nodeDisponible(), "node introuvable : battement NON éprouvé")
 
     let port = try portLibre()
     let note = FileManager.default.temporaryDirectory
@@ -300,7 +304,8 @@ struct FluxRepriseTests {
     #expect(journal.contains("ping=5"), "le battement doit avoir tourné plusieurs fois — journal :\n\(journal)")
   }
 
-  @Test("Un statut poussé par l'hôte est DÉCODÉ, et ne compte pas comme un évènement")
+  @Test("Un statut poussé par l'hôte est DÉCODÉ, et ne compte pas comme un évènement",
+        .enabled(if: nodeDisponible(), "node introuvable : statut NON éprouvé"))
   func leStatutPousseEstDecode() async throws {
     // POURQUOI CE TEST. Le statut arrive par un message d'un type NOUVEAU, écrit
     // par l'hôte (`{ "type": "statut", "statut": "en_cours" }`). Le client ignore
@@ -310,7 +315,6 @@ struct FluxRepriseTests {
     // part. On vérifie donc qu'il est bien reçu, et qu'il ne pousse pas le curseur
     // de reprise (un statut ne porte aucun `seq`).
     let serveurEssai = try #require(cheminDuServeur(), "serveur d'essai introuvable : statut NON éprouvé")
-    try #require(nodeDisponible(), "node introuvable : statut NON éprouvé")
 
     let port = try portLibre()
     let note = FileManager.default.temporaryDirectory
