@@ -220,8 +220,8 @@
 				A1000000000000000000015 /* Sources */,
 				A1000000000000000000009 /* Frameworks */,
 				A1000000000000000000016 /* Resources */,
-				A1000000000000000000025 /* Exception ATS */,
 				A1000000000000000000058 /* Embed Foundation Extensions */,
+				A1000000000000000000025 /* Exception ATS */,
 			);
 			buildRules = (
 			);
@@ -338,6 +338,7 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
 			);
 			name = "Exception ATS";
 			outputFileListPaths = (
@@ -357,6 +358,7 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
 			);
 			name = "Exception ATS";
 			outputFileListPaths = (
