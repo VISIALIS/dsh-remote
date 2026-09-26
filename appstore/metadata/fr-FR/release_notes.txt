@@ -1,0 +1,1 @@
+Première bêta : suivi des sessions en direct, appairage par QR code, widgets et Activités en direct.

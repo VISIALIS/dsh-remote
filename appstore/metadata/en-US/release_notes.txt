@@ -1,0 +1,1 @@
+First beta: live session monitoring, QR pairing, widgets and Live Activities.

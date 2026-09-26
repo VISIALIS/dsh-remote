@@ -1,0 +1,29 @@
+DSH Remote Companion est le compagnon natif pour iPhone, iPad et Mac de DeepSeek Harness (DSH), le harnais d’agents IA auto-hébergé. Gardez un œil sur vos sessions d’agent sans rester devant votre ordinateur.
+
+SUIVEZ VOS AGENTS EN DIRECT
+• Toutes les sessions actives et leur statut, d’un coup d’œil
+• Les appels d’outils au moment où ils se produisent : modifications de fichiers, commandes, progression de la génération
+• Les jetons consommés par session
+• Une notification quand une session attend votre réponse
+
+SUR L’ÉCRAN VERROUILLÉ
+• Activités en direct et Dynamic Island pour le tour en cours
+• Widgets d’écran d’accueil et d’écran verrouillé
+• Widgets Mac dans le Centre de notifications
+
+APPAIRAGE EN QUELQUES SECONDES
+• Scannez le QR code affiché par le panneau web de DSH, ou saisissez le code à 6 caractères
+• Chaque appareil reçoit son propre jeton, rangé dans le trousseau Apple
+• Révoquez un appareil perdu depuis le panneau DSH, sans toucher aux autres
+
+PRIVÉ PAR CONCEPTION
+• L’app ne parle qu’à votre propre machine, sur votre réseau local ou votre réseau privé Tailscale
+• Aucun compte, aucun relais cloud, aucune statistique, aucun pistage
+• Lecture seule par défaut : envoyer une consigne ou annuler un tour exige un jeton en écriture que vous délivrez explicitement
+
+PRÉREQUIS
+DSH Remote Companion nécessite un ordinateur exécutant DeepSeek Harness avec le plugin hôte DSH Remote installé. Le plugin est open source (MIT) et documenté sur GitHub.
+
+Disponible en français et en anglais.
+
+DSH Remote Companion est un projet open source indépendant. Il n’est ni affilié à DeepSeek, ni approuvé ou sponsorisé par DeepSeek.
