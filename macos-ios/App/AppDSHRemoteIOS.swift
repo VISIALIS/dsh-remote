@@ -53,6 +53,11 @@ struct AppDSHRemoteIOS: App {
 /// `UIApplication` n'existe pas sur macOS : ce fichier n'est compilé que par la
 /// cible iOS, mais la cible Mac construit le même paquet `DSHRemoteKit`, et le
 /// `#if` garde la fonction compilable partout sans importer UIKit ailleurs.
+///
+/// `@MainActor` : `UIApplication.shared` est isolé au fil principal. Sans
+/// l'annotation, Swift 6 refuse la mutation depuis un contexte non isolé
+/// (simple avertissement sur Xcode 27, erreur sur les versions antérieures).
+@MainActor
 private func appliquerVerrouDEcran(premierPlan: Bool) {
   #if os(iOS)
     UIApplication.shared.isIdleTimerDisabled = premierPlan
