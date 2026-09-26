@@ -317,10 +317,6 @@ public final class ModeleApp {
   var observationPrecedente:
     (generation: Int, attendent: Set<String>, terminees: Set<String>)?
 
-  /// Allume ou éteint les alertes, en demandant l'autorisation au SYSTÈME quand on
-  /// les allume. Rend l'état réellement obtenu : un refus système laisse
-  /// l'interrupteur éteint, et l'écran doit le dire plutôt que de mentir.
-  @discardableResult
   // ── LES ALERTES VIVENT DANS `ModeleApp+Alertes.swift` ────────────────────────
 
 
@@ -816,7 +812,7 @@ public final class ModeleApp {
     guard suiviAutomatique, client != nil else { return }
     tacheSuivi = Task { [weak self] in
       while !Task.isCancelled {
-        let attente = await self?.cadenceCourante ?? ModeleApp.cadenceRapide
+        let attente = self?.cadenceCourante ?? ModeleApp.cadenceRapide
         try? await Task.sleep(nanoseconds: UInt64(attente * 1_000_000_000))
         guard !Task.isCancelled else { return }
         guard let self else { return }
@@ -2277,4 +2273,3 @@ public final class ModeleApp {
       empreinteJeton: empreinteJeton, longueurJeton: longueurJeton)
   }
 }
-

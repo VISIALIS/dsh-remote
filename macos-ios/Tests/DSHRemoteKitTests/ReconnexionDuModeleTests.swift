@@ -131,7 +131,8 @@ private struct FauxHote {
     processus.arguments = ["node", serveurEssai, String(port), note.path, String(coupures)]
     try processus.run()
     let hote = FauxHote(processus: processus, note: note, adresse: "http://127.0.0.1:\(port)")
-    try #require(await attendre("ecoute=", dans: note) != nil, "le faux hôte n'a pas démarré")
+    let ecoute = await attendre("ecoute=", dans: note)
+    try #require(ecoute, "le faux hôte n'a pas démarré")
     return hote
   }
 

@@ -303,7 +303,7 @@ private struct JSONBrut: Codable {
   func encode(to encoder: any Encoder) throws {
     var conteneur = encoder.singleValueContainer()
     switch valeur {
-    case let valeur as NSNull: try conteneur.encodeNil()
+    case is NSNull: try conteneur.encodeNil()
     case let valeur as Bool: try conteneur.encode(valeur)
     case let valeur as Int: try conteneur.encode(valeur)
     case let valeur as Double: try conteneur.encode(valeur)

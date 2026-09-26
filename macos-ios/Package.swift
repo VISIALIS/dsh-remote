@@ -78,6 +78,9 @@ let package = Package(
     .testTarget(
       name: "DSHRemoteKitTests",
       dependencies: ["DSHRemoteKit"],
+      // Ces fichiers sont lus depuis le checkout par les tests et les deux
+      // serveurs Node sont lancés comme processus, pas chargés par SwiftPM.
+      exclude: ["Fixtures", "Outils"],
       swiftSettings: [.swiftLanguageMode(.v6)]
     ),
   ]

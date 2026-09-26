@@ -18,6 +18,7 @@
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>ITSAppUsesNonExemptEncryption</key><false/>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>

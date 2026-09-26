@@ -96,7 +96,7 @@ For details, see [SECURITY.md](SECURITY.md).
 
 ### Prerequisites
 
-- macOS 15.0 or later
+- macOS 14.0 or later for the app and Swift package; macOS 15.0 or later for the GitHub Actions runner
 - Xcode 16.0 or later
 - Node.js 22.0 or later
 - Python 3 with Pillow (only needed if regenerating app icons)
