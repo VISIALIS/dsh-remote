@@ -165,6 +165,7 @@ swiftc \
   -L "$dir_bin" \
   -lDSHRemoteKit \
   -framework WidgetKit -framework SwiftUI \
+  -D DSH_WIDGET_SHIM \
   "$racine/Widgets/main.swift" \
   "$racine/Widgets/DSHRemoteWidgetsBundle.swift" \
   "$racine/Widgets/DSHRemoteWidget.swift" \
