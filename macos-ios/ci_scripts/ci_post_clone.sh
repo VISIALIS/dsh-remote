@@ -26,12 +26,15 @@ echo "--- Exécution des tests Swift (DSHRemoteKitTests) ---"
 
 # 3. Injection dynamique de la signature
 echo "--- Configuration de la signature ---"
-TEAM_VAL="${DSH_CLOUD_TEAM:-${DSH_TEAM_ID:-${CI_DSH_TEAM:-}}}"
-BUNDLE_VAL="${DSH_CLOUD_BUNDLE_ID:-${CI_DSH_BUNDLE_ID:-org.example.DSHRemote}}"
-APP_GROUP_VAL="${DSH_CLOUD_APP_GROUP:-${CI_DSH_APP_GROUP:-group.org.example.DSHRemote}}"
+TEAM_VAL="${CI_TEAM_ID:-${DSH_CLOUD_TEAM:-${DSH_TEAM_ID:-${CI_DSH_TEAM:-}}}}"
+BUNDLE_VAL="${CI_BUNDLE_ID:-${DSH_CLOUD_BUNDLE_ID:-${CI_DSH_BUNDLE_ID:-}}}"
 
 if [[ -n "$TEAM_VAL" ]]; then
-  echo "Équipe de signature détectée via variables d'environnement."
+  echo "Équipe de signature détectée via Xcode Cloud."
+  if [[ -z "$BUNDLE_VAL" ]]; then
+    BUNDLE_VAL="${DSH_BUNDLE_ID:-fr.visialis.DSHRemote}"
+  fi
+  APP_GROUP_VAL="${DSH_CLOUD_APP_GROUP:-${CI_DSH_APP_GROUP:-group.${BUNDLE_VAL}}}"
   cat <<EOF > "$LOCAL_XCCONFIG"
 // Fichier généré automatiquement par ci_post_clone.sh (Xcode Cloud)
 DSH_TEAM = $TEAM_VAL
@@ -40,7 +43,7 @@ DSH_APP_GROUP = $APP_GROUP_VAL
 EOF
   echo "Local.xcconfig écrit avec succès."
 else
-  echo "NOTE : DSH_CLOUD_TEAM non configurée dans Xcode Cloud. Le build continuera avec les valeurs par défaut."
+  echo "NOTE : Aucune équipe détectée (CI_TEAM_ID / DSH_CLOUD_TEAM). Le build continuera avec les valeurs par défaut."
 fi
 
 echo "=== [Xcode Cloud] ci_post_clone.sh terminé avec succès ==="
