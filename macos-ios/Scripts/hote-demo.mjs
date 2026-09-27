@@ -15,7 +15,7 @@
 //     parce que le plugin interrogerait le binaire Tailscale de CETTE machine et
 //     publierait les vrais noms du tailnet dans les captures.
 //
-// Usage : node Scripts/hote-demo.mjs [port]      (défaut : 3080)
+// Usage : node Scripts/hote-demo.mjs [port] [--vivant]      (port par défaut : 3080)
 // Le jeton à coller dans l'app est imprimé au démarrage — il est fictif.
 
 import { createServer } from 'node:http'
@@ -25,7 +25,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import zlib from 'node:zlib'
 
-const port = Number(process.argv[2] ?? '3080')
+const port = Number(process.argv.slice(2).find((a) => /^\d+$/.test(a)) ?? '3080')
 const JETON = 'JETONFICTIF-demo-captures-00000000000000000'
 
 // ── Les sessions inventées ────────────────────────────────────────────────────
@@ -105,15 +105,44 @@ const SESSIONS = [
 const trame = (objet) => zlib.zstdCompressSync(Buffer.from(JSON.stringify(objet) + '\n', 'utf8'))
 const projetDe = (cwd) => '--' + cwd.replace(/^\//, '').replace(/\//g, '-') + '--'
 
+// `--vivant` : la session « au travail » ne part qu'avec ses premiers
+// enregistrements, et les suivants arrivent un par un pendant que l'hôte tourne —
+// de quoi FILMER le suivi en direct (vidéo de démonstration pour l'App Review).
+const vivant = process.argv.includes('--vivant')
+const SESSION_VIVANTE = 'demo-offline-cache'
+const DEPART_VIVANT = 4
+const ecritures = new Map()
+
+const ecrireSession = async (id) => {
+  const { dossier, lignes } = ecritures.get(id)
+  await writeFile(join(dossier, 'session.v3.jsonl.zstd'), Buffer.concat(lignes.map(trame)))
+}
+
 for (const session of SESSIONS) {
   const debut = maintenant - session.ilYa * minute - session.enregistrements.length * 20_000
   const lignes = [{ type: 'session', id: session.id, cwd: session.cwd, createdAt: debut, agentPreset: 'standard' }]
+  const enAttente = []
   session.enregistrements.forEach((enregistrement, rang) => {
-    lignes.push({ ...enregistrement, seq: rang + 1, time: debut + (rang + 1) * 20_000 })
+    const ligne = { ...enregistrement, seq: rang + 1, time: debut + (rang + 1) * 20_000 }
+    if (vivant && session.id === SESSION_VIVANTE && rang >= DEPART_VIVANT) enAttente.push(ligne)
+    else lignes.push(ligne)
   })
   const dossier = join(racine, 'sessions', projetDe(session.cwd), session.id)
   await mkdir(dossier, { recursive: true })
-  await writeFile(join(dossier, 'session.v3.jsonl.zstd'), Buffer.concat(lignes.map(trame)))
+  ecritures.set(session.id, { dossier, lignes, enAttente })
+  await ecrireSession(session.id)
+}
+
+if (vivant) {
+  // Une écriture toutes les quatre secondes, horodatée à l'instant : l'app la
+  // reçoit par le flux et l'affiche comme un appel d'outil qui vient d'arriver.
+  const minuterie = setInterval(async () => {
+    const etat = ecritures.get(SESSION_VIVANTE)
+    const suivante = etat.enAttente.shift()
+    if (suivante === undefined) return clearInterval(minuterie)
+    etat.lignes.push({ ...suivante, time: Date.now() })
+    await ecrireSession(SESSION_VIVANTE)
+  }, 4000)
 }
 
 // ── Le contexte factice du harness ────────────────────────────────────────────

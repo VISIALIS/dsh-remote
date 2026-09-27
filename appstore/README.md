@@ -83,7 +83,7 @@ Déjà déclaré dans les `Info.plist` : `ITSAppUsesNonExemptEncryption = false`
 L'app ne fonctionne qu'avec un hôte DSH appairé. Sans lui, un réviseur ne voit qu'un écran d'appairage et rejettera l'app (guideline 2.1, « App Completeness », faute de pouvoir la tester).
 
 Il faut fournir **au moins l'un des deux** :
-1. **Une vidéo de démonstration** (lien non listé) montrant l'appairage par QR code, une session suivie en direct, les widgets et l'Activité en direct — c'est la voie la plus simple ;
+1. **Une vidéo de démonstration**, jointe dans le champ « Attachment » d'App Review : `appstore/demo-review.mp4` (37 s, données fictives). Elle se refait avec `node macos-ios/Scripts/hote-demo.mjs 3080 --vivant` (les appels d'outils arrivent en direct) et `xcrun simctl io <appareil> recordVideo` ;
 2. **Un hôte de démonstration** joignable par les réviseurs, avec un code d'appairage durable — à éviter : cela exposerait un hôte sur Internet, contraire à la RÈGLE #0.
 
 Texte proposé pour le champ « Notes » (en anglais) :
@@ -95,8 +95,10 @@ that computer, over the local network or a private Tailscale network, after
 pairing with a one-time QR code shown in the DSH web panel.
 
 Because the host runs on the user's own machine, we cannot provide a public
-server or demo account. A full demonstration video is available here: <LIEN VIDEO>
-It shows pairing, live session monitoring, widgets and the Live Activity.
+server or demo account. A demonstration video is attached to this submission
+(demo-review.mp4, 37 s): the pairing screen, the session list, a session whose
+tool calls arrive live, a session waiting for the user's answer, and the host
+status page. All data shown is fictional (a demo host with sample sessions).
 
 The app collects no data, has no account and uses no third-party service.
 The camera is used only to scan the pairing QR code.

@@ -1560,7 +1560,12 @@ struct ServeursVides: View {
           appairageOuvert = true
         } label: {
           #if os(iOS)
-            Label { T("Scanner le QR code") } icon: { Image(systemName: "qrcode.viewfinder") }
+            // L'ICÔNE EST TEINTÉE À LA MAIN. Dans une liste, iOS teinte l'icône
+            // d'un `Label` à la couleur d'accent — bleu sur le fond bleu du
+            // bouton plein : le texte restait blanc, l'icône disparaissait.
+            Label { T("Scanner le QR code") } icon: {
+              Image(systemName: "qrcode.viewfinder").foregroundStyle(.white)
+            }
           #else
             Label { T("Coller un appairage") } icon: { Image(systemName: "doc.on.clipboard") }
           #endif
