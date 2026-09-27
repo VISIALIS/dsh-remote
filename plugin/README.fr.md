@@ -388,7 +388,7 @@ dépliée ; dans le rail de 56 px, l'icône reste seule. Le tracé est **repris 
 quel**, et non redessiné pour le web : deux dessins du même signe auraient fini par
 diverger.
 
-La couleur, elle, ne vient **pas** de l'icône. Le bleu DeepSeek `#4D6BFE` de
+La couleur, elle, ne vient **pas** de l'icône. Le bleu `#4D6BFE` de
 l'application serait la seule couleur étrangère de la colonne — et sur le thème
 sombre, un bleu sur fond sombre. Le SVG est donc en `fill: currentColor` : il prend
 la couleur du bouton (`--dsw-alias-label-primary`, l'entrée `COULEURS.texte`), donc

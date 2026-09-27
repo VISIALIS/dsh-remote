@@ -769,7 +769,7 @@ function encodeQr(text) {
       // aurait fini par diverger du signe livré dans les applications.
       //
       // LA COULEUR VIENT DE LA CHARTE WEB, PAS DE L'ICÔNE. Le signe de
-      // l'application est un aplat bleu DeepSeek `#4D6BFE` sur blanc ; posé tel
+      // l'application est un aplat bleu `#4D6BFE` sur blanc ; posé tel
       // quel dans le pied de la barre latérale, il serait la seule couleur
       // étrangère de la colonne — et sur le thème sombre, un bleu sur fond
       // sombre. `currentColor` prend donc la couleur du bouton

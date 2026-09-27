@@ -47,10 +47,9 @@ aucune retouche d'interface.
 ### Icône : le sifflet arrondi
 
 L'icône retenue le 14 septembre 2026 est une silhouette de sifflet au corps rond,
-avec un bec montant et une encoche. Le dessin est un aplat bleu DeepSeek
+avec un bec montant et une encoche. Le dessin est un aplat bleu
 `#4D6BFE`, sans détail supplémentaire. Son contour est défini dans
-[`Scripts/generer-icone.py`](Scripts/generer-icone.py), variante `arrondi`,
-désormais utilisée par défaut.
+[`Scripts/generer-icone.py`](Scripts/generer-icone.py).
 
 Le catalogue iOS/iPadOS contient trois PNG de 1024 × 1024 : bleu sur blanc pour
 l'apparence claire, bleu sur fond transparent pour l'apparence sombre et blanc
